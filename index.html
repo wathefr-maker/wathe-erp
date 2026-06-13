@@ -563,11 +563,69 @@
 
     <div class="wrap view hide" id="view-factures">
       <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div style="flex:1"><h1>Facturation</h1><div class="sub">Factures éditées depuis les ventes (Shopify, boutique…)</div></div>
+        <div style="flex:1"><h1>Facturation</h1><div class="sub">Factures éditées automatiquement à chaque vente facturée (Shopify, expédition, boutique)</div></div>
+        <button class="btn v" onclick="openFactureNew()" style="align-self:center">+ Nouvelle facture</button>
       </div>
-      <div class="tablecard"><div class="tmeta" id="factMeta"></div><div style="overflow-x:auto"><table>
-        <thead><tr><th>N° facture</th><th>Date</th><th>Commande</th><th>Société</th><th>Total TTC</th><th></th></tr></thead>
+      <div class="tablecard" style="padding:14px;margin:12px 0 14px"><div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="fld" style="margin:0;flex:2;min-width:200px"><label>Recherche (n°, acheteur, société, réf produit)</label><input id="factQ" oninput="renderFactures()" placeholder="Tape un n°, un nom ou une référence…"></div>
+        <div class="fld" style="margin:0;min-width:110px"><label>Type</label><select id="factType" onchange="renderFactures()"><option value="">Tous</option><option value="facture">Factures</option><option value="avoir">Avoirs</option></select></div>
+        <div class="fld" style="margin:0;min-width:130px"><label>Origine</label><select id="factSource" onchange="renderFactures()"><option value="">Toutes</option><option value="shopify">Shopify</option><option value="expedition">Expédition</option><option value="boutique">Boutique</option><option value="manuelle">Manuelle</option></select></div>
+        <div class="fld" style="margin:0;min-width:140px"><label>Vendeur</label><select id="factSoc" onchange="renderFactures()"></select></div>
+        <div class="fld" style="margin:0;min-width:140px"><label>Acheteur</label><input id="factBuyer" oninput="renderFactures()" placeholder="Nom de l'acheteur"></div>
+        <div class="fld" style="margin:0;min-width:120px"><label>Statut</label><select id="factStatut" onchange="renderFactures()"><option value="">Tous</option><option>Validée</option></select></div>
+        <div class="fld" style="margin:0;min-width:130px"><label>Paiement</label><select id="factPay" onchange="renderFactures()"><option value="">Tous</option><option>Payée</option><option value="En attente">En attente</option><option>Remboursé</option></select></div>
+        <div class="fld" style="margin:0;min-width:120px"><label>Du</label><input id="factFrom" type="date" onchange="renderFactures()"></div>
+        <div class="fld" style="margin:0;min-width:120px"><label>Au</label><input id="factTo" type="date" onchange="renderFactures()"></div>
+        <button class="btn" onclick="factClearFilters()" style="align-self:flex-end">Effacer</button>
+        <div class="tmeta" id="factMeta" style="margin-left:auto;align-self:center"></div>
+      </div></div>
+      <div class="tablecard"><div style="overflow-x:auto"><table>
+        <thead><tr><th>Numéro</th><th>Date</th><th>Origine</th><th>Vendeur</th><th>Acheteur</th><th>Montant</th><th>Statut</th><th>Statut de paiement</th><th>Actions</th></tr></thead>
         <tbody id="factRows"></tbody></table></div></div>
+    </div>
+
+    <div class="wrap view hide" id="view-factureD">
+      <div id="fdRoot"></div>
+    </div>
+
+    <div class="wrap view hide" id="view-factureNew">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <button class="backbtn" onclick="show('factures');renderFactures();">← Retour</button>
+        <h1 style="margin:0">Nouvelle facture</h1>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="dcard"><h3>Informations de la facture</h3>
+          <div class="fld"><label>N° Facture *</label><input id="fn_num"></div>
+          <div class="fld"><label>Date de la facture *</label><input id="fn_date" type="date"></div>
+          <div class="fld"><label>TVA *</label><select id="fn_tva"></select></div>
+          <div class="fld"><label>Société qui facture *</label><select id="fn_soc"></select></div>
+          <div class="fld"><label>Coordonnées bancaires *</label><textarea id="fn_banque" rows="2" placeholder="IBAN / BIC"></textarea></div>
+          <div class="fld"><label>Client ou société facturé(e) *</label><select id="fn_cli"></select></div>
+          <button class="btn" id="fn_addcli" style="margin:-4px 0 10px">+ Créer un client</button>
+          <div class="fld"><label>Mode de règlement *</label><input id="fn_reg" placeholder="Ex. Virement, CB, Espèces"></div>
+          <div class="fld"><label>Mentions légales pour facture *</label><textarea id="fn_mentions" rows="2"></textarea></div>
+        </div>
+        <div class="dcard"><h3>Ajouter une ligne</h3>
+          <div class="fld"><label>Désignation *</label><input id="fl_title" placeholder="Produit ou service"></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div class="fld" style="flex:1;min-width:90px"><label>Quantité</label><input id="fl_qty" type="number" value="1" min="1"></div>
+            <div class="fld" style="flex:1;min-width:120px"><label>Prix unitaire</label><input id="fl_pu" type="number" step="0.01" placeholder="0.00"></div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div class="fld" style="flex:1;min-width:120px"><label>Prix saisi en</label><select id="fl_mode"><option value="TTC">TTC</option><option value="HT">HT</option></select></div>
+            <div class="fld" style="flex:1;min-width:120px"><label>TVA</label><select id="fl_tva"></select></div>
+          </div>
+          <button class="btn v" id="fl_add">+ Ajouter la ligne</button>
+        </div>
+      </div>
+      <div class="dcard" style="margin-top:16px"><h3>Lignes de la facture</h3>
+        <div style="overflow-x:auto"><table><thead><tr><th>Désignation</th><th style="text-align:center">Qté</th><th style="text-align:right">PU TTC</th><th>TVA</th><th style="text-align:right">Total TTC</th><th></th></tr></thead><tbody id="fnRows"></tbody></table></div>
+        <div id="fnTot" style="margin-top:10px;text-align:right;font-weight:700"></div>
+      </div>
+      <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px">
+        <button class="btn" onclick="show('factures');renderFactures();">Annuler</button>
+        <button class="btn v" id="fn_save">✓ Créer la facture</button>
+      </div>
     </div>
 
     <div class="wrap view hide" id="view-soon">
@@ -599,6 +657,7 @@
     <div class="fld"><label>Code postal</label><input id="s_cp"></div>
     <div class="fld"><label>Ville</label><input id="s_ville"></div>
     <div class="fld"><label>Pays</label><select id="s_pays"></select></div>
+    <div class="fld full" style="grid-column:1/3"><label>Coordonnées bancaires (IBAN / BIC)</label><input id="s_banque" placeholder="IBAN FR76 … · BIC …"></div>
   </div>
   <div class="mf"><span></span><div style="display:flex;gap:10px"><button class="btn" data-close="ovS">Annuler</button><button class="btn v" id="saveSoc">Enregistrer</button></div></div>
 </div></div>
@@ -924,17 +983,18 @@ function saleSplit(pv,pa,tvaName){
 function salesData(from,to){
   const recs=[];
   DB.expeditions.filter(e=>e.facturee&&e.type!=="Retour"&&(!socFilter||e.societeId==socFilter)).forEach(function(e){
+    if((DB.factures||[]).some(f=>f.source==="expedition"&&f.expedId===e.id))return;
     const dt=e.factureDate||e.date;if(dt<from||dt>to)return;
     (e.lignes||[]).forEach(function(l){const a=pieceById(l.articleId);if(!a||!a.id)return;
       const tc=e.factTTC?(+l.prix||0):ttc(l.prix,a.tva);const cost=(+a.prix||0);const sp=saleSplit(tc,cost,a.tva);
       recs.push({dt:dt,ht:sp.ca,ttc:tc,cost:cost,vat:sp.vat,regime:sp.regime,societeId:e.societeId,canal:"Expédition",marque:pieceMarque(a)});});});
   (DB.factures||[]).filter(f=>f.lines&&(!socFilter||f.societeId==socFilter)).forEach(function(f){
     const dt=f.date;if(dt<from||dt>to)return;
-    const canal=f.orderId?"Shopify":(f.canal||"Boutique");
+    const canal=f.orderId?"Shopify":(f.source==="expedition"?"Expédition":(f.canal||"Boutique"));const sign=(f.type==="avoir")?-1:1;
     (f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(ref){
       const a=DB.articles.find(x=>x.ref===ref);if(!a)return;
       const tc=(+l.puTTC||0);const cost=(+a.prix||0);const sp=saleSplit(tc,cost,a.tva);
-      recs.push({dt:dt,ht:sp.ca,ttc:tc,cost:cost,vat:sp.vat,regime:sp.regime,societeId:f.societeId,canal:canal,marque:pieceMarque(a)});});});});
+      recs.push({dt:dt,ht:sp.ca*sign,ttc:tc*sign,cost:cost*sign,vat:sp.vat*sign,regime:sp.regime,societeId:f.societeId,canal:canal,marque:pieceMarque(a)});});});});
   let caHT=0,caTTC=0,cout=0,tvaTot=0;const byDate={},byCanal={},byMarque={},byRegime={},bySoc={};
   recs.forEach(function(r){caHT+=r.ht;caTTC+=r.ttc;cout+=r.cost;tvaTot+=r.vat;byDate[r.dt]=(byDate[r.dt]||0)+r.ht;
     const c=byCanal[r.canal]||(byCanal[r.canal]={caHT:0,caTTC:0,cout:0,marge:0,nb:0});c.caHT+=r.ht;c.caTTC+=r.ttc;c.cout+=r.cost;c.marge+=(r.ht-r.cost);c.nb++;
@@ -1476,9 +1536,9 @@ function renderSocietes(){
 addSoc.onclick=()=>openSoc(null);
 function openSoc(id){editS=id;mSTitle.textContent=id?"Modifier la société":"Nouvelle société";
   const s=id?DB.societes.find(x=>x.id==id):{nom:"",siret:"",tva:"",adr:"",cp:"",ville:"",pays:"France"};
-  s_nom.value=s.nom||"";s_siret.value=s.siret||"";s_tva.value=s.tva||"";s_adr.value=s.adr||"";s_cp.value=s.cp||"";s_ville.value=s.ville||"";s_pays.value=s.pays||"France";ovS.classList.add("show");}
+  s_nom.value=s.nom||"";s_siret.value=s.siret||"";s_tva.value=s.tva||"";s_adr.value=s.adr||"";s_cp.value=s.cp||"";s_ville.value=s.ville||"";s_pays.value=s.pays||"France";s_banque.value=s.banque||"";ovS.classList.add("show");}
 saveSoc.onclick=async()=>{if(!s_nom.value.trim())return alert("Le nom de la société est obligatoire.");
-  const o={nom:s_nom.value,siret:s_siret.value,tva:s_tva.value,adr:s_adr.value,cp:s_cp.value,ville:s_ville.value,pays:s_pays.value};
+  const o={nom:s_nom.value,siret:s_siret.value,tva:s_tva.value,adr:s_adr.value,cp:s_cp.value,ville:s_ville.value,pays:s_pays.value,banque:s_banque.value};
   if(editS)Object.assign(DB.societes.find(x=>x.id==editS),o);else{o.id=Math.max(0,...DB.societes.map(s=>s.id),0)+1;DB.societes.push(o);}
   logAct(editS?"Modification":"Création","Société",o.nom);await save();fillSelects();ovS.classList.remove("show");renderSocietes();};
 socRows.onclick=async e=>{const es=e.target.closest("[data-es]"),ds=e.target.closest("[data-ds]");
@@ -2147,15 +2207,24 @@ function openRetour(e){const ov=document.createElement("div");
   ov.addEventListener("click",ev=>{if(ev.target===ov)close();});
   ov.querySelector("#ret_cancel").onclick=close;
   ov.querySelector("#ret_all").onchange=function(){ov.querySelectorAll(".ret_p").forEach(c=>c.checked=this.checked);};
-  ov.querySelector("#ret_ok").onclick=async()=>{const ids=[...ov.querySelectorAll(".ret_p:checked")].map(c=>+c.value);
+  ov.querySelector("#ret_ok").onclick=()=>{const ids=[...ov.querySelectorAll(".ret_p:checked")].map(c=>+c.value);
     if(!ids.length)return alert("Sélectionne au moins une pièce.");
     const ville=ov.querySelector("#ret_ville").value,emp=ov.querySelector("#ret_emp").value;
+    const refs=ids.map(id=>(pieceById(id)||{}).ref).filter(Boolean);
     ids.forEach(id=>{const a=pieceById(id);if(a&&a.id){a.statut="En Stock";a.dispo=1;a.expId=null;a.ville=ville;a.emplacement=emp;a.maj=today();}});
     e.retours=(e.retours||[]).concat(ids.map(id=>({articleId:id,date:today(),ville,emplacement:emp})));
     e.lignes=e.lignes.filter(l=>!ids.includes(l.articleId));
     e.retour=e.lignes.length?2:1;
-    logAct("Modification","Expédition",`${e.nom} · retour ${ids.length} pièce(s) → ${ville} / ${emp}`);
-    await save();renderAll();renderExpeds();close();};}
+    const finalize=async(shipRefund)=>{
+      let avNums=[];
+      if(e.facturee){avNums=avoirForReturnedRefs(refs,shipRefund).map(a=>a.num);}
+      logAct("Modification","Expédition",e.nom+" · retour "+ids.length+" pièce(s) → "+ville+" / "+emp+(avNums.length?(" · avoir "+avNums.join(", ")):""));
+      await save();renderAll();renderExpeds();close();
+      if(avNums.length)alert("Retour validé. Avoir(s) créé(s) : "+avNums.join(", "));
+    };
+    const shipFac=(DB.factures||[]).find(f=>f.type!=="avoir"&&f.expedId===e.id&&+f.shipping>0);
+    if(e.facturee&&shipFac)askShippingRefund(+shipFac.shipping,finalize);else finalize(0);
+  };}
 
 /* LISTE */
 const expFilt={q:"",type:"",statut:"",fact:"",ret:"",soc:""};
@@ -2193,7 +2262,7 @@ expClear.onclick=()=>{Object.keys(expFilt).forEach(k=>expFilt[k]="");expF_q.valu
 addExped.onclick=()=>openExpedNew(null);
 expRows.onclick=async e=>{const ve=e.target.closest("[data-ve]"),adv=e.target.closest("[data-eadv]"),ef=e.target.closest("[data-efact]"),er=e.target.closest("[data-eret]"),ed=e.target.closest("[data-ede]");
   if(ve){e.preventDefault();return openExpedNew(+ve.dataset.ve);}
-  if(adv){const x=DB.expeditions.find(z=>z.id==+adv.dataset.eadv);if(x){if(!confirm(`Valider l'expédition « ${x.nom} » ?\n\nLes ${expPieces(x)} pièce(s) passent en « Livré » (sortie définitive du stock) et la facture sera éditée.`))return;const was=x.statut;x.statut=expNext(x.statut);if(was==="En transit"){x.facturee=1;if(!x.factureNum)x.factureNum=expFactNum(x);x.factureTotal=expTotal(x);x.factureMode=x.factTTC?"TTC":"HT";x.factureDate=today();}applyExpedStock(x);logAct("Modification","Expédition",x.nom+" → "+x.statut+(was==="En transit"?" · facture éditée "+x.factureNum:""));await save();renderAll();renderExpeds();}return;}
+  if(adv){const x=DB.expeditions.find(z=>z.id==+adv.dataset.eadv);if(x){if(!confirm(`Valider l'expédition « ${x.nom} » ?\n\nLes ${expPieces(x)} pièce(s) passent en « Livré » (sortie définitive du stock) et la facture sera éditée.`))return;const was=x.statut;x.statut=expNext(x.statut);if(was==="En transit"){x.facturee=1;x.factureDate=today();x.factureTotal=expTotal(x);x.factureMode=x.factTTC?"TTC":"HT";const _arr=createFactureFromExped(x);x.factureNum=_arr.map(f=>f.num).join(" + ");x.factureId=_arr[0]?_arr[0].id:null;x.factureIds=_arr.map(f=>f.id);}applyExpedStock(x);logAct("Modification","Expédition",x.nom+" → "+x.statut+(was==="En transit"?" · facture éditée "+x.factureNum:""));await save();renderAll();renderExpeds();}return;}
   if(ef){const x=DB.expeditions.find(z=>z.id==+ef.dataset.efact);if(x){x.facturee=x.facturee?0:1;logAct("Modification","Expédition",x.nom+" · facturée "+(x.facturee?"Oui":"Non"));await save();renderExpeds();}return;}
   if(er){const x=DB.expeditions.find(z=>z.id==+er.dataset.eret);if(x)openRetour(x);return;}
   if(ed){const x=DB.expeditions.find(z=>z.id==+ed.dataset.ede);if(x&&confirm("Supprimer cette expédition ? Les pièces liées repassent « En Stock ».")){restoreExpedPieces(x);DB.expeditions=DB.expeditions.filter(z=>z.id!=x.id);logAct("Suppression","Expédition",x.nom);await save();renderAll();renderExpeds();}return;}};
@@ -2499,10 +2568,20 @@ function shopReturnPiecesCore(silentEmpty){
   const checked=[].slice.call(document.querySelectorAll(".shopRetChk:checked")).map(c=>+c.value);
   if(!checked.length){if(silentEmpty)return true;alert("Coche au moins une paire à retourner.");return false;}
   if(!confirm("Retourner "+checked.length+" paire(s) en stock ? Elles seront retirées de la commande."))return false;
+  const refs=[];
   checked.forEach(function(aid){const a=DB.articles.find(x=>x.id==aid);if(!a)return;
+    if(a.ref)refs.push(a.ref);
     a.shopifyReturnedFrom=o.name;a.shopifyReturnedAt=today();a.statut="En Stock";a.dispo=1;
     delete a.shopifyOrderId;delete a.shopifyOrderName;delete a.shopifyLineIdx;delete a.shopifyTracking;delete a.shopifyTrackingSent;delete a.shopifyInvoiced;delete a.shopifyInvoiceNum;a.maj=today();});
-  logAct("Retour Shopify",o.name,checked.length+" paire(s)");save();return true;
+  const finalize=function(shipRefund){
+    const avNums=avoirForReturnedRefs(refs,shipRefund).map(a=>a.num);
+    logAct("Retour Shopify",o.name,checked.length+" paire(s)"+(avNums.length?(" · avoir "+avNums.join(", ")):""));
+    save();shopRefresh();
+    if(avNums.length)alert("Retour enregistré. Avoir(s) créé(s) : "+avNums.join(", "));
+  };
+  const shipFac=(DB.factures||[]).find(f=>f.type!=="avoir"&&f.orderId===o.id&&+f.shipping>0);
+  if(shipFac)askShippingRefund(+shipFac.shipping,finalize);else finalize(0);
+  return true;
 }
 function shopReturnPieces(){if(shopReturnPiecesCore(false))shopRefresh();}
 function shopAssignSection(o){
@@ -2699,51 +2778,348 @@ function shopInvoiceOrder(){
   const pieces=shopOrderPieces(o);
   if(!pieces.length){alert("Assigne au moins une paire avant de facturer.");return;}
   if((DB.factures||[]).some(f=>f.orderId===o.id)){alert("Cette commande est déjà facturée.");return;}
-  if(!confirm("Passer la commande "+o.name+" en facturation ?\n\nLes paires assignées sortiront du stock (statut « Facturé ») et une facture sera créée."))return;
-  const id=Math.max(0,...(DB.factures||[]).map(f=>f.id||0),0)+1;
-  const d=new Date(),num="FAC-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(id).padStart(4,"0");
+  if(!confirm("Passer la commande "+o.name+" en facturation ?\n\nLes paires assignées sortiront du stock (statut « Facturé »). Si plusieurs régimes de TVA sont présents, une facture par régime sera créée."))return;
   const soc=pieces[0]?socById(pieces[0].societeId):DB.societes[0];
   const trk=shopOrderTracking(o);
-  const fact={id:id,num:num,date:today(),orderId:o.id,orderName:o.name,societeId:soc?soc.id:DB.societes[0].id,
-    lines:(o.lines||[]).map(function(l,i){return {title:l.title,sku:l.sku||"",qty:l.qty||1,puTTC:l.price||0,refs:shopAssignedFor(o.id,i).map(a=>a.ref)};}),
-    subtotal:(o.subtotal!=null?o.subtotal:(o.lines||[]).reduce((s,l)=>s+((l.price||0)*(l.qty||1)),0)),
-    shipping:(o.shipping!=null?o.shipping:0),totalTTC:o.totalTTC||0,currency:o.currency||"EUR",
-    tracking:trk?(trk.company+" "+trk.number):""};
-  DB.factures.push(fact);
-  pieces.forEach(function(a){a.shopifyInvoiced=1;a.shopifyInvoiceNum=num;a.statut="Facturé";a.dispo=0;a.maj=today();});
-  logAct("Facturation",o.name,num);
+  const saleLines=[];
+  (o.lines||[]).forEach(function(l,i){shopAssignedFor(o.id,i).forEach(function(a){
+    saleLines.push({title:l.title,sku:l.sku||"",qty:1,puTTC:(l.price||0),ref:a.ref,tva:a.tva||"TVASM",cost:(+a.prix||0)});});});
+  if(!saleLines.length){alert("Aucune paire assignée.");return;}
+  const facts=buildSaleFactures({source:"shopify",orderId:o.id,orderName:o.name,date:today(),
+    societeId:soc?soc.id:DB.societes[0].id,buyer:shopOrderClient(o)||o.name,
+    tracking:trk?(trk.company+" "+trk.number):"",shipping:(o.shipping!=null?+o.shipping:0),currency:o.currency||"EUR",saleLines:saleLines});
+  pieces.forEach(function(a){a.shopifyInvoiced=1;a.shopifyInvoiceNum=facts[0]?facts[0].num:"";a.statut="Facturé";a.dispo=0;a.maj=today();});
+  logAct("Facturation",o.name,facts.map(f=>f.num).join(" + "));
   save();shopRefresh();
-  alert("Facture "+num+" créée ✔");
+  alert(facts.length>1?(facts.length+" factures créées (une par régime de TVA) : "+facts.map(f=>f.num).join(", ")):("Facture "+facts[0].num+" créée ✔"));
 }
 function shopInvoicePDF(factId){
   const f=(DB.factures||[]).find(x=>x.id==factId);if(!f){alert("Facture introuvable.");return;}
+  if(!window.jspdf||!window.jspdf.jsPDF){alert("Le générateur PDF n'est pas chargé (vérifie ta connexion internet), réessaie dans un instant.");return;}
   const s=socById(f.societeId)||{};
-  const w=window.open("","_blank");if(!w){alert("Autorise les pop-ups pour afficher la facture.");return;}
-  const lignes=(f.lines||[]).map(function(l){return '<tr><td>'+esc(l.title)+(l.refs&&l.refs.length?'<div style="color:#666;font-size:11px">Réf : '+esc(l.refs.join(", "))+'</div>':"")+'</td><td style="text-align:center">'+l.qty+'</td><td style="text-align:right">'+eur(l.puTTC)+'</td><td style="text-align:right">'+eur((l.puTTC||0)*(l.qty||1))+'</td></tr>';}).join("");
-  const adr=[(s.adr||""),((s.cp||"")+" "+(s.ville||"")).trim(),(s.pays||"")].filter(Boolean).map(esc).join("<br>");
-  const html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(f.num)+'</title><style>'+
-    'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;margin:40px;font-size:13px}'+
-    'h1{font-size:22px;margin:0 0 4px}.muted{color:#666}.row{display:flex;justify-content:space-between;gap:30px;align-items:flex-start}'+
-    'table{width:100%;border-collapse:collapse;margin-top:22px}th,td{padding:9px 10px;border-bottom:1px solid #e5e7eb;text-align:left;vertical-align:top}th{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.04em}'+
-    '.tot{margin-top:16px;margin-left:auto;width:300px}.tot div{display:flex;justify-content:space-between;padding:5px 0}.tot .g{font-weight:800;font-size:16px;border-top:2px solid #111;margin-top:6px;padding-top:8px}'+
-    '.mention{margin-top:26px;color:#666;font-size:11px;line-height:1.5}@media print{body{margin:14mm}}'+
-    '</style></head><body>'+
-    '<div class="row"><div><h1>'+esc(s.nom||"Société")+'</h1><div class="muted">'+adr+(s.siret?'<br>SIRET : '+esc(s.siret):"")+(s.tva?'<br>TVA : '+esc(s.tva):"")+'</div></div>'+
-      '<div style="text-align:right"><h1>FACTURE</h1><div class="muted">N° '+esc(f.num)+'<br>Date : '+esc(f.date)+'<br>Commande : '+esc(f.orderName||"")+(f.tracking?'<br>Suivi : '+esc(f.tracking):"")+'</div></div></div>'+
-    '<table><thead><tr><th>Désignation</th><th style="text-align:center">Qté</th><th style="text-align:right">PU TTC</th><th style="text-align:right">Total TTC</th></tr></thead><tbody>'+lignes+'</tbody></table>'+
-    '<div class="tot"><div><span>Sous-total produits</span><span>'+eur(f.subtotal)+'</span></div><div><span>Frais de livraison</span><span>'+eur(f.shipping)+'</span></div><div class="g"><span>Total TTC</span><span>'+eur(f.totalTTC)+'</span></div></div>'+
-    '<div class="mention">TVA sur la marge — Régime particulier des biens d\'occasion (art. 297 A du CGI). TVA non récupérable par l\'acquéreur.<br>Document généré par Wathe ERP.</div>'+
-    '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},250);}</scr'+'ipt>'+
-    '</body></html>';
-  w.document.write(html);w.document.close();
+  const jsPDF=window.jspdf.jsPDF;const doc=new jsPDF({unit:"mm",format:"a4"});
+  const W=210,M=18,ACC=[79,70,229];
+  doc.setFillColor(ACC[0],ACC[1],ACC[2]);doc.rect(0,0,W,5,"F");
+  doc.setFont("helvetica","bold");doc.setTextColor(20,20,20);doc.setFontSize(23);doc.text(f.type==="avoir"?"Avoir":"Facture",M,26);
+  doc.setFont("helvetica","normal");doc.setTextColor(120,120,120);doc.setFontSize(10);
+  doc.text("N° "+f.num+"     Date : "+(f.date||"")+((f.type==="avoir"&&f.avoirOfNum)?("     Avoir sur facture "+f.avoirOfNum):""),M,33);
+  doc.setDrawColor(230,230,230);doc.line(M,38,W-M,38);
+  const colR=M+(W-2*M)/2+4;let y=49;
+  doc.setFont("helvetica","bold");doc.setFontSize(8.5);doc.setTextColor(150,150,150);
+  doc.text("VENDEUR",M,y);doc.text("FACTURÉ À",colR,y);
+  const sellerLines=[s.nom,s.adr,((s.cp||"")+" "+(s.ville||"")).trim(),s.pays].filter(Boolean);
+  const sellerMeta=[s.tva?("N TVA : "+s.tva):"",s.siret?("SIRET : "+s.siret):""].filter(Boolean);
+  const buyerLines=[(f.buyer||f.orderName||"-")];if(f.orderName&&f.orderName!==f.buyer)buyerLines.push("Commande : "+f.orderName);
+  let yl=y+6,yr=y+6;
+  doc.setFontSize(10.5);
+  sellerLines.forEach(function(ln,i){doc.setFont("helvetica",i===0?"bold":"normal");doc.setTextColor(i===0?30:70,i===0?30:70,i===0?30:70);doc.text(String(ln),M,yl);yl+=5.2;});
+  doc.setFont("helvetica","normal");doc.setTextColor(110,110,110);doc.setFontSize(9.5);sellerMeta.forEach(function(ln){doc.text(String(ln),M,yl);yl+=4.8;});
+  doc.setFontSize(10.5);
+  buyerLines.forEach(function(ln,i){doc.setFont("helvetica",i===0?"bold":"normal");doc.setTextColor(i===0?30:90,i===0?30:90,i===0?30:90);doc.text(String(ln),colR,yr);yr+=5.2;});
+  if(f.tracking){doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(110,110,110);doc.text("Suivi : "+f.tracking,colR,yr);yr+=4.8;}
+  let yb=Math.max(yl,yr)+6;
+  const bodyRows=(f.lines||[]).map(function(l){const tot=(l.puTTC||0)*(l.qty||1);return [String(l.title||"")+(l.refs&&l.refs.length?("\nRéf : "+l.refs.join(", ")):""),String(l.qty||1),eur(l.puTTC||0),eur(tot)];});
+  doc.autoTable({startY:yb,head:[["Désignation","Qté","PU TTC","Total TTC"]],body:bodyRows,margin:{left:M,right:M},
+    styles:{font:"helvetica",fontSize:9.5,cellPadding:2.6,textColor:[35,35,35],lineColor:[235,235,235],lineWidth:0.1},
+    headStyles:{fillColor:ACC,textColor:[255,255,255],fontStyle:"bold"},
+    alternateRowStyles:{fillColor:[246,246,251]},
+    columnStyles:{1:{halign:"center"},2:{halign:"right"},3:{halign:"right"}}});
+  let yt=doc.lastAutoTable.finalY+8;const tx=W-M-72;
+  function totRow(label,val,bold,big){doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(big?13:10);doc.setTextColor(big?20:70,big?20:70,big?20:70);doc.text(label,tx,yt);doc.text(val,W-M,yt,{align:"right"});yt+=big?8:6;}
+  if(f.subtotal!=null)totRow("Sous-total produits",eur(f.subtotal),false,false);
+  if(f.shipping)totRow("Frais de livraison",eur(f.shipping),false,false);
+  if(f.totalHT!=null)totRow("Total HT",eur(f.totalHT),false,false);
+  yt+=2;totRow("Total TTC",eur(f.totalTTC||0),true,true);
+  if(f.reg){yt+=4;doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(70,70,70);doc.text("Mode de règlement : "+f.reg,M,yt);yt+=2;}
+  yt+=8;doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(120,120,120);
+  if(f.banque){const bq=doc.splitTextToSize("Coordonnées bancaires : "+f.banque,W-2*M);doc.text(bq,M,yt);yt+=bq.length*4+3;}
+  const mention=doc.splitTextToSize(f.mentions||"TVA sur la marge - régime particulier des biens d'occasion (art. 297 A du CGI), le cas échéant.",W-2*M);
+  doc.text(mention,M,yt);
+  doc.setFontSize(8);doc.setTextColor(175,175,175);doc.text("Document généré par Wathe ERP",W/2,289,{align:"center"});
+  doc.save((f.type==="avoir"?"Avoir-":"Facture-")+f.num+".pdf");
 }
+function buildSaleFactures(opts){
+  // opts: {source, orderId, expedId, orderName, date, societeId, clientId, buyer, reg, tracking, shipping, currency, saleLines:[{title,sku,qty,puTTC,ref,tva,cost}]}
+  const groups={};(opts.saleLines||[]).forEach(function(sl){(groups[sl.tva]=groups[sl.tva]||[]).push(sl);});
+  let regimes=Object.keys(groups);
+  // mettre TVASM en dernier pour que les frais de port tombent sur une facture en régime normal
+  regimes.sort((a,b)=>((a==="TVASM")?1:0)-((b==="TVASM")?1:0));
+  const soc=socById(opts.societeId)||{};const out=[];let shipDone=false;
+  regimes.forEach(function(reg,gi){
+    const id=Math.max(0,...(DB.factures||[]).map(f=>f.id||0),0)+1;
+    const d=new Date(opts.date||today());
+    const num="FAC-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(id).padStart(4,"0");
+    let subTTC=0,ht=0;
+    const lines=groups[reg].map(function(sl){const sp=saleSplit(sl.puTTC,sl.cost||0,sl.tva);subTTC+=(sl.puTTC*(sl.qty||1));ht+=sp.ca*(sl.qty||1);
+      return {title:sl.title,sku:sl.sku||"",qty:sl.qty||1,puTTC:sl.puTTC,refs:sl.ref?[sl.ref]:[],tva:sl.tva};});
+    let shipping=0;if(!shipDone&&(+opts.shipping>0)){shipping=+opts.shipping;shipDone=true;}
+    const shipHT=shipping?htFromTtc(shipping,"20%"):0;
+    const fact={id:id,num:num,date:opts.date||today(),source:opts.source,
+      orderId:opts.orderId,expedId:opts.expedId,orderName:opts.orderName||"",
+      societeId:opts.societeId,clientId:opts.clientId||"",buyer:opts.buyer||"Client",
+      tvaHeader:reg,mentions:legalMention(reg),banque:soc.banque||"",reg:opts.reg||"",
+      lines:lines,subtotal:subTTC,shipping:shipping,totalHT:ht+shipHT,totalTTC:subTTC+shipping,currency:opts.currency||"EUR",
+      statut:"Validée",paiement:"En attente",tracking:opts.tracking||"",
+      tvaGroup:reg,part:(regimes.length>1?(gi+1):0),parts:regimes.length};
+    DB.factures.push(fact);out.push(fact);
+  });
+  return out;
+}
+function createFactureFromExped(e){
+  const ex=(DB.factures||[]).filter(f=>f.source==="expedition"&&f.expedId===e.id);if(ex.length)return ex;
+  const cli=clientById(e.clientId)||{};
+  const buyer=(cli.societe||((cli.prenom?cli.prenom+" ":"")+(cli.nom||"")).trim()||e.nom||"Client");
+  const saleLines=(e.lignes||[]).map(function(l){const a=pieceById(l.articleId)||{};const v=varById(a.varianteId)||{};const m=modeleById(v.modeleId)||{};
+    const pvTTC=e.factTTC?(+l.prix||0):ttc(l.prix,a.tva);
+    return {title:(m.fr||"Article")+(v.taille?(" — "+v.taille):""),sku:m.sku||"",qty:1,puTTC:pvTTC,ref:a.ref,tva:a.tva||"TVASM",cost:(+a.prix||0)};});
+  return buildSaleFactures({source:"expedition",expedId:e.id,orderName:e.nom||"",date:e.factureDate||today(),
+    societeId:e.societeId,clientId:e.clientId||"",buyer:buyer,tracking:e.tracking||"",shipping:(+e.shipping||+e.fraisPort||0),saleLines:saleLines});
+}
+function factTogglePay(id){const f=(DB.factures||[]).find(x=>x.id==id);if(!f)return;f.paiement=(f.paiement==="Payée")?"En attente":"Payée";logAct("Modification","Facture",f.num+" · "+f.paiement);save();renderFactures();}
+function factClearFilters(){["factQ","factType","factSource","factSoc","factBuyer","factStatut","factPay","factFrom","factTo"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});renderFactures();}
+const SRC_LABEL={shopify:"Shopify",expedition:"Expédition",boutique:"Boutique",manuelle:"Manuelle"};
+const SRC_BADGE={shopify:"background:#dcfce7;color:#166534",expedition:"background:#e0e7ff;color:#3730a3",boutique:"background:#fef3c7;color:#92400e",manuelle:"background:#e5e7eb;color:#374151"};
 function renderFactures(){
   const tb=document.getElementById("factRows"),meta=document.getElementById("factMeta");if(!tb)return;
-  const list=(DB.factures||[]).slice().sort((a,b)=>(b.id||0)-(a.id||0));
-  if(meta)meta.textContent=list.length+" facture"+(list.length>1?"s":"");
+  const gv=id=>{const el=document.getElementById(id);return el?el.value:"";};
+  // peupler le select vendeur en gardant la sélection
+  const socSel=document.getElementById("factSoc");if(socSel){const cur=socSel.value;socSel.innerHTML='<option value="">Tous</option>'+DB.societes.map(s=>`<option value="${s.id}">${esc(s.nom)}</option>`).join("");socSel.value=cur;}
+  const q=gv("factQ").toLowerCase().trim(),fType=gv("factType"),fSrc=gv("factSource"),fSoc=gv("factSoc"),fBuyer=gv("factBuyer").toLowerCase().trim(),fStatut=gv("factStatut"),fPay=gv("factPay"),fFrom=gv("factFrom"),fTo=gv("factTo");
+  let list=(DB.factures||[]).slice();
+  if(q)list=list.filter(f=>{let refs="";(f.lines||[]).forEach(l=>(l.refs||[]).forEach(r=>refs+=" "+r));const base=((f.num||"")+" "+(f.buyer||f.orderName||"")+" "+((socById(f.societeId)||{}).nom||"")+refs).toLowerCase();return base.includes(q);});
+  if(fType==="avoir")list=list.filter(f=>f.type==="avoir");else if(fType==="facture")list=list.filter(f=>f.type!=="avoir");
+  if(fSrc)list=list.filter(f=>(f.source||"")===fSrc);
+  if(fSoc)list=list.filter(f=>f.societeId==fSoc);
+  if(fBuyer)list=list.filter(f=>((f.buyer||f.orderName||"").toLowerCase()).includes(fBuyer));
+  if(fStatut)list=list.filter(f=>(f.statut||"Validée")===fStatut);
+  if(fPay)list=list.filter(f=>(f.paiement||"")===fPay);
+  if(fFrom)list=list.filter(f=>(f.date||"")>=fFrom);
+  if(fTo)list=list.filter(f=>(f.date||"")<=fTo);
+  if(socFilter)list=list.filter(f=>f.societeId==socFilter);
+  list.sort((a,b)=>(b.id||0)-(a.id||0));
+  if(meta)meta.textContent=list.length+" document"+(list.length>1?"s":"");
   tb.innerHTML=list.length?list.map(function(f){const s=socById(f.societeId)||{};
-    return '<tr><td><b>'+esc(f.num)+'</b></td><td>'+esc(f.date)+'</td><td>'+esc(f.orderName||"")+'</td><td>'+esc(s.nom||"")+'</td><td><b>'+eur(f.totalTTC)+'</b></td><td><button class="btn" onclick="shopInvoicePDF('+f.id+')">PDF</button></td></tr>';
-  }).join(""):'<tr><td colspan="6" class="muted" style="text-align:center;padding:22px">Aucune facture pour le moment. Les factures se créent depuis une commande Shopify (bouton « Passer en facturation »).</td></tr>';
+    const buyer=f.buyer||f.orderName||"-";
+    const isAv=f.type==="avoir";
+    const ht=(f.totalHT!=null)?((isAv?"- ":"")+eur(f.totalHT)):"-";
+    const ttc=(isAv?"- ":"")+eur(f.totalTTC||0);
+    const paye=(f.paiement==="Payée");
+    const tag=isAv?'<div style="color:#dc2626;font-size:11px;font-weight:700">AVOIR'+(f.avoirOfNum?' / '+esc(f.avoirOfNum):'')+'</div>':(f.parts>1?'<div class="muted" style="font-size:11px">'+esc(f.tvaGroup||"")+' ('+f.part+'/'+f.parts+')</div>':'');
+    const orig='<span class="badge" style="'+(SRC_BADGE[f.source]||SRC_BADGE.manuelle)+'">'+(SRC_LABEL[f.source]||"—")+'</span>';
+    return '<tr>'+
+      '<td><b>'+esc(f.num)+'</b>'+tag+'</td>'+
+      '<td class="muted">'+esc(f.date)+'</td>'+
+      '<td>'+orig+'</td>'+
+      '<td>'+esc(s.nom||"-")+'</td>'+
+      '<td>'+esc(buyer)+'</td>'+
+      '<td style="'+(isAv?'color:#dc2626':'')+'"><b>'+ht+'</b> HT<br><span class="muted" style="font-size:12px">'+ttc+' TTC</span></td>'+
+      '<td><span class="badge" style="background:var(--green-soft);color:#166534">'+esc(f.statut||"Validée")+'</span></td>'+
+      '<td>'+(isAv?'<span class="badge" style="background:#fee2e2;color:#b91c1c">Remboursé</span>':(paye?'<span class="badge" style="background:var(--green-soft);color:#166534">Payée</span>':'<span class="badge" style="background:#fef3c7;color:#92400e">En attente</span>'))+'</td>'+
+      '<td><div class="act">'+
+        '<button title="Ouvrir" onclick="openFactureD('+f.id+')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>'+
+        '<button title="PDF A4" onclick="shopInvoicePDF('+f.id+')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></button>'+
+        (isAv?'':'<button title="'+(paye?"Repasser en attente":"Marquer payée")+'" onclick="factTogglePay('+f.id+')">'+(paye?'&#8634;':'&#8364;')+'</button>')+
+      '</div></td></tr>';
+  }).join(""):'<tr><td colspan="9" class="muted" style="text-align:center;padding:22px">Aucune facture pour ces critères.</td></tr>';
+}
+let curFact=null,curFactNew=null;
+function openFactureD(id){curFact=(DB.factures||[]).find(x=>x.id==id);if(!curFact){alert("Facture introuvable.");return;}show("factureD");renderFactureD();}
+function renderFactureD(){
+  const f=curFact;if(!f){show("factures");renderFactures();return;}
+  const s=socById(f.societeId)||{};const paye=f.paiement==="Payée";
+  const srcLabel={shopify:"Shopify",expedition:"Expédition",boutique:"Boutique",manuelle:"Manuelle"};
+  const buyer=f.buyer||f.orderName||"—";
+  const lignes=(f.lines||[]).map(function(l){const tot=(l.puTTC||0)*(l.qty||1);
+    return '<tr><td>'+esc(l.title)+(l.sku?' <span class="muted" style="font-size:11px">· '+esc(l.sku)+'</span>':'')+(l.refs&&l.refs.length?'<div class="muted" style="font-size:11px">Réf : '+esc(l.refs.join(", "))+'</div>':'')+'</td><td style="text-align:center">'+(l.qty||1)+'</td><td style="text-align:right">'+eur(l.puTTC||0)+'</td><td style="text-align:right">'+eur(tot)+'</td></tr>';}).join("");
+  crumb.innerHTML='<b>Facturation</b> › '+esc(f.num);
+  document.getElementById("fdRoot").innerHTML=
+    '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'+
+      '<button class="backbtn" onclick="show(\'factures\');renderFactures();">← Retour</button>'+
+      '<h1 style="margin:0">'+esc(f.num)+'</h1>'+
+      (f.type==="avoir"?'<span class="badge" style="background:#fee2e2;color:#b91c1c">AVOIR'+(f.avoirOfNum?' · facture '+esc(f.avoirOfNum):'')+'</span>':'')+
+      '<span class="badge" style="background:var(--green-soft);color:#166534">'+esc(f.statut||"Validée")+'</span>'+
+      (f.type==="avoir"?'<span class="badge" style="background:#fee2e2;color:#b91c1c">Remboursé</span>':(paye?'<span class="badge" style="background:var(--green-soft);color:#166534">Payée</span>':'<span class="badge" style="background:#fef3c7;color:#92400e">En attente de paiement</span>'))+
+      '<span style="flex:1"></span>'+
+      '<button class="btn v" onclick="shopInvoicePDF('+f.id+')">📄 Télécharger le PDF</button>'+
+      (f.type!=="avoir"?(f.avoirId?'<button class="btn" onclick="openFactureD('+f.avoirId+')">↩ Voir l\'avoir '+esc(f.avoirNum||"")+'</button>':'<button class="btn" onclick="createAvoir('+f.id+')">↩ Créer un avoir</button>'):'')+
+      (f.type!=="avoir"?'<button class="btn" onclick="factTogglePay('+f.id+');renderFactureD();">'+(paye?"Repasser en attente":"Marquer payée")+'</button>':'')+
+      '<button class="btn r" onclick="factDelete('+f.id+')">Supprimer</button>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:10px 0">'+
+      '<div class="dcard"><h3>Vendeur</h3><div><b>'+esc(s.nom||"—")+'</b></div><div class="muted" style="margin-top:4px;line-height:1.5">'+([s.adr,((s.cp||"")+" "+(s.ville||"")).trim(),s.pays].filter(Boolean).map(esc).join("<br>"))+(s.tva?'<br>N° TVA : '+esc(s.tva):'')+(s.siret?'<br>SIRET : '+esc(s.siret):'')+'</div></div>'+
+      '<div class="dcard"><h3>Acheteur</h3><div><b>'+esc(buyer)+'</b></div><div class="muted" style="margin-top:4px;line-height:1.5">'+esc(srcLabel[f.source]||"")+(f.orderName?' · '+esc(f.orderName):'')+'<br>Date : '+esc(f.date)+(f.reg?'<br>Règlement : '+esc(f.reg):'')+(f.tracking?'<br>Suivi : '+esc(f.tracking):'')+'</div></div>'+
+    '</div>'+
+    '<div class="dcard"><h3>Lignes</h3><div style="overflow-x:auto"><table><thead><tr><th>Désignation</th><th style="text-align:center">Qté</th><th style="text-align:right">PU TTC</th><th style="text-align:right">Total TTC</th></tr></thead><tbody>'+(lignes||'<tr><td colspan="4" class="muted">Aucune ligne.</td></tr>')+'</tbody></table></div>'+
+      '<div style="margin-top:12px;margin-left:auto;width:300px">'+
+        (f.subtotal!=null?'<div class="drow"><span>Sous-total produits</span><b>'+eur(f.subtotal)+'</b></div>':'')+
+        (f.shipping?'<div class="drow"><span>Frais de livraison</span><b>'+eur(f.shipping)+'</b></div>':'')+
+        (f.totalHT!=null?'<div class="drow"><span>Total HT</span><b>'+eur(f.totalHT)+'</b></div>':'')+
+        '<div class="drow" style="font-size:16px"><span>Total TTC</span><b>'+eur(f.totalTTC||0)+'</b></div>'+
+      '</div>'+
+      ((f.banque||f.mentions)?'<div class="muted" style="font-size:11px;margin-top:16px;line-height:1.6;border-top:1px solid var(--line);padding-top:12px">'+(f.banque?'<b>Coordonnées bancaires :</b> '+esc(f.banque)+'<br>':'')+(f.mentions?esc(f.mentions):'')+'</div>':'')+
+      '</div>';
+}
+function buildAvoir(f,opts){
+  opts=opts||{};const refsFilter=opts.refs;
+  const id=Math.max(0,...(DB.factures||[]).map(x=>x.id||0),0)+1;
+  const d=new Date();const num="AV-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(id).padStart(4,"0");
+  const lines=[];
+  (f.lines||[]).forEach(function(l){const allRefs=l.refs||[];
+    if(allRefs.length){let refs=refsFilter?allRefs.filter(r=>refsFilter.indexOf(r)>=0):allRefs;if(!refs.length)return;
+      lines.push({title:l.title,sku:l.sku||"",qty:refs.length,puTTC:l.puTTC,refs:refs,tva:l.tva||f.tvaHeader});}
+    else{if(refsFilter)return;lines.push({title:l.title,sku:l.sku||"",qty:l.qty||1,puTTC:l.puTTC,refs:[],tva:l.tva||f.tvaHeader});}});
+  let subTTC=0,ht=0;
+  lines.forEach(function(l){if((l.refs||[]).length){(l.refs||[]).forEach(function(r){const a=DB.articles.find(x=>x.ref===r)||{};const sp=saleSplit(l.puTTC,(+a.prix||0),l.tva||f.tvaHeader);subTTC+=l.puTTC;ht+=sp.ca;});}
+    else{const t=l.puTTC*(l.qty||1);subTTC+=t;ht+=htFromTtc(t,l.tva||f.tvaHeader);}});
+  let shipping=0;
+  if(opts.shippingRefund!=null)shipping=Math.min(Math.max(0,+opts.shippingRefund||0),+f.shipping||0);
+  else if(opts.full)shipping=+f.shipping||0;
+  const shipHT=shipping?htFromTtc(shipping,"20%"):0;
+  return {id:id,num:num,date:today(),source:f.source,type:"avoir",avoirOf:f.id,avoirOfNum:f.num,
+    orderId:f.orderId,expedId:f.expedId,orderName:f.orderName||"",
+    societeId:f.societeId,clientId:f.clientId||"",buyer:f.buyer||"Client",
+    tvaHeader:f.tvaHeader,mentions:f.mentions||legalMention(f.tvaHeader),banque:f.banque||"",reg:f.reg||"",
+    lines:lines,subtotal:subTTC,shipping:shipping,totalHT:ht+shipHT,totalTTC:subTTC+shipping,currency:f.currency||"EUR",
+    statut:"Validée",paiement:"Remboursé"};
+}
+function createAvoir(factureId){
+  const f=(DB.factures||[]).find(x=>x.id==factureId);if(!f){alert("Facture introuvable.");return;}
+  if(f.type==="avoir"){alert("Ce document est déjà un avoir.");return;}
+  const existing=(DB.factures||[]).find(x=>x.type==="avoir"&&x.avoirOf===f.id);
+  if(existing&&!confirm("Un avoir existe déjà pour cette facture ("+existing.num+").\nEn créer un autre ?"))return;
+  const refs=[];(f.lines||[]).forEach(l=>(l.refs||[]).forEach(r=>refs.push(r)));
+  const toRestock=refs.map(r=>DB.articles.find(a=>a.ref===r)).filter(a=>a&&!(a.dispo===1&&a.statut==="En Stock"));
+  if(!confirm("Créer un avoir TOTAL pour la facture "+f.num+" ?"+(toRestock.length?("\n\n"+toRestock.length+" produit(s) seront remis en stock."):"")))return;
+  const doIt=function(shipRefund){
+    const av=buildAvoir(f,{full:true,shippingRefund:shipRefund});
+    DB.factures.push(av);f.avoirId=av.id;f.avoirNum=av.num;
+    let n=0;toRestock.forEach(function(a){a.statut="En Stock";a.dispo=1;a.shopifyInvoiced=0;a.avoirRestocked=1;a.maj=today();n++;});
+    logAct("Avoir",f.num,av.num+(n?(" · "+n+" pièce(s) remise(s) en stock"):""));
+    save();renderAll();openFactureD(av.id);
+  };
+  if(+f.shipping>0)askShippingRefund(+f.shipping,doIt);else doIt(0);
+}
+function avoirForReturnedRefs(refs,shipRefund){
+  if(!refs||!refs.length)return [];
+  const created=[];
+  (DB.factures||[]).filter(f=>f.type!=="avoir"&&(f.lines||[]).some(l=>(l.refs||[]).some(r=>refs.indexOf(r)>=0))).forEach(function(f){
+    const ship=(+f.shipping>0)?(+shipRefund||0):0;
+    const av=buildAvoir(f,{refs:refs,shippingRefund:ship});
+    if(!av.lines.length&&!av.shipping)return;
+    DB.factures.push(av);f.avoirId=av.id;f.avoirNum=av.num;created.push(av);
+  });
+  return created;
+}
+function createAvoirForExped(expedId){
+  const facs=(DB.factures||[]).filter(f=>f.type!=="avoir"&&f.source==="expedition"&&f.expedId===expedId&&!f.avoirId);
+  if(!facs.length){alert("Aucune facture à créditer pour cette expédition (déjà avoirée, ou expédition non facturée).");return;}
+  const refs=[];facs.forEach(f=>(f.lines||[]).forEach(l=>(l.refs||[]).forEach(r=>refs.push(r))));
+  const toRestock=refs.map(r=>DB.articles.find(a=>a.ref===r)).filter(a=>a&&!(a.dispo===1&&a.statut==="En Stock"));
+  if(!confirm("Créer un avoir pour cette expédition ("+facs.map(f=>f.num).join(", ")+") ?"+(toRestock.length?("\n\n"+toRestock.length+" produit(s) seront remis en stock."):"")))return;
+  const shipFac=facs.find(f=>+f.shipping>0);
+  const doIt=function(shipRefund){
+    const created=[];
+    facs.forEach(function(f){const ship=(+f.shipping>0)?shipRefund:0;const av=buildAvoir(f,{full:true,shippingRefund:ship});DB.factures.push(av);f.avoirId=av.id;f.avoirNum=av.num;created.push(av);});
+    let n=0;toRestock.forEach(function(a){a.statut="En Stock";a.dispo=1;a.shopifyInvoiced=0;a.avoirRestocked=1;a.maj=today();n++;});
+    logAct("Avoir","Expédition",created.map(a=>a.num).join(", ")+(n?(" · "+n+" pièce(s) remise(s) en stock"):""));
+    save();renderAll();renderExpeds();if(created[0])openFactureD(created[0].id);
+  };
+  if(shipFac)askShippingRefund(+shipFac.shipping,doIt);else doIt(0);
+}
+function askShippingRefund(maxShip,cb){
+  const ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10001;padding:20px";
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:430px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'+
+    '<h2 style="margin:0 0 6px;font-size:19px">Frais de port</h2>'+
+    '<div class="muted" style="margin-bottom:16px">Cette vente comporte '+eur(maxShip)+' de frais de port. Veux-tu les rembourser dans l\'avoir (tout ou partie) ?</div>'+
+    '<div class="fld" style="margin:0 0 16px"><label>Montant à rembourser (€)</label><input id="shipRef_amt" type="number" step="0.01" min="0" max="'+maxShip+'" value="'+maxShip+'"></div>'+
+    '<div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">'+
+      '<button class="btn" id="shipRef_no">Ne rien rembourser</button>'+
+      '<button class="btn v" id="shipRef_ok">Rembourser ce montant</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);const close=()=>ov.remove();
+  ov.addEventListener("click",ev=>{if(ev.target===ov){close();cb(0);}});
+  ov.querySelector("#shipRef_no").onclick=()=>{close();cb(0);};
+  ov.querySelector("#shipRef_ok").onclick=()=>{let a=parseFloat(ov.querySelector("#shipRef_amt").value);if(isNaN(a)||a<0)a=0;if(a>maxShip)a=maxShip;close();cb(a);};
+}
+function factDelete(id){const f=(DB.factures||[]).find(x=>x.id==id);if(!f)return;if(!confirm("Supprimer la facture "+f.num+" ?\n\n(La vente et les pièces ne sont pas affectées.)"))return;DB.factures=DB.factures.filter(x=>x.id!=id);logAct("Suppression","Facture",f.num);save();show("factures");renderFactures();}
+function fnBuyerOptions(sel){
+  let h='<option value="">— Choisir —</option>';
+  if(DB.clients.length)h+='<optgroup label="Clients">'+DB.clients.map(c=>{const nm=(c.societe||((c.prenom?c.prenom+" ":"")+(c.nom||""))).trim()||c.email||"Client";return '<option value="c:'+c.id+'" '+(sel=="c:"+c.id?"selected":"")+'>'+esc(nm)+'</option>';}).join("")+'</optgroup>';
+  h+='<optgroup label="Sociétés">'+DB.societes.map(s=>'<option value="s:'+s.id+'" '+(sel=="s:"+s.id?"selected":"")+'>'+esc(s.nom)+'</option>').join("")+'</optgroup>';
+  return h;
+}
+function legalMention(tvaName){
+  const attr=(DB.attributs||[]).find(a=>a.nom==="Mentions légales pour facture");
+  if(!attr)return "";
+  const key=(tvaName==="TVASM")?"TVASM":((tvaName==="Exonéré")?"EXONÉRÉ":null);
+  if(!key)return "";
+  const v=(attr.valeurs||[]).find(x=>(x.label||"").toUpperCase()===key.toUpperCase());
+  return v?(v.texte||""):"";
+}
+function nextFactNum(dateStr){const id=Math.max(0,...(DB.factures||[]).map(f=>f.id||0),0)+1;const d=new Date(dateStr||today());return "FAC-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(id).padStart(4,"0");}
+function openFactureNew(){
+  curFactNew={lines:[]};
+  show("factureNew");crumb.innerHTML="<b>Facturation</b> › Nouvelle facture";
+  const defSoc=(socFilter||(DB.societes[0]||{}).id||"");
+  fn_soc.innerHTML=DB.societes.map(s=>`<option value="${s.id}" ${s.id==defSoc?"selected":""}>${esc(s.nom)}</option>`).join("");
+  fn_cli.innerHTML=fnBuyerOptions("");
+  fn_tva.innerHTML=(DB.taxes||[]).filter(t=>t.actif!==0).map(t=>`<option>${esc(t.nom)}</option>`).join("");
+  const t20=(DB.taxes||[]).find(t=>(+t.taux||0)>0);if(t20)fn_tva.value=t20.nom;
+  fl_tva.innerHTML=fn_tva.innerHTML;fl_tva.value=fn_tva.value;
+  fn_date.value=today();fn_num.value=nextFactNum(fn_date.value);fn_reg.value="";
+  fl_title.value="";fl_qty.value="1";fl_pu.value="";fl_mode.value="TTC";
+  function applySoc(){const s=socById(+fn_soc.value)||{};fn_banque.value=s.banque||"";}
+  function applyMention(){fn_mentions.value=legalMention(fn_tva.value);}
+  applySoc();applyMention();
+  fn_soc.onchange=applySoc;
+  fn_date.onchange=()=>{fn_num.value=nextFactNum(fn_date.value);};
+  fn_tva.onchange=()=>{fl_tva.value=fn_tva.value;applyMention();};
+  fn_addcli.onclick=()=>{_qaCb=c=>{fn_cli.innerHTML=fnBuyerOptions("c:"+c.id);fn_cli.value="c:"+c.id;};openCli(null);};
+  fl_add.onclick=factNewAddLine;
+  fn_save.onclick=saveFactureNew;
+  renderFactNewLines();
+}
+function factNewAddLine(){
+  const title=fl_title.value.trim();if(!title){alert("Saisis une désignation.");return;}
+  const qty=Math.max(1,parseInt(fl_qty.value)||1);
+  const pu=parseFloat(fl_pu.value);if(isNaN(pu)){alert("Saisis un prix unitaire.");return;}
+  const tva=fl_tva.value;const puTTC=(fl_mode.value==="HT")?ttc(pu,tva):pu;
+  curFactNew.lines.push({title:title,qty:qty,puTTC:puTTC,tva:tva});
+  fl_title.value="";fl_qty.value="1";fl_pu.value="";fl_title.focus();
+  renderFactNewLines();
+}
+function factNewDelLine(i){curFactNew.lines.splice(i,1);renderFactNewLines();}
+function renderFactNewLines(){
+  const tb=document.getElementById("fnRows");if(!tb)return;
+  tb.innerHTML=curFactNew.lines.length?curFactNew.lines.map(function(l,i){const tot=(l.puTTC||0)*(l.qty||1);
+    return '<tr><td>'+esc(l.title)+'</td><td style="text-align:center">'+l.qty+'</td><td style="text-align:right">'+eur(l.puTTC)+'</td><td>'+esc(l.tva)+'</td><td style="text-align:right">'+eur(tot)+'</td><td><button class="iconbtn" onclick="factNewDelLine('+i+')" title="Retirer">✕</button></td></tr>';}).join(""):'<tr><td colspan="6" class="muted" style="text-align:center;padding:14px">Aucune ligne. Ajoute au moins un produit/service.</td></tr>';
+  let ht=0,ttcSum=0;curFactNew.lines.forEach(function(l){const lineTTC=(l.puTTC||0)*(l.qty||1);ttcSum+=lineTTC;ht+=htFromTtc(lineTTC,l.tva);});
+  document.getElementById("fnTot").innerHTML="Total HT : "+eur(ht)+" &nbsp;·&nbsp; <span style='font-size:16px'>Total TTC : "+eur(ttcSum)+"</span>";
+}
+function saveFactureNew(){
+  const miss=[];
+  if(!fn_num.value.trim())miss.push("N° Facture");
+  if(!fn_date.value)miss.push("Date de la facture");
+  if(!fn_tva.value)miss.push("TVA");
+  if(!fn_soc.value)miss.push("Société qui facture");
+  if(!fn_banque.value.trim())miss.push("Coordonnées bancaires");
+  if(!fn_cli.value)miss.push("Client ou société facturé(e)");
+  if(!fn_reg.value.trim())miss.push("Mode de règlement");
+  if(!fn_mentions.value.trim()&&legalMention(fn_tva.value))miss.push("Mentions légales pour facture");
+  if(miss.length){alert("Champs obligatoires manquants :\n\n• "+miss.join("\n• "));return;}
+  if(!curFactNew.lines.length){alert("Ajoute au moins une ligne de produit/service.");return;}
+  const bv=fn_cli.value;let buyer="Client",clientId="";
+  if(bv.indexOf("c:")===0){const c=clientById(+bv.slice(2));clientId=+bv.slice(2);buyer=(c.societe||((c.prenom?c.prenom+" ":"")+(c.nom||"")).trim())||c.email||"Client";}
+  else if(bv.indexOf("s:")===0){const s=socById(+bv.slice(2))||{};buyer=s.nom||"Société";}
+  let ht=0,ttcSum=0;curFactNew.lines.forEach(function(l){const lineTTC=(l.puTTC||0)*(l.qty||1);ttcSum+=lineTTC;ht+=htFromTtc(lineTTC,l.tva);});
+  const id=Math.max(0,...(DB.factures||[]).map(f=>f.id||0),0)+1;
+  const fact={id:id,num:fn_num.value.trim(),date:fn_date.value,source:"manuelle",
+    societeId:+fn_soc.value,clientId:clientId,buyer:buyer,orderName:"",reg:fn_reg.value.trim(),
+    tvaHeader:fn_tva.value,banque:fn_banque.value.trim(),mentions:fn_mentions.value.trim(),
+    lines:curFactNew.lines.map(l=>({title:l.title,qty:l.qty,puTTC:l.puTTC,tva:l.tva})),
+    subtotal:ttcSum,shipping:0,totalHT:ht,totalTTC:ttcSum,currency:"EUR",statut:"Validée",paiement:"En attente"};
+  DB.factures.push(fact);logAct("Création","Facture",fact.num+" (manuelle)");save();openFactureD(id);
 }
 async function _afterAuth(){loginOverlay.style.display="none";await load();}
 loginBtn.onclick=async()=>{loginErr.textContent="";loginBtn.disabled=true;loginBtn.textContent="Connexion…";
