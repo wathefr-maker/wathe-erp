@@ -1534,6 +1534,22 @@ async function askSendMsg(text){text=(text||"").trim();if(!text&&!_askFile)retur
   let userContent=text;
   if(sentFile){const isPdf=(sentFile.media_type||"").indexOf("pdf")>=0;const block=isPdf?{type:"document",source:{type:"base64",media_type:"application/pdf",data:sentFile.data}}:{type:"image",source:{type:"base64",media_type:sentFile.media_type||"image/jpeg",data:sentFile.data}};userContent=[block,{type:"text",text:text||"Analyse ce document et résume-le."}];}
   askHistory.push({role:"user",content:userContent});askInput.value="";
+  if(sentFile&&!/\?/.test(text)){
+    askHistory.pop();
+    const th=askAdd("assistant","Lecture de la facture…");th.classList.add("think");
+    try{
+      const ex=await aiExtractInvoice(sentFile);
+      const res=aiBuildAchatFromInvoice(ex.j);
+      th.remove();
+      if(!res.ok){askAdd("assistant",res.reason==="no_match"?("J'ai lu la facture mais aucune ligne ne correspond à un modèle déjà dans ton catalogue. À créer d'abord : "+(res.miss||[]).join(", ")):("Je n'ai pas réussi à lire les lignes de cette facture — essaie un PDF ou une photo plus nette."));return;}
+      await aiCommitAchat(res);
+      let m="✅ Commande "+res.a.ref+" créée avec "+res.a.lignes.length+" ligne(s). Je l'ai ouverte pour que tu la vérifies, puis clique « Réceptionner » pour mettre en stock.";
+      if(!res.fourId)m+="\n⚠️ Fournisseur non reconnu : choisis-le via « Modifier ».";
+      if(res.miss&&res.miss.length)m+="\nNon importé : "+res.miss.join(", ");
+      askAdd("assistant",m);
+    }catch(err){th.remove();askAdd("assistant","Désolé, lecture impossible. ("+err.message+")");}
+    return;
+  }
   const th=askAdd("assistant","…");th.classList.add("think");
   try{
     const {data,error}=await sb.functions.invoke("claude-assistant",{body:{max_tokens:1500,
@@ -1969,38 +1985,46 @@ achClear.onclick=()=>{Object.keys(achFilt).forEach(k=>achFilt[k]="");achF_q.valu
 achPager.onclick=e=>{const b=e.target.closest("[data-achpg]");if(b)achGoPage(+b.dataset.achpg);};
 addAchat.onclick=()=>openAchatNew(null);
 function _fileToB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]||"");r.onerror=()=>rej(r.error||new Error("lecture impossible"));r.readAsDataURL(file);});}
+function aiBuildAchatFromInvoice(j){
+  if(!j||!Array.isArray(j.lignes)||!j.lignes.length)return {ok:false,reason:"no_json"};
+  let fourId="";const fn=((j.fournisseur&&j.fournisseur.nom)||"").toLowerCase().trim();const fe=((j.fournisseur&&j.fournisseur.email)||"").toLowerCase().trim();
+  if(fn||fe){let f=DB.fournisseurs.find(x=>(fe&&(x.email||"").toLowerCase()===fe)||(fn&&(fourLabel(x)||"").toLowerCase()===fn));if(!f&&fn)f=DB.fournisseurs.find(x=>(fourLabel(x)||"").toLowerCase().includes(fn));if(f)fourId=f.id;}
+  const id=Math.max(0,...DB.achats.map(x=>x.id),0)+1;
+  const a={id,statut:"En cours de livraison",lignes:[],justifs:[],date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:today(),fournId:fourId||"",nFacture:j.numero||"",societeId:(socFilter||((DB.societes[0]||{}).id)||""),ville:(attrLabels("Ville")[0]||"Vichy"),emplacement:(attrLabels("Emplacement")[0]||"")};
+  a.ref=achRef(a);
+  const miss=[];
+  (j.lignes||[]).forEach(L=>{const sku=String(L.sku||"").trim(),titre=String(L.titre||"").trim();
+    let m=sku?DB.modeles.find(x=>(x.sku||"").toLowerCase()===sku.toLowerCase()):null;
+    if(!m&&titre){m=DB.modeles.find(x=>(x.fr||"").toLowerCase()===titre.toLowerCase());if(!m){const key=titre.toLowerCase().slice(0,Math.min(18,titre.length));m=DB.modeles.find(x=>key&&(x.fr||"").toLowerCase().includes(key));}}
+    if(!m){miss.push((sku||titre||"?")+" — modèle introuvable");return;}
+    const tval=String(L.taille||"").trim();let v=null;
+    if(tval){v=DB.variantes.find(x=>x.modeleId==m.id&&String(x.taille)===tval);
+      if(!v){const usMap=(DB.grilles["__us"]||{})[m.grille]||{};const euForUs=Object.keys(usMap).find(eu=>String(usMap[eu])===tval);if(euForUs)v=DB.variantes.find(x=>x.modeleId==m.id&&String(x.taille)===String(euForUs));}}
+    if(!v){miss.push((m.fr||sku)+" — taille « "+tval+" » introuvable");return;}
+    const qte=Math.max(1,parseInt(L.qte)||1);const tva=["TVASM","Exonéré","20%"].indexOf(L.tva)>=0?L.tva:"TVASM";
+    const etat=(attrLabels("État du produit")[0]||"Used");
+    for(let k=0;k<qte;k++)a.lignes.push({modeleId:m.id,varianteId:v.id,qte:1,prixHT:parseFloat(L.prix_ht)||0,pv:parseFloat(L.prix_vente_ttc)||0,tva,etat,tag:"Aucun",dispo:0});
+  });
+  if(!a.lignes.length)return {ok:false,reason:"no_match",miss};
+  return {ok:true,a,fourId,miss};
+}
+async function aiCommitAchat(res){DB.achats.push(res.a);logAct("Création","Commande d'achat",res.a.ref+" · importée depuis facture (IA)");await save();openAchat(res.a.id);}
+async function aiExtractInvoice(fileObj){const {data,error}=await sb.functions.invoke("claude-assistant",{body:{file:{media_type:fileObj.media_type||"application/pdf",data:fileObj.data}}});if(error)throw error;if(data&&data.error)throw new Error(data.error);return {j:data&&data.json,text:(data&&data.text)||""};}
 async function aiInvoiceImport(file){
   if(!file)return;const btn=document.getElementById("achAI");const prev=btn?btn.textContent:"";if(btn){btn.textContent="Lecture IA…";btn.disabled=true;}
   try{
     const data64=await _fileToB64(file);
-    const {data,error}=await sb.functions.invoke("claude-assistant",{body:{file:{media_type:file.type||"application/pdf",data:data64}}});
-    if(error)throw error;
-    if(data&&data.error)throw new Error(data.error);
-    const j=data&&data.json;
-    if(!j||!Array.isArray(j.lignes)||!j.lignes.length){alert("Je n'ai pas réussi à extraire de lignes de cette facture.\nVérifie que le fichier est net (PDF ou photo bien cadrée).\n\nDébut de la réponse :\n"+(((data&&data.text)||"")).slice(0,400));return;}
-    let fourId="";const fn=((j.fournisseur&&j.fournisseur.nom)||"").toLowerCase().trim();const fe=((j.fournisseur&&j.fournisseur.email)||"").toLowerCase().trim();
-    if(fn||fe){let f=DB.fournisseurs.find(x=>(fe&&(x.email||"").toLowerCase()===fe)||(fn&&(fourLabel(x)||"").toLowerCase()===fn));if(!f&&fn)f=DB.fournisseurs.find(x=>(fourLabel(x)||"").toLowerCase().includes(fn));if(f)fourId=f.id;}
-    const id=Math.max(0,...DB.achats.map(x=>x.id),0)+1;
-    const a={id,statut:"En cours de livraison",lignes:[],justifs:[],date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:today(),fournId:fourId||"",nFacture:j.numero||"",societeId:(socFilter||((DB.societes[0]||{}).id)||""),ville:(attrLabels("Ville")[0]||"Vichy"),emplacement:(attrLabels("Emplacement")[0]||"")};
-    a.ref=achRef(a);
-    const miss=[];
-    (j.lignes||[]).forEach(L=>{const sku=String(L.sku||"").trim(),titre=String(L.titre||"").trim();
-      let m=sku?DB.modeles.find(x=>(x.sku||"").toLowerCase()===sku.toLowerCase()):null;
-      if(!m&&titre){m=DB.modeles.find(x=>(x.fr||"").toLowerCase()===titre.toLowerCase());if(!m){const key=titre.toLowerCase().slice(0,Math.min(18,titre.length));m=DB.modeles.find(x=>key&&(x.fr||"").toLowerCase().includes(key));}}
-      if(!m){miss.push((sku||titre||"?")+" — modèle introuvable");return;}
-      const tval=String(L.taille||"").trim();let v=null;
-      if(tval){v=DB.variantes.find(x=>x.modeleId==m.id&&String(x.taille)===tval);
-        if(!v){const usMap=(DB.grilles["__us"]||{})[m.grille]||{};const euForUs=Object.keys(usMap).find(eu=>String(usMap[eu])===tval);if(euForUs)v=DB.variantes.find(x=>x.modeleId==m.id&&String(x.taille)===String(euForUs));}}
-      if(!v){miss.push((m.fr||sku)+" — taille « "+tval+" » introuvable");return;}
-      const qte=Math.max(1,parseInt(L.qte)||1);const tva=["TVASM","Exonéré","20%"].indexOf(L.tva)>=0?L.tva:"TVASM";
-      const etat=(attrLabels("État du produit")[0]||"Used");
-      for(let k=0;k<qte;k++)a.lignes.push({modeleId:m.id,varianteId:v.id,qte:1,prixHT:parseFloat(L.prix_ht)||0,pv:parseFloat(L.prix_vente_ttc)||0,tva,etat,tag:"Aucun",dispo:0});
-    });
-    if(!a.lignes.length){alert("Facture lue, mais aucune ligne n'a pu être reliée à un modèle existant.\n\nÀ créer / vérifier :\n- "+miss.join("\n- ")+"\n\nCrée d'abord ces modèles (Catalogue) puis relance, ou ajoute les lignes à la main.");return;}
-    DB.achats.push(a);logAct("Création","Commande d'achat",a.ref+" · importée depuis facture (IA)");await save();openAchat(id);
-    let msg=a.lignes.length+" ligne(s) pré-remplie(s) depuis la facture.";
-    if(!fourId)msg+="\n\n⚠️ Fournisseur non reconnu — choisis-le via « Modifier ».";
-    if(miss.length)msg+="\n\nNon importé ("+miss.length+") :\n- "+miss.join("\n- ");
+    const ex=await aiExtractInvoice({media_type:file.type||"application/pdf",data:data64});
+    const res=aiBuildAchatFromInvoice(ex.j);
+    if(!res.ok){
+      if(res.reason==="no_match")alert("Facture lue, mais aucune ligne n'a pu être reliée à un modèle existant.\n\nÀ créer / vérifier :\n- "+(res.miss||[]).join("\n- ")+"\n\nCrée d'abord ces modèles (Catalogue) puis relance, ou ajoute les lignes à la main.");
+      else alert("Je n'ai pas réussi à extraire de lignes de cette facture.\nVérifie que le fichier est net (PDF ou photo bien cadrée).\n\nDébut de la réponse :\n"+(ex.text||"").slice(0,400));
+      return;
+    }
+    await aiCommitAchat(res);
+    let msg=res.a.lignes.length+" ligne(s) pré-remplie(s) depuis la facture.";
+    if(!res.fourId)msg+="\n\n⚠️ Fournisseur non reconnu — choisis-le via « Modifier ».";
+    if(res.miss.length)msg+="\n\nNon importé ("+res.miss.length+") :\n- "+res.miss.join("\n- ");
     msg+="\n\n➡️ Relis les lignes et les prix, puis clique « Réceptionner » pour mettre en stock.";
     alert(msg);
   }catch(e){
