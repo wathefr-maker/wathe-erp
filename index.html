@@ -988,6 +988,8 @@ if(typeof DB.pays[0]==="string")DB.pays=DB.pays.map((n,i)=>({id:i+1,nom:n,actif:
 DB.pays.forEach(p=>{if(p.actif===undefined)p.actif=1;});
 {const VATBYPAYS={"France":20,"Belgique":21,"Suisse":8.1,"Luxembourg":17,"Allemagne":19,"Italie":22,"Espagne":21,"Pays-Bas":21,"Royaume-Uni":20,"Pologne":23,"États-Unis":0,"Autriche":20,"Irlande":23,"Portugal":23,"Suède":25,"Danemark":25,"Finlande":25.5,"Grèce":24,"Hongrie":27,"Roumanie":19,"Croatie":25,"Bulgarie":20,"Slovaquie":23,"Slovénie":22,"Tchéquie":21,"Lituanie":21,"Lettonie":21,"Estonie":22,"Chypre":19,"Malte":18};DB.pays.forEach(p=>{if(p.taux==null&&VATBYPAYS[p.nom]!=null)p.taux=VATBYPAYS[p.nom];});Object.keys(VATBYPAYS).forEach(function(n){if(!DB.pays.some(p=>String(p.nom||"").toLowerCase()===n.toLowerCase()))DB.pays.push({id:newId(DB.pays),nom:n,taux:VATBYPAYS[n],actif:1});});}
 if(!Array.isArray(DB.journal))DB.journal=[];
+{var _mkC=function(arr){(arr||[]).forEach(function(x){if(x&&!x.createdAt){var t=x.flowstockTime||"";x.createdAt=t?String(t):(String(x.date||"")?(String(x.date)+"T00:00:00"):"");}});};_mkC(DB.achats);_mkC(DB.depots);}
+
 if(!Array.isArray(DB.achats))DB.achats=[];
 if(!Array.isArray(DB.depots))DB.depots=[];
 if(!Array.isArray(DB.expeditions))DB.expeditions=[];
@@ -2453,6 +2455,9 @@ const achFilt={q:"",statut:"",soc:"",four:"",ville:"",sku:"",justif:"",attest:""
 let achPage=1;const ACH_PS=50;
 function achGoPage(p){achPage=p;renderAchats();}
 function achPagerHTML(total){if(total<=1)return"";let h='<div style="display:flex;gap:6px;justify-content:center;align-items:center;flex-wrap:wrap;padding:12px 0">';h+=`<button class="btn" ${achPage<=1?"disabled":""} data-achpg="${achPage-1}" style="padding:4px 10px">‹</button>`;const win=[];for(let i=1;i<=total;i++){if(i===1||i===total||(i>=achPage-2&&i<=achPage+2))win.push(i);}let prev=0;win.forEach(i=>{if(i-prev>1)h+='<span style="padding:0 4px;color:var(--muted)">…</span>';h+=`<button class="btn ${i===achPage?"g":""}" data-achpg="${i}" style="padding:4px 11px">${i}</button>`;prev=i;});h+=`<button class="btn" ${achPage>=total?"disabled":""} data-achpg="${achPage+1}" style="padding:4px 10px">›</button>`;return h+"</div>";}
+// Tri chronologique : date de création réelle si connue, sinon la date saisie.
+// (Les ids sont aléatoires depuis l'anti-collision : ils ne peuvent plus servir à trier.)
+function createdKey(x){if(!x)return "";var c=x.createdAt||x.flowstockTime||"";if(c)return String(c);var d=String(x.date||"");return d?(d+"T00:00:00"):"";}
 function renderAchats(){let list=DB.achats.slice().filter(a=>!cutoffHides(a)&&a.source!=="flowstock");const f=achFilt;
   if(f.q){const q=f.q.toLowerCase();list=list.filter(a=>(a.ref+" "+fourLabel(fourById(a.fournId))).toLowerCase().includes(q));}
   if(f.statut)list=list.filter(a=>a.statut===f.statut);
@@ -2464,7 +2469,7 @@ function renderAchats(){let list=DB.achats.slice().filter(a=>!cutoffHides(a)&&a.
   if(f.attest)list=list.filter(a=>(achJustifType(a)==="Attestation de cession")===(f.attest==="Oui"));
   if(f.d1)list=list.filter(a=>(a.date||"")>=f.d1);
   if(f.d2)list=list.filter(a=>(a.date||"")<=f.d2);
-  list.sort((a,b)=>(b.date||"").localeCompare(a.date||"")||b.id-a.id);
+  list.sort((a,b)=>createdKey(b).localeCompare(createdKey(a)));
   achF_statut.innerHTML='<option value="">Statut</option>'+ACHSTATUTS.map(s=>`<option ${f.statut===s?"selected":""}>${s}</option>`).join("");
   achF_soc.innerHTML='<option value="">Société</option>'+DB.societes.map(s=>`<option value="${s.id}" ${f.soc==s.id?"selected":""}>${esc(s.nom)}</option>`).join("");
   achF_four.innerHTML='<option value="">Fournisseur</option>'+DB.fournisseurs.map(x=>`<option value="${x.id}" ${f.four==x.id?"selected":""}>${esc(fourLabel(x))}</option>`).join("");
@@ -2507,7 +2512,7 @@ function aiBuildAchatFromInvoice(j){
   let fourId="";const fn=((j.fournisseur&&j.fournisseur.nom)||"").toLowerCase().trim();const fe=((j.fournisseur&&j.fournisseur.email)||"").toLowerCase().trim();
   if(fn||fe){let f=DB.fournisseurs.find(x=>(fe&&(x.email||"").toLowerCase()===fe)||(fn&&(fourLabel(x)||"").toLowerCase()===fn));if(!f&&fn)f=DB.fournisseurs.find(x=>(fourLabel(x)||"").toLowerCase().includes(fn));if(f)fourId=f.id;}
   const id=newId(DB.achats);
-  const a={id,statut:"En cours de livraison",lignes:[],justifs:[],date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:today(),fournId:fourId||"",nFacture:j.numero||"",societeId:(socFilter||((DB.societes[0]||{}).id)||""),ville:(attrLabels("Ville")[0]||"Vichy"),emplacement:(attrLabels("Emplacement")[0]||"")};
+  const a={id,statut:"En cours de livraison",lignes:[],justifs:[],createdAt:new Date().toISOString(),date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:today(),fournId:fourId||"",nFacture:j.numero||"",societeId:(socFilter||((DB.societes[0]||{}).id)||""),ville:(attrLabels("Ville")[0]||"Vichy"),emplacement:(attrLabels("Emplacement")[0]||"")};
   a.ref=achRef(a);
   const miss=[];
   (j.lignes||[]).forEach(L=>{const sku=String(L.sku||"").trim(),titre=String(L.titre||"").trim();
@@ -2597,7 +2602,7 @@ function renderJustifs(){
   const miss=DB.achats.filter(a=>(a.factStatut||"Aucune facture")!=="Facture transmise");
   juMeta.innerHTML=`<b>${trans.length}</b> facture(s) transmise(s) &nbsp;·&nbsp; <b>${miss.length}</b> commande(s) sans facture`;
   let list=justifFilt.mode==="Transmises"?trans:(justifFilt.mode==="Manquantes"?miss:DB.achats.slice());
-  list.sort((a,b)=>(b.date||"").localeCompare(a.date||"")||b.id-a.id);
+  list.sort((a,b)=>createdKey(b).localeCompare(createdKey(a)));
   juRows.innerHTML=list.length?list.map(a=>{const ok=a.factStatut==="Facture transmise";return `<tr>
     <td><a href="#" data-vj="${a.id}" style="color:var(--violet);font-weight:700;text-decoration:none">${esc(a.ref)}</a></td>
     <td class="muted">${esc(achDate(a.date))}</td>
@@ -2665,7 +2670,7 @@ async function saveAchatHeader(){
   const four=fourById(selFour);
   const data={date:an_date.value,fournId:+selFour,nFacture:an_fact.value,societeId:+an_soc.value,ville:an_ville.value,emplacement:an_emp.value,attestation:(four.type!=="Professionnel")?1:0};
   if(editAchatId){const a=DB.achats.find(x=>x.id==editAchatId);Object.assign(a,data);a.ref=achRef(a);logAct("Modification","Commande d'achat",a.ref);await save();openAchat(a.id);}
-  else{const id=newId(DB.achats);const a=Object.assign({id,statut:"En cours de livraison",lignes:[],justifs:[]},data);a.ref=achRef(a);DB.achats.push(a);logAct("Création","Commande d'achat",a.ref);await save();openAchat(id);}}
+  else{const id=newId(DB.achats);const a=Object.assign({id,statut:"En cours de livraison",lignes:[],justifs:[],createdAt:new Date().toISOString()},data);if(!a.createdAt)a.createdAt=new Date().toISOString();a.ref=achRef(a);DB.achats.push(a);logAct("Création","Commande d'achat",a.ref);await save();openAchat(id);}}
 
 /* --- FICHE PRODUITS --- */
 let curAchat=null;const vachD=document.getElementById("view-achatD");
@@ -2782,7 +2787,7 @@ function renderDepots(){let list=DB.depots.slice();const f=depFilt;
   if(f.q){const q=f.q.toLowerCase();list=list.filter(d=>(d.ref+" "+fourLabel(fourById(d.fournId))).toLowerCase().includes(q));}
   if(f.statut)list=list.filter(d=>d.statut===f.statut);
   if(f.soc)list=list.filter(d=>d.societeId==f.soc);
-  list.sort((a,b)=>(b.date||"").localeCompare(a.date||"")||b.id-a.id);
+  list.sort((a,b)=>createdKey(b).localeCompare(createdKey(a)));
   depF_statut.innerHTML='<option value="">Statut</option>'+DEPSTATUTS.map(s=>`<option ${f.statut===s?"selected":""}>${s}</option>`).join("");
   depF_soc.innerHTML='<option value="">Société</option>'+DB.societes.map(s=>`<option value="${s.id}" ${f.soc==s.id?"selected":""}>${esc(s.nom)}</option>`).join("");
   depMeta.textContent=`Total : ${list.length} élément(s)`;
@@ -2848,7 +2853,7 @@ async function saveDepotHeader(){
   if(!dn_emp.value)return alert("Choisis un emplacement.");
   const data={date:dn_date.value,fournId:+selDep,societeId:+dn_soc.value,ville:dn_ville.value,emplacement:dn_emp.value,note:dn_note.value};
   if(editDepotId){const d=DB.depots.find(x=>x.id==editDepotId);Object.assign(d,data);d.ref=depRef(d);logAct("Modification","Commande de dépôt",d.ref);await save();openDepot(d.id);}
-  else{const id=newId(DB.depots);const d=Object.assign({id,statut:"En cours de réception",lignes:[],depot:1},data);d.ref=depRef(d);DB.depots.push(d);logAct("Création","Commande de dépôt",d.ref);await save();openDepot(id);}}
+  else{const id=newId(DB.depots);const d=Object.assign({id,statut:"En cours de réception",lignes:[],depot:1,createdAt:new Date().toISOString()},data);if(!d.createdAt)d.createdAt=new Date().toISOString();d.ref=depRef(d);DB.depots.push(d);logAct("Création","Commande de dépôt",d.ref);await save();openDepot(id);}}
 
 /* FICHE PRODUITS */
 let curDepot=null,selDepMod="";const vdepD=document.getElementById("view-depotD");
@@ -2990,7 +2995,7 @@ function renderExpeds(){DB.expeditions.forEach(normExped);let list=DB.expedition
   if(f.fact)list=list.filter(e=>(e.facturee?"Oui":"Non")===f.fact);
   if(f.ret)list=list.filter(e=>(e.retour?"Oui":"Non")===f.ret);
   if(f.soc)list=list.filter(e=>e.societeId==f.soc);
-  list.sort((a,b)=>(b.date||"").localeCompare(a.date||"")||b.id-a.id);
+  list.sort((a,b)=>createdKey(b).localeCompare(createdKey(a)));
   expF_type.innerHTML='<option value="">Type d\'expédition</option>'+EXPTYPES.map(t=>`<option ${f.type===t?"selected":""}>${t}</option>`).join("");
   expF_statut.innerHTML='<option value="">Statut</option>'+EXPSTATUTS.map(s=>`<option ${f.statut===s?"selected":""}>${s}</option>`).join("");
   expF_soc.innerHTML='<option value="">Société</option>'+DB.societes.map(s=>`<option value="${s.id}" ${f.soc==s.id?"selected":""}>${esc(s.nom)}</option>`).join("");
@@ -4305,7 +4310,7 @@ function flowstockImport(txt,silent){
     const a={id:aid,source:"flowstock",date:((p.created_at||"").slice(0,10))||today(),fournId:four.id,societeId:+soc,nFacture:p.reference||"",ville:ville,emplacement:emp,attestation:0,
       statut:cancelled?"Annulée":"Livrée",delivered:cancelled?0:1,lignes:[],justifs:[],
       flowstockId:p.purchase_id,flowstockRef:p.reference||"",flowstockStatus:p.status||"order_placed",flowstockTime:p.created_at||"",
-      customerOrderId:(p.customer_order||{}).id||"",customerOrderNumber:(p.customer_order||{}).number||"",supplierType:(p.supplier||{}).type||"",tracking:p.tracking||null};
+      customerOrderId:(p.customer_order||{}).id||"",customerOrderNumber:(p.customer_order||{}).number||"",supplierType:(p.supplier||{}).type||"",tracking:p.tracking||null,createdAt:(p.created_at||new Date().toISOString())};
     a.ref=achRef(a);
     (p.items||[]).forEach(function(it){
       const modelRef=String(it.sku||"").trim();const sizeD=String(it.size||"").replace(/[^0-9]/g,"");
