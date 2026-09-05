@@ -4191,7 +4191,9 @@ saveArticle.onclick=async()=>{if(!a_taille.value)return alert("Choisis une taill
   const o={varianteId:+a_taille.value,societeId:+a_soc.value,prix:parseFloat(a_prix.value)||0,pv:parseFloat(a_pv.value)||0,tva:a_tva.value,etat:a_etat.value,statut:a_statut.value,date:a_date.value,fourId:a_four.value?+a_four.value:"",ville:a_ville.value,emplacement:a_emp.value,tag:a_tag.value||"Aucun",fact:a_fact.value,commentaire:a_comment.value,dispo:+a_dispo.value,depot:+a_depot.value,refDep:a_refdep.value,maj:today()};
   if(o.statut!=="En Stock")o.dispo=0;
   if(editA)Object.assign(DB.articles.find(x=>x.id==editA),o);else{o.id=newId(DB.articles);o.ref=newRef();o.archived=0;DB.articles.unshift(o);}
-  logAct(editA?"Modification":"Création","Pièce stock",(modeleById(varById(o.varianteId).modeleId).fr)+" "+(varById(o.varianteId).taille));await save();ovA.classList.remove("show");const _aid=editA;renderAll();try{await shopResyncIds([varById(o.varianteId).modeleId]);}catch(_){}if(_aid&&!document.getElementById("view-articleD").classList.contains("hide"))openArticleDetail(_aid);};
+  logAct(editA?"Modification":"Création","Pièce stock",(modeleById(varById(o.varianteId).modeleId).fr)+" "+(varById(o.varianteId).taille));await save();
+  // Répercuter le prix et le libellé sur la fiche caisse, si la pièce y est déjà.
+  try{var _pc=editA?DB.articles.find(function(x){return x.id==editA;}):null;if(_pc)await rzUpdatePieces([_pc]);}catch(_e){}ovA.classList.remove("show");const _aid=editA;renderAll();try{await shopResyncIds([varById(o.varianteId).modeleId]);}catch(_){}if(_aid&&!document.getElementById("view-articleD").classList.contains("hide"))openArticleDetail(_aid);};
 sRows.onclick=async e=>{const va=e.target.closest("[data-va]"),ed=e.target.closest("[data-ea]"),dl=e.target.closest("[data-da]"),dp=e.target.closest("[data-d]"),ra=e.target.closest("[data-ra]"),lb=e.target.closest("[data-lbl]");
   if(lb)return printLabelOne(+lb.dataset.lbl);
   if(va)return openArticleDetail(+va.dataset.va);
@@ -6519,6 +6521,47 @@ async function rzRemoveStock(pieces,opts){
 }
 window.rzRemoveStock=rzRemoveStock;
 
+/* Met à jour la fiche d'une pièce DÉJÀ envoyée en caisse : prix cible, libellé,
+   régime de TVA. La création n'a lieu qu'à la mise en stock ; sans cette mise à
+   jour, un prix saisi après coup restait à 0 dans la caisse et la paire
+   s'affichait à 0,00 € au comptoir. */
+async function rzUpdatePieces(pieces,opts){
+  opts=opts||{};
+  var list=(pieces||[]).filter(function(a){return a&&a.ref&&a.rzInCaisse&&!a.rzOutCaisse;});
+  if(!list.length)return {ok:true,total:0};
+  if(!opts.force&&!rzEnabled())return {ok:true,total:0};
+  try{
+    var r=await sb.functions.invoke("rezomatic-sync",{body:{
+      action:"pushBatch", apply:true, pieces:list.map(rzPiece).filter(Boolean)}});
+    var d=r.data||{};
+    if(r.error||!d.ok){
+      console.warn("[Rezomatic] mise à jour de fiche refusée :",(r.error&&r.error.message)||d.erreur,d);
+      return {ok:false};
+    }
+    try{logAct("Caisse Rezomatic","Fiche mise à jour",list.length+" pièce(s)");}catch(_){}
+    return d;
+  }catch(e){console.warn("[Rezomatic] mise à jour impossible :",e);return {ok:false};}
+}
+window.rzUpdatePieces=rzUpdatePieces;
+
+/* Rattrapage : repousse le prix de toutes les pièces déjà en caisse.
+   rzSyncPrix()  -> simulation   ·   rzSyncPrix({dryRun:false}) -> applique */
+async function rzSyncPrix(opts){
+  opts=opts||{};var dry=(opts.dryRun!==false);
+  var list=(DB.articles||[]).filter(function(a){
+    return a&&!a.archived&&a.rzInCaisse&&!a.rzOutCaisse&&(+a.pv||0)>0;});
+  console.log("%c[Rezomatic] "+(dry?"SIMULATION":"ENVOI")+" — "+list.length+" fiche(s) à mettre à jour","font-weight:bold");
+  if(!list.length||dry){if(dry)console.table(list.slice(0,30).map(function(a){return {ref:a.ref,pv:a.pv};}));return {total:list.length};}
+  var n=0;
+  for(var i=0;i<list.length;i+=50){
+    var d=await rzUpdatePieces(list.slice(i,i+50),{force:true});
+    n+=(d.total||0);console.log("  lot "+(i/50+1)+" : "+(d.total||0)+" fiche(s)");
+  }
+  console.log("Terminé — "+n+" fiche(s) mise(s) à jour.");
+  return {total:n};
+}
+window.rzSyncPrix=rzSyncPrix;
+
 /* Rattrapage : envoie tout le stock en ligne. À lancer une fois, après avoir
    activé la synchro, pour que la caisse reçoive l'existant.
    rzPushStock()               -> simulation
@@ -7028,11 +7071,12 @@ function shopReturnReprice(pieces){
     ov.querySelector("._rpSkip").onclick=function(){close(0);};
     ov.querySelector("._rpOk").onclick=function(){
       var n=0;
+    var _rpMaj=[];
       rows.forEach(function(r){
         var el=ov.querySelector('._rpPv[data-i="'+r.i+'"]');
         var d=ov.querySelector('._rpDispo[data-i="'+r.i+'"]');
         if(el&&el.value!==""){var nv=Math.round((parseFloat(el.value)||0)*100)/100;
-          if(nv!==(+r.a.pv||0)){r.a.pv=nv;r.a.maj=today();n++;}}
+          if(nv!==(+r.a.pv||0)){r.a.pv=nv;r.a.maj=today();n++;_rpMaj.push(r.a);}}
         if(d)r.a.dispo=d.checked?1:0;
         var vl=ov.querySelector('._rpVille[data-i="'+r.i+'"]');
         var em=ov.querySelector('._rpEmp[data-i="'+r.i+'"]');
@@ -7040,6 +7084,9 @@ function shopReturnReprice(pieces){
         if(em&&em.value&&em.value!==r.a.emplacement){r.a.emplacement=em.value;r.a.maj=today();n++;}
       });
       try{if(n)logAct("Remise en vente","Retour",n+" prix cible(s) ajusté(s)");}catch(_){}
+      // Le prix a changé : la fiche caisse doit suivre, sinon la paire y reste
+      // au tarif d'avant le retour.
+      try{if(_rpMaj.length)rzUpdatePieces(_rpMaj);}catch(_e){}
       close(n);
     };
   });
