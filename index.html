@@ -265,6 +265,7 @@
     <div class="item sub" data-view="depots"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12v7a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-7"/><path d="M3 12 6 4h12l3 8M3 12h5l1 2h6l1-2h5"/></svg></span> Commande de dépôt</div>
     <div class="item sub" data-view="deposants"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/><path d="M18 8h4M20 6v4"/></svg></span> Déposants</div>
     <div class="item sub" data-view="flowstock"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-10 0Z"/><path d="M12 15v7"/></svg></span> FlowStock</div>
+    <div class="item sub" data-view="sourcinghub"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-10 0Z"/><path d="M12 15v7"/></svg></span> Sourcing Hub</div>
     <div class="item sub" data-view="justifs"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span> Justificatifs</div>
 
     <div class="navsec">Ventes</div>
@@ -704,6 +705,21 @@
         <thead><tr><th>Référence</th><th>Date</th><th>Fournisseur</th><th>Produits</th><th>Prix</th><th>Commande Shopify</th><th>Statut FlowStock</th><th>Suivi</th><th>Actions</th></tr></thead>
         <tbody id="fsRoot"></tbody></table></div></div>
       <div id="fsPager" style="display:flex;gap:8px;justify-content:center;align-items:center;margin:10px 0"></div>
+    </div>
+
+    <div class="wrap view hide" id="view-sourcinghub">
+      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+        <div style="flex:1"><h1>Sourcing Hub</h1><div class="sub">Commande transmise par le Sourcing Hub (ShoePlatform…) → commande d'achat + mise en stock + rattachement automatique à la vente Shopify (même système que FlowStock)</div></div>
+        <button class="btn" onclick="flowstockReconcile(false)" style="align-self:center">Rattacher aux ventes Shopify</button>
+        <button class="btn v" onclick="shPull(false)" style="align-self:center">Importer depuis le Sourcing Hub</button>
+      </div>
+      <div class="tablecard" style="padding:12px 14px;margin:10px 0"><div class="muted" id="shMeta" style="font-size:13px"></div>
+        <div class="muted" style="font-size:12px;margin-top:4px">Les commandes transmises par le Sourcing Hub sont importées automatiquement (à l'ouverture de l'ERP, puis toutes les 5 minutes). Le bouton ci-dessus force une récupération immédiate.</div></div>
+      <div id="shTodo"></div>
+      <div class="tablecard"><div style="overflow-x:auto"><table>
+        <thead><tr><th>Référence</th><th>Date</th><th>Fournisseur</th><th>Produits</th><th>Prix</th><th>Commande Shopify</th><th>Statut fournisseur</th><th>Suivi</th><th>Actions</th></tr></thead>
+        <tbody id="shRoot"></tbody></table></div></div>
+      <div id="shPager" style="display:flex;gap:8px;justify-content:center;align-items:center;margin:10px 0"></div>
     </div>
 
     <div class="wrap view hide" id="view-vboutique">
@@ -1562,8 +1578,8 @@ function articleModeleSug(){
 function articleModelePick(id){var m=modeleById(id);if(!m)return;var hid=document.getElementById("a_modele"),inp=document.getElementById("a_modeleSearch"),box=document.getElementById("a_modeleSug");hid.value=id;if(inp)inp.value=(m.fr||m.sku||"")+" — "+(m.sku||"");if(box){box.style.display="none";box.innerHTML="";}refreshArticleSizes();}
 function updateStatsBadge(){var b=document.getElementById("statsBadge");if(!b)return;var n=0;try{(DB.modeles||[]).forEach(function(m){if(m&&m.essentiel&&typeof reModelManque==="function"&&reModelManque(m)>0)n++;});}catch(e){}if(n>0){b.textContent=n;b.style.display="";}else{b.style.display="none";}}
 function renderAll(){renderDash();renderModeles();renderStock();
-  try{renderAchats();}catch(e){}try{renderFactures();}catch(e){}try{renderVBoutique();}catch(e){}try{renderShopRows();}catch(e){}try{renderFlowstock();}catch(e){}try{renderExpeds();}catch(e){}try{renderDepots();}catch(e){}try{renderDeposants();}catch(e){}try{renderVentesDep();}catch(e){}try{renderFournisseurs();}catch(e){}try{renderClients();}catch(e){}
-  try{flowstockAutoStart();}catch(e){}try{updateStatsBadge();}catch(e){}
+  try{renderAchats();}catch(e){}try{renderFactures();}catch(e){}try{renderVBoutique();}catch(e){}try{renderShopRows();}catch(e){}try{renderFlowstock();}catch(e){}try{renderSourcingHub();}catch(e){}try{renderExpeds();}catch(e){}try{renderDepots();}catch(e){}try{renderDeposants();}catch(e){}try{renderVentesDep();}catch(e){}try{renderFournisseurs();}catch(e){}try{renderClients();}catch(e){}
+  try{flowstockAutoStart();}catch(e){}try{shAutoStart();}catch(e){}try{updateStatsBadge();}catch(e){}
   try{docusealAutoStart();}catch(e){}
   try{rzWatchStart();}catch(e){}}
 
@@ -2137,7 +2153,7 @@ function renderStock(){
   if(pages>7)pg+=`<span class="muted">… ${pages}</span>`;pg+=`<button ${page>=pages?'disabled':''} data-p="${page+1}">›</button>`;pager.innerHTML=pg;curStockIds=rows.map(a=>a.id);updateSelAll();renderBulkBar();
 }
 
-const CRUMBS={tods:"Statistiques › TODS — Réassort",vinterne:"Vente › Vente interne",vboutique:"Vente › Vente boutique",dash:"Tableau de bord",modeles:"Catalogue Produits › Modèles de produits",stock:"Catalogue Produits › Stock",articleD:"Catalogue Produits › Stock › Fiche produit",fourn:"Tiers › Fournisseurs",cli:"Tiers › Clients",fournD:"Tiers › Fournisseurs › Fiche",cliD:"Tiers › Clients › Fiche",soc:"Administration › Sociétés",gr:"Outils › Grilles de tailles",tags:"Outils › Tags",statuts:"Outils › Statuts de disponibilité",taxes:"Outils › Taxes",attr:"Outils › Attributs",attrord:"Outils › Attributs › Ordre des valeurs",achats:"Achat › Commandes d'achat",achatNew:"Achat › Commandes d'achat › Ajouter",achatD:"Achat › Commande d'achat — produits",justifs:"Achat › Justificatif d'achat",depots:"Achat › Commande de dépôt",depotNew:"Achat › Commande de dépôt › Ajouter",depotD:"Achat › Commande de dépôt — produits",expeds:"Vente › Expéditions",expedNew:"Vente › Expéditions › Ajouter",shopify:"Vente › Vente Shopify",shopifyD:"Vente › Vente Shopify › Commande",factures:"Vente › Facturation",pays:"Outils › Pays",journal:"Outils › Journal d'activité",stats:"Statistiques",deposants:"Dépôt-vente › Déposants",ventesdep:"Dépôt-vente › Ventes dépôt"};
+const CRUMBS={sourcinghub:"Achat › Sourcing Hub",tods:"Statistiques › TODS — Réassort",vinterne:"Vente › Vente interne",vboutique:"Vente › Vente boutique",dash:"Tableau de bord",modeles:"Catalogue Produits › Modèles de produits",stock:"Catalogue Produits › Stock",articleD:"Catalogue Produits › Stock › Fiche produit",fourn:"Tiers › Fournisseurs",cli:"Tiers › Clients",fournD:"Tiers › Fournisseurs › Fiche",cliD:"Tiers › Clients › Fiche",soc:"Administration › Sociétés",gr:"Outils › Grilles de tailles",tags:"Outils › Tags",statuts:"Outils › Statuts de disponibilité",taxes:"Outils › Taxes",attr:"Outils › Attributs",attrord:"Outils › Attributs › Ordre des valeurs",achats:"Achat › Commandes d'achat",achatNew:"Achat › Commandes d'achat › Ajouter",achatD:"Achat › Commande d'achat — produits",justifs:"Achat › Justificatif d'achat",depots:"Achat › Commande de dépôt",depotNew:"Achat › Commande de dépôt › Ajouter",depotD:"Achat › Commande de dépôt — produits",expeds:"Vente › Expéditions",expedNew:"Vente › Expéditions › Ajouter",shopify:"Vente › Vente Shopify",shopifyD:"Vente › Vente Shopify › Commande",factures:"Vente › Facturation",pays:"Outils › Pays",journal:"Outils › Journal d'activité",stats:"Statistiques",deposants:"Dépôt-vente › Déposants",ventesdep:"Dépôt-vente › Ventes dépôt"};
 function vbArticleByCode(code){code=String(code||"").trim();if(!code)return null;return DB.articles.find(a=>String(a.ref)===code&&!a.archived&&a.statut==="En Stock")||DB.articles.find(a=>String(a.ref)===code&&!a.archived)||null;}
 function vbPrefill(){var a=vbArticleByCode(document.getElementById("vb_code").value);var hint=document.getElementById("vb_hint");var pv=document.getElementById("vb_pv");if(!a){hint.textContent="Aucun article avec ce code.";return;}var v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};hint.textContent="Article : "+(m.fr||a.ref)+(v.taille?(" · T"+v.taille):"")+" · régime "+(a.tva||"?")+" · coût "+(a.prix||0)+" €"+((a.statut&&a.statut!=="En Stock")?(" · ⚠ statut : "+a.statut):"");if(!pv.value)pv.value=a.pv||"";}
 /* ============================================================================
@@ -4760,7 +4776,7 @@ function show(view,item){
   // Relève DocuSeal à l'ouverture des écrans où une signature peut arriver.
   if(view==="justifs"||view==="ventesdep"||view==="achats"){try{docusealSync();}catch(e){}}
   if(view==="vboutique"){try{rzCheckVentes();}catch(e){}}
-  if(view==="tods"||view==="stats"){try{renderStats();}catch(e){}}if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="flowstock")renderFlowstock();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="stats")renderStats();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
+  if(view==="tods"||view==="stats"){try{renderStats();}catch(e){}}if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="flowstock")renderFlowstock();if(view==="sourcinghub")renderSourcingHub();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="stats")renderStats();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
 }
 document.querySelectorAll(".item[data-view]").forEach(it=>it.onclick=()=>show(it.dataset.view,it));
 document.querySelectorAll(".ghead[data-group]").forEach(h=>h.onclick=()=>document.getElementById(h.dataset.group).classList.toggle("open"));
@@ -9529,7 +9545,7 @@ function renderFlowstock(){var _b=document.getElementById("fsSyncBtn");if(_b){_b
     el.innerHTML=nameHtml+gridHtml+(function(){try{return fsDupPanelHtml();}catch(e){return "";}})();
   })();
 
-  const list=DB.achats.filter(a=>a.source==="flowstock"&&!cutoffHides(a)).sort(function(x,y){const dx=(x.flowstockTime||x.date||""),dy=(y.flowstockTime||y.date||"");if(dx<dy)return 1;if(dx>dy)return -1;return (y.id||0)-(x.id||0);});
+  const list=DB.achats.filter(a=>a.source==="flowstock"&&!isShAchat(a)&&!cutoffHides(a)).sort(function(x,y){const dx=(x.flowstockTime||x.date||""),dy=(y.flowstockTime||y.date||"");if(dx<dy)return 1;if(dx>dy)return -1;return (y.id||0)-(x.id||0);});
   const per=50,total=list.length,pages=Math.max(1,Math.ceil(total/per));if(_fsPage>=pages)_fsPage=pages-1;if(_fsPage<0)_fsPage=0;const pageList=list.slice(_fsPage*per,_fsPage*per+per);
   const stFR={order_placed:"Commande passée",shipped:"Expédiée (fournisseur)",delivered:"Livrée (fournisseur)",cancelled:"Annulée"};
   root.innerHTML=pageList.length?pageList.map(function(a){
@@ -10033,6 +10049,70 @@ function fsPickLine(o,v,a){
   if(!o)return -1;
   for(let i=0;i<(o.lines||[]).length;i++){if(shopAssignedFor(o.id,i).length<(((o.lines[i]||{}).qty)||1))return i;}
   return -1;   // toutes les lignes de la commande sont déjà servies
+}
+/* ============================================================================
+   SOURCING HUB — même système que FlowStock.
+   Le Sourcing Hub publie ses commandes fournisseurs au FORMAT FLOWSTOCK dans
+   flowstock_cache (ligne 10). On les fait passer dans flowstockImport : même
+   commande d'achat, même mise en stock, même rattachement Shopify par n° de
+   commande, mêmes protections (identifiants déterministes, déduplication,
+   mémoire partagée des achats supprimés). Seul l'onglet d'affichage diffère.
+   ============================================================================ */
+const SH_ROW=10;
+function isShAchat(a){return !!a&&a.source==="flowstock"&&(a.supplierType==="sourcing-hub"||String(a.flowstockId||"").indexOf("sh-")===0);}
+async function shCacheLoad(){try{const r=await sb.from("flowstock_cache").select("data").eq("id",SH_ROW).maybeSingle();if(r.error||!r.data)return null;return r.data.data||null;}catch(_){return null;}}
+let _shAuto=null,_shPullBusy=false,_shPage=0;
+function shAutoStart(){if(_shAuto)return;setTimeout(function(){shPull(true);},2500);_shAuto=setInterval(function(){shPull(true);},300000);}
+async function shPull(auto){
+  if(_shPullBusy){if(!auto)alert("Un import Sourcing Hub est déjà en cours.");return;}
+  var _claimed=await claimTask(101,auto?270000:0);
+  if(!_claimed){if(!auto)alert("Un import Sourcing Hub est en cours sur un autre poste. Réessaie dans quelques secondes.");return;}
+  _shPullBusy=true;
+  const meta=document.getElementById("shMeta");if(!auto&&meta)meta.textContent="Lecture des commandes du Sourcing Hub…";
+  try{
+    const c=await shCacheLoad();
+    const purchases=((c&&c.purchases)||[]).filter(function(p){return p&&p.purchase_id;});
+    if(!auto&&meta)meta.textContent="";
+    if(purchases.length){await fsRefreshAchats();flowstockImport(JSON.stringify({purchases:purchases}),auto);}
+    else if(!auto)alert("Aucune commande reçue du Sourcing Hub pour l'instant.\n\nVérifie dans le Sourcing Hub (Réglages → Maintenance) que la liaison ERP est active.");
+    try{renderSourcingHub();}catch(_){}
+  }catch(e){if(!auto&&meta)meta.textContent="";if(!auto)alert("Erreur Sourcing Hub : "+(e&&e.message?e.message:e));}
+  _shPullBusy=false;
+  try{await finishTask(101);}catch(e){}
+}
+function shGoto(n){_shPage=n;renderSourcingHub();}
+function renderSourcingHub(){
+  const root=document.getElementById("shRoot");if(!root)return;
+  var _wf=watheSocId();
+  if(socFilter&&_wf!=null&&socFilter!=_wf){root.innerHTML='<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">Le Sourcing Hub est rattaché à WATHE. Sélectionne « WATHE » (ou « Toutes les sociétés ») pour voir ses commandes.</td></tr>';var _p0=document.getElementById("shPager");if(_p0)_p0.innerHTML="";return;}
+  const list=DB.achats.filter(a=>isShAchat(a)&&!cutoffHides(a)).sort(function(x,y){const dx=(x.flowstockTime||x.date||""),dy=(y.flowstockTime||y.date||"");if(dx<dy)return 1;if(dx>dy)return -1;return (y.id||0)-(x.id||0);});
+  // modèles créés par ces commandes et encore à compléter : on renvoie vers l'onglet FlowStock (même outil)
+  (function(){var el=document.getElementById("shTodo");if(!el)return;var mids=new Set();list.forEach(function(a){(a.lignes||[]).forEach(function(l){if(l.modeleId!=null)mids.add(l.modeleId);});});
+    var n=(DB.modeles||[]).filter(function(m){if(!m||!mids.has(m.id)||m.source!=="flowstock")return false;var f=String(m.fr||"").trim().toLowerCase(),sk=String(m.sku||"").trim().toLowerCase();return m.needsGrille||!f||f===sk;}).length;
+    el.innerHTML=n?'<div class="tablecard" style="margin:10px 0;border:1px solid #fde68a;background:#fffbeb;padding:12px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:600;color:#92400e">'+n+' modèle(s) à compléter (nom ou grille de tailles)</div><button class="btn" onclick="show(\'flowstock\',document.querySelector(\'.item[data-view=&quot;flowstock&quot;]\'));renderFlowstock();">Compléter dans FlowStock</button></div>':"";})();
+  const per=50,total=list.length,pages=Math.max(1,Math.ceil(total/per));if(_shPage>=pages)_shPage=pages-1;if(_shPage<0)_shPage=0;const pageList=list.slice(_shPage*per,_shPage*per+per);
+  const stFR={order_placed:"Commande passée",shipped:"Expédiée (fournisseur)",delivered:"Livrée (fournisseur)",cancelled:"Annulée"};
+  root.innerHTML=pageList.length?pageList.map(function(a){
+    const four=fourById(a.fournId)||{};
+    const pieces=flowstockPieces(a);const linked=pieces.filter(p=>p.shopifyOrderId).length;
+    const items=(a.lignes||[]).map(function(l){const m=modeleById(l.modeleId)||{},v=varById(l.varianteId)||{};return esc(m.fr||l.rawSku||"?")+' <span class="muted">'+esc((v&&v.id?shopSizeEU(v):"")||l.rawSize||"")+(l.varianteId?"":" · non rattaché")+'</span>';}).join("<br>");
+    const trk=(a.tracking&&a.tracking.number)?('<a href="'+esc(a.tracking.url||"#")+'" target="_blank" style="color:var(--violet)">'+esc(a.tracking.carrier||"")+' '+esc(a.tracking.number)+'</a>'):'<span class="muted">—</span>';
+    const totalPrix=(a.lignes||[]).reduce((s2,l)=>s2+((+l.prixHT||0)*(+l.qte||1)),0);
+    return '<tr>'+
+      '<td><b>'+esc(a.flowstockRef||"—")+'</b><div class="muted" style="font-size:11px">Cmd. achat : '+esc(a.ref)+'</div></td>'+
+      '<td class="muted">'+esc(fsDateTime(a))+'</td>'+
+      '<td>'+esc(four.societe||four.nom||"—")+'</td>'+
+      '<td>'+items+'</td>'+
+      '<td>'+eur(totalPrix)+'</td>'+
+      '<td>'+(a.customerOrderNumber?('<span title="'+(linked>0?"Rattachée à la vente Shopify":"Commande web (pièce pas encore rattachée)")+'" style="display:inline-flex;align-items:center;gap:5px">'+(linked>0?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>':'')+'<b>'+esc(a.customerOrderNumber)+'</b></span>'):'<span class="muted">—</span>')+'</td>'+
+      '<td><span class="badge" style="background:#e0e7ff;color:#3730a3">'+esc(stFR[a.flowstockStatus]||a.flowstockStatus||"—")+'</span></td>'+
+      '<td>'+trk+'</td>'+
+      '<td><div class="act"><button title="Modifier la commande / le produit" onclick="openAchat('+a.id+')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button title="Supprimer la commande et sa paire du stock" onclick="fsDeleteAchat('+a.id+')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button></div></td>'+
+    '</tr>';
+  }).join(""):'<tr><td colspan="9" class="muted" style="text-align:center;padding:22px">Aucune commande Sourcing Hub pour le moment.</td></tr>';
+  const meta=document.getElementById("shMeta");if(meta&&!_shPullBusy)meta.textContent=total+" commande"+(total>1?"s":"")+" Sourcing Hub"+(pages>1?(" · page "+(_shPage+1)+"/"+pages):"");
+  const pg=document.getElementById("shPager");
+  if(pg){var h="";if(pages>1){for(var i=0;i<pages;i++)h+='<button class="btn'+(i===_shPage?" v":"")+'" onclick="shGoto('+i+')">'+(i+1)+'</button>';}pg.innerHTML=h;}
 }
 function flowstockReconcile(silent){
   if(!_shopOrders||!_shopOrders.length){if(!silent)alert("Ouvre d'abord l'onglet « Vente Shopify » pour charger les commandes, puis reviens.");return 0;}
