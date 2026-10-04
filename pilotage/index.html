@@ -242,6 +242,62 @@ body{background:var(--bg,#f8fafc);margin:0}
   color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
 .page{max-width:1240px;margin:0 auto;padding:22px 20px 70px}
 #loginOverlay{display:none}
+
+/* ---- Réassort en cartes ---- */
+.reHead{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.reCount{font-size:14px;color:#334155}
+.reCount b{font-size:16px}
+.reActs{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+.reAdd{position:relative;min-width:250px}
+.reAdd input{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;font-family:inherit}
+.reSugBox{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:30;background:#fff;
+  border:1px solid var(--line);border-radius:11px;box-shadow:0 12px 30px rgba(15,23,42,.14);
+  max-height:290px;overflow-y:auto}
+
+.pcs{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;align-items:start}
+.pc{background:#fff;border:1px solid var(--line);border-radius:15px;padding:16px}
+.pc.urg{border-color:#fcd34d}
+.pc.reg{border-color:#93c5fd;grid-column:1/-1}
+.pcH{display:flex;align-items:flex-start;gap:10px;margin-bottom:13px}
+.pcN{font-size:15px;font-weight:700;line-height:1.3}
+.pcH .bdg{margin-left:auto;white-space:nowrap}
+.pcGear{background:none;border:1px solid var(--line);border-radius:8px;padding:4px 11px;
+  font-size:12px;cursor:pointer;color:var(--muted);font-family:inherit;white-space:nowrap}
+.pcGear:hover{background:#f8fafc;color:#334155}
+.pc.reg .pcGear{border-color:#93c5fd;color:#1d4ed8}
+.pcVide{font-size:12.5px;color:var(--muted);padding:6px 0}
+.pcTools{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:13px;
+  padding-top:13px;border-top:1px solid var(--line)}
+.pcGr{padding:4px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;font-family:inherit}
+.btn.mini{padding:4px 11px;font-size:12px}
+.btn.mini.danger{color:#b91c1c;margin-left:auto}
+
+.bdg{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:700}
+.bdg.warn{background:#fef3c7;color:#92400e}
+.bdg.ok{background:#dcfce7;color:#166534}
+
+.tzs{display:flex;gap:7px;flex-wrap:wrap}
+.tzs.ed{gap:8px}
+.tz{border:1px solid var(--line);border-radius:11px;padding:7px 10px;text-align:center;min-width:56px}
+.tz.ok{background:#f0fdf4;border-color:#bbf7d0}
+.tz.bas{background:#fffbeb;border-color:#fcd34d}
+.tz.vide{background:#fef2f2;border-color:#fecaca}
+.tzT{display:block;font-size:11.5px;color:var(--muted);font-weight:600;white-space:nowrap}
+.tzV{display:block;font-size:15px;font-weight:800;margin-top:1px}
+.tzV i{font-style:normal;font-size:11.5px;color:var(--muted);font-weight:500}
+.tzM{display:block;font-size:11px;font-weight:800;color:#b45309;margin-top:1px}
+.tz.vide .tzM{color:#b91c1c}
+
+.tz.ed{min-width:92px;padding:9px 10px;text-align:left;background:#fafbfc}
+.tz.ed.on{background:#fff;border-color:#bfdbfe}
+.tzChk{display:flex;align-items:center;gap:7px;cursor:pointer}
+.tzChk input{width:15px;height:15px;cursor:pointer;flex:0 0 auto}
+.tz.ed .tzT{font-size:13px;color:#334155;font-weight:700}
+.tzIn{width:100%;margin-top:7px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;
+  font-size:14px;font-weight:700;text-align:center;font-family:inherit}
+.tzSt{display:block;font-size:11px;color:var(--muted);margin-top:4px;text-align:center}
+.tzSt.off{margin-top:7px;font-style:italic}
+@media(max-width:760px){.pcs{grid-template-columns:1fr}.reActs{margin-left:0;width:100%}.reAdd{flex:1}}
 </style>
 </head>
 <body>
@@ -606,50 +662,148 @@ function reModelManque(m){return reModelRows(m).reduce(function(s,r){return s+r.
 function reModelTracked(m){return reModelRows(m).length;}
 
 function reExport(){var lines=[["Produit","SKU","Taille","Cible","En stock","A recommander"]];reRows().forEach(function(r){if(r.manque>0)lines.push([r.m.fr||"",r.m.sku||"",r.size,r.cible,r.st,r.manque]);});if(lines.length<2){alert("Rien à recommander : tout est au niveau (ou au-dessus) de la cible.");return;}var csv=lines.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(";");}).join("\r\n");var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="reassort-tods-"+today()+".csv";document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);}
+/* ---- Réassort en cartes -----------------------------------------------------
+   Une carte par produit essentiel, ses tailles en pastilles. Le tableau à lignes
+   dépliables obligeait à ouvrir chaque produit pour savoir ce qui lui manquait ;
+   ici l'état complet se lit sans un clic, et la couleur porte l'information.
+
+   Deux états par carte :
+   · lecture — seules les tailles suivies, avec stock et cible ;
+   · réglage — toutes les tailles de la grille, pour choisir celles à suivre et
+     fixer leur cible. On y entre par le bouton de la carte, on en sort pareil.
+   Le réglage est un geste de début de saison, pas un geste quotidien : il n'a
+   aucune raison d'encombrer la lecture. */
+
+/* Toutes les tailles de la grille d'un modèle, avec leur état de suivi. */
+function reCardSizes(m){
+  if(!m)return [];
+  var cibles=m.cibles||{};
+  var seen={},out=[];
+  reGridVariants(m).forEach(function(v){
+    var key=String(v.taille==null?"":v.taille).trim();
+    if(!key||seen[key])return;seen[key]=1;
+    var ck=key,on=(cibles[key]!=null);
+    if(!on&&v.eu!=null&&cibles[String(v.eu).trim()]!=null){on=true;ck=String(v.eu).trim();}
+    var cible=on?(+cibles[ck]||0):0;
+    var st=boutiqueStockOfSize(m.id,key);
+    out.push({v:v,key:key,ck:ck,label:vSizeTxt(v)||key,on:on,
+      cible:cible,stock:st,manque:on?Math.max(0,cible-st):0});
+  });
+  return out;
+}
+
+/* Pastille de taille. En lecture, la couleur suffit à dire s'il faut commander. */
+function rePastille(m,s){
+  var cls="tz";
+  if(s.manque>0)cls+=(s.stock===0?" vide":" bas");
+  else cls+=" ok";
+  return '<div class="'+cls+'" title="'+esc(s.label)+' — '+s.stock+' en stock pour une cible de '+s.cible+'">'
+    +'<span class="tzT">'+esc(s.label)+'</span>'
+    +'<span class="tzV">'+s.stock+'<i>/'+s.cible+'</i></span>'
+    +(s.manque>0?('<span class="tzM">+'+s.manque+'</span>'):'')
+    +'</div>';
+}
+
+/* Pastille en mode réglage : cochable, cible éditable. */
+function rePastilleEdit(m,s){
+  var j=reJse(s.on?s.ck:s.key);
+  return '<div class="tz ed'+(s.on?" on":"")+'">'
+    +'<label class="tzChk"><input type="checkbox" '+(s.on?"checked":"")
+      +' onchange="reSizeToggle('+m.id+',\''+j+'\',this.checked)">'
+      +'<span class="tzT">'+esc(s.label)+'</span></label>'
+    +(s.on
+      ?('<input class="tzIn" type="number" min="0" value="'+s.cible+'" '
+        +'onchange="reSetCible('+m.id+',\''+j+'\',this.value)" title="Cible pour cette taille">'
+        +'<span class="tzSt">'+s.stock+' en stock</span>')
+      :'<span class="tzSt off">non suivie</span>')
+    +'</div>';
+}
+
+function reRenderCartes(){
+  var ess=reEssentiels();
+  if(!ess.length)return '<div class="tablecard" style="padding:34px;text-align:center">'
+    +'<div style="font-weight:700;margin-bottom:5px">Aucun produit essentiel</div>'
+    +'<div class="muted" style="font-size:13px">Ajoute un produit ci-dessus, puis règle les tailles que tu veux toujours avoir en rayon.</div></div>';
+
+  // Les produits qui manquent passent devant : c'est ce qu'on vient voir.
+  var tri=ess.slice().sort(function(a,b){
+    var ma=reModelManque(a),mb=reModelManque(b);
+    if(ma!==mb)return mb-ma;
+    return String(a.fr||a.sku||"").localeCompare(String(b.fr||b.sku||""),"fr");
+  });
+
+  return '<div class="pcs">'+tri.map(function(m){
+    var sizes=reCardSizes(m);
+    var suivies=sizes.filter(function(s){return s.on;});
+    var mq=suivies.reduce(function(n,s){return n+s.manque;},0);
+    var reglage=(_reOpen==m.id);
+    var corps;
+    if(reglage){
+      corps='<div class="tzs ed">'+sizes.map(function(s){return rePastilleEdit(m,s);}).join("")+'</div>'
+        +'<div class="pcTools">'
+          +'<button class="btn mini" onclick="reToggleAll('+m.id+',true)">Tout suivre</button>'
+          +'<button class="btn mini" onclick="reToggleAll('+m.id+',false)">Ne rien suivre</button>'
+          +'<select class="pcGr" onchange="reSetGrille('+m.id+',this.value)" title="Grille de tailles suivie">'
+            +reGrilleKeys().map(function(g){
+              var sel=((m.todsGrille||m.grille)===g)?" selected":"";
+              return '<option'+sel+'>'+esc(g)+'</option>';}).join("")
+          +'</select>'
+          +'<button class="btn mini danger" onclick="reRemove('+m.id+')">Retirer des essentiels</button>'
+        +'</div>';
+    }else if(!suivies.length){
+      corps='<div class="pcVide">Aucune taille suivie. Ouvre le réglage pour choisir lesquelles.</div>';
+    }else{
+      corps='<div class="tzs">'+suivies.map(function(s){return rePastille(m,s);}).join("")+'</div>';
+    }
+    return '<div class="pc'+(mq>0?" urg":"")+(reglage?" reg":"")+'">'
+      +'<div class="pcH">'
+        +'<div style="min-width:0"><div class="pcN">'+esc(m.fr||m.sku||"?")+'</div>'
+        +'<div class="muted" style="font-size:11.5px">'+esc(m.sku||"")
+          +(m.marque?(' · '+esc(m.marque)):'')+'</div></div>'
+        +(mq>0?('<span class="bdg warn">+'+acPl(mq,"paire")+'</span>')
+              :(suivies.length?'<span class="bdg ok">au niveau</span>':''))
+        +'<button class="pcGear" onclick="reToggleRow('+m.id+')" title="'
+          +(reglage?"Fermer le réglage":"Régler les tailles et la cible")+'">'
+          +(reglage?'Fermer':'Régler')+'</button>'
+      +'</div>'
+      +corps
+    +'</div>';
+  }).join("")+'</div>';
+}
+
+/* Accord en nombre : « 1 paire » et non « 1 paire(s) ». */
+function acPl(n,sing,plur){return n+" "+(Math.abs(n)>1?(plur||(sing+"s")):sing);}
+
 function renderReassort(){
   var body=document.getElementById("reBody");if(!body)return;
   var ess=reEssentiels();
-  var _dupHtml=(function(){try{return reDupSkuHtml();}catch(e){return "";}})();
-  var totalManque=reRows().reduce(function(s,r){return s+r.manque;},0);
-  var nbSizeManque=reRows().filter(function(r){return r.manque>0;}).length;
-  var card=function(val,lbl,col){return '<div style="flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px"><div style="font-size:26px;font-weight:800;color:'+(col||"var(--ink,#0f172a)")+'">'+val+'</div><div class="muted" style="font-size:12.5px;margin-top:2px">'+lbl+'</div></div>';};
-  var prodRows=ess.map(function(m){
-    var cibles=m.cibles||{};var _trk=reModelTracked(m);var tracked={length:_trk};var manque=reModelManque(m);var open=(_reOpen==m.id);
-    var head='<tr style="cursor:pointer'+(manque>0?';background:#fff8ef':'')+'" onclick="reToggleRow('+m.id+')">'
-      +'<td style="width:22px;text-align:center;color:var(--muted)">'+(open?'▾':'▸')+'</td>'
-      +'<td class="lib" style="font-weight:600">'+esc(m.fr||m.sku||"?")+'</td><td class="sku">'+esc(m.sku||"")+'</td>'
-      +'<td style="text-align:center">'+(tracked.length?tracked.length+' taille(s)':'<span class="muted">à configurer</span>')+'</td>'
-      +'<td style="text-align:center">'+(manque>0?('<span class="badge" style="background:#fef3c7;color:#92400e;font-weight:700">+'+manque+'</span>'):('<span class="badge" style="background:var(--green-soft,#dcfce7);color:#166534">OK</span>'))+'</td>'
-      +'<td style="text-align:right" onclick="event.stopPropagation()"><button class="iconbtn" title="Retirer" onclick="reRemove('+m.id+')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></td></tr>';
-    if(!open)return head;
-    var vars=reGridVariants(m);
-    var _seenD={};var trows=vars.length?vars.map(function(v){var key=String(v.taille==null?"":v.taille).trim();var ck=key;var on=(cibles[key]!=null);if(!on&&v.eu!=null&&cibles[String(v.eu).trim()]!=null){on=true;ck=String(v.eu).trim();}var cible=+cibles[ck]||0;var st=boutiqueStockOfSize(m.id,key);var mq=Math.max(0,cible-st);if(on){if(_seenD[ck])return "";_seenD[ck]=1;}var bg=on?(mq>0?"#fef2f2":"#f0fdf4"):"";
-      return '<tr style="border-bottom:1px solid #eef2f7'+(bg?";background:"+bg:"")+'">'
-        +'<td style="width:48px;text-align:center;padding:13px 12px"><input type="checkbox" style="width:17px;height:17px;cursor:pointer" '+(on?"checked":"")+' onchange="reSizeToggle('+m.id+',\''+reJse(key)+'\',this.checked)"></td>'
-        +'<td style="padding:13px 12px;font-weight:600;font-size:14px">'+esc(vSizeTxt(v))+'</td>'
-        +'<td style="text-align:center;padding:13px 12px">'+(on?'<input type="number" min="0" value="'+cible+'" style="width:66px;text-align:center;border-radius:8px" onchange="reSetCible('+m.id+',\''+reJse(key)+'\',this.value)">':'<span class="muted">—</span>')+'</td>'
-        +'<td style="text-align:center;padding:13px 12px;font-weight:700;font-size:15px">'+st+'</td>'
-        +'<td style="text-align:center;padding:13px 12px">'+(on?(mq>0?'<span style="display:inline-block;background:#fee2e2;color:#b91c1c;font-weight:700;padding:5px 16px;border-radius:20px">+'+mq+' à commander</span>':'<span style="display:inline-block;background:#dcfce7;color:#166534;font-weight:700;padding:5px 16px;border-radius:20px">✓ OK</span>'):'<span class="muted">non suivie</span>')+'</td></tr>';}).join(""):'<tr><td colspan="5" class="muted" style="padding:18px;text-align:center">Ce produit n\'a pas de grille de tailles. Assigne-lui une grille dans « Modèles de produits ».</td></tr>';
-    var panel='<tr class="reAcc"><td colspan="6" style="padding:0;background:#fafbfc"><div style="padding:4px 8px 12px"><table style="width:100%;font-size:13px;border-collapse:collapse"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em"><th style="width:48px"></th><th style="text-align:left;padding:8px 12px">Taille</th><th style="text-align:center;padding:8px 12px">Stock cible</th><th style="text-align:center;padding:8px 12px">Stock réel</th><th style="text-align:center;padding:8px 12px">À recommander</th></tr></thead><tbody>'+trows+'</tbody></table></div></td></tr>';
-    return head+panel;
-  }).join("");
-  body.innerHTML=_dupHtml
-    +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">'
-      +card(ess.length,"Produits essentiels")
-      +card(totalManque,"Pièces à recommander",totalManque>0?"#b45309":"#16a34a")
-      +card(nbSizeManque,"Tailles en manque",nbSizeManque>0?"#b45309":"#16a34a")
+  var dup=(function(){try{return reDupSkuHtml();}catch(e){return "";}})();
+  var rows=reRows();
+  var totalManque=rows.reduce(function(s,r){return s+r.manque;},0);
+  var nbTailles=rows.filter(function(r){return r.manque>0;}).length;
+
+  body.innerHTML=dup
+    +'<div class="reHead">'
+      +'<div class="reCount">'
+        +(totalManque>0
+          ?('<b>'+acPl(totalManque,"paire")+'</b> à commander sur '+acPl(nbTailles,"taille")
+            +', '+acPl(ess.length,"produit")+' suivi'+(ess.length>1?"s":""))
+          :(ess.length?('<b>Tout est au niveau</b> · '+acPl(ess.length,"produit")+' suivi'+(ess.length>1?"s":""))
+                      :'Aucun produit suivi pour l\'instant'))
+      +'</div>'
+      +'<div class="reActs">'
+        +'<div class="reAdd">'
+          +'<input id="reAddSearch" autocomplete="off" placeholder="Ajouter un produit — nom ou SKU…" '
+            +'oninput="reAddSug()" onfocus="reAddSug()">'
+          +'<div id="reAddSug" class="reSugBox" style="display:none"></div>'
+        +'</div>'
+        +'<button class="btn" onclick="reAdd()">Ajouter</button>'
+        +(totalManque>0?'<button class="btn v" onclick="reExport()">Exporter la commande</button>':'')
+      +'</div>'
     +'</div>'
-    +'<div class="tablecard" style="margin-bottom:16px;padding:16px 18px">'
-      +'<div style="font-weight:700;margin-bottom:12px">Ajouter un produit essentiel</div>'
-      +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'
-        +'<div style="position:relative;flex:1;min-width:260px"><label class="muted" style="font-size:12px;display:block;margin-bottom:4px">Produit (nom ou SKU)</label><input id="reAddSearch" autocomplete="off" placeholder="Ex. Samba, ou B75806…" oninput="reAddSug()" onblur="setTimeout(function(){var b=document.getElementById(\'reAddSug\');if(b)b.style.display=\'none\';},200)" style="width:100%;box-sizing:border-box;border-radius:12px"><div id="reAddSug" style="position:absolute;left:0;right:0;top:100%;margin-top:2px;z-index:30;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.14);max-height:260px;overflow:auto;display:none"></div></div>'
-        +'<button class="btn v" onclick="reAdd()" style="height:40px">+ Ajouter</button>'
-      +'</div><div class="muted" style="font-size:12px;margin-top:8px">Une fois ajouté, clique sur le produit dans la liste pour dérouler ses tailles et choisir celles à suivre.</div></div>'
-    +'<div class="tablecard"><div style="padding:14px 18px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)"><span>Produits essentiels</span><span style="display:flex;align-items:center;gap:12px">'+(totalManque>0?('<span style="color:#b45309;font-weight:700;font-size:13px">'+totalManque+' pièce(s) à recommander</span>'):(ess.length?'<span style="color:#16a34a;font-weight:700;font-size:13px">Tout est au niveau ✓</span>':''))+'<button class="btn" onclick="reExport()"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg> Exporter (CSV)</button></span></div>'
-      +'<div style="overflow-x:auto"><table><thead><tr><th></th><th>Produit</th><th>SKU</th><th style="text-align:center">Tailles suivies</th><th style="text-align:center">À recommander</th><th></th></tr></thead><tbody>'
-      +(prodRows||'<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Aucun produit essentiel. Ajoute un produit ci-dessus, puis clique dessus pour choisir ses tailles.</td></tr>')
-      +'</tbody></table></div></div>';
+    +reRenderCartes();
 }
+
 function reToggleAll(id,on){var m=modeleById(id);if(!m)return;var vars=reGridVariants(m);m.cibles=m.cibles||{};if(on){vars.forEach(function(v){var k=String(v.taille);if(m.cibles[k]==null)m.cibles[k]=1;});}else{vars.forEach(function(v){delete m.cibles[String(v.taille)];});}save();renderReassort();}
 
 /* ---------- Démarrage ---------- */
