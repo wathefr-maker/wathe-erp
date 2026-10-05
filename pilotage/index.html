@@ -333,14 +333,15 @@ body{background:var(--bg,#f8fafc);margin:0}
   font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit}
 .nav button.on{background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(15,23,42,.1)}
 
-/* ---- Argent dormant ---- */
+/* ---- Blocs communs aux écrans d'analyse ---- */
 .adCard{background:#fff;border:1px solid var(--line);border-radius:14px;margin-bottom:16px;overflow:hidden}
 .adH{display:flex;align-items:flex-start;gap:14px;padding:15px 18px 13px;border-bottom:1px solid var(--line)}
 .adHt{font-size:14.5px;font-weight:700}
-.adHs{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:2px;max-width:70ch}
+.adHs{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:2px;max-width:72ch}
 .adH>button{margin-left:auto;flex:0 0 auto}
 .adH>div:first-child{min-width:0}
 .adVide{padding:28px 18px;text-align:center;color:var(--muted);font-size:13px}
+.adPlus{padding:11px 18px;font-size:12px;color:var(--muted);background:#f8fafc}
 
 /* Rangée d'indicateurs : quatre chiffres, pas un de plus. */
 .adKpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px;margin-bottom:16px}
@@ -351,41 +352,11 @@ body{background:var(--bg,#f8fafc);margin:0}
 .adTv{font-size:25px;font-weight:800;margin-top:5px;line-height:1.15;font-variant-numeric:tabular-nums}
 .adTs{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45}
 
-/* Barre empilée : rampe d'une seule teinte, du clair au foncé dans l'ordre des
-   tranches. Plus c'est foncé, plus c'est coincé. Les couleurs d'alerte restent
-   réservées aux verdicts, pour qu'elles gardent leur sens. */
-.adBar{display:flex;gap:2px;height:38px;margin:16px 18px 0;border-radius:8px;overflow:hidden}
-.adSeg{display:flex;align-items:center;justify-content:center;min-width:3px}
-.adSeg span{font-size:11.5px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.22)}
-.adSeg.s0{background:#86b6ef}.adSeg.s0 span{color:#0d366b;text-shadow:none}
-.adSeg.s1{background:#5598e7}
-.adSeg.s2{background:#2a78d6}
-.adSeg.s3{background:#184f95}
-.adSeg.s4{background:#cbd5e1}.adSeg.s4 span{color:#475569;text-shadow:none}
-.adLgs{display:flex;flex-wrap:wrap;gap:8px 22px;padding:14px 18px 16px}
-.adLg{display:flex;align-items:center;gap:7px;font-size:12.5px}
-.adLg b{font-variant-numeric:tabular-nums}
-.adLgT{color:#334155}
-.adPt{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
-.adPt.s0{background:#86b6ef}.adPt.s1{background:#5598e7}
-.adPt.s2{background:#2a78d6}.adPt.s3{background:#184f95}.adPt.s4{background:#cbd5e1}
-
-/* Rayons et pièces : mêmes lignes que le réassort, pour que la page se lise d'un
-   seul geste de haut en bas. */
-.adR,.adD{display:grid;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid #f1f5f9}
-.adR{grid-template-columns:minmax(150px,1.5fr) repeat(5,minmax(76px,1fr)) minmax(92px,auto)}
-.adD{grid-template-columns:minmax(190px,2fr) repeat(3,minmax(96px,1fr))}
-.adR:last-child,.adD:last-child{border-bottom:0}
-.adR:hover,.adD:hover{background:#fcfdfe}
-.adR.bad{box-shadow:inset 3px 0 0 #ef4444}
-.adRn,.adDn{font-size:13.5px;font-weight:700;min-width:0}
-.adRv,.adDv{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
-.adRv.bad,.adDv.bad{color:#b91c1c}
+/* Valeur d'une colonne, et sa légende en dessous. */
+.adRv{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.adRv.bad{color:#b91c1c}
 .adRv.ok{color:#166534}
-.adRi{text-align:right}
 .adRs{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:2px;line-height:1.35}
-.adDorm{color:#b45309;font-weight:700}
-.adPlus{padding:11px 18px;font-size:12px;color:var(--muted);background:#f8fafc}
 
 .adBdg{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:800;
   font-variant-numeric:tabular-nums}
@@ -393,29 +364,48 @@ body{background:var(--bg,#f8fafc);margin:0}
 .adBdg.warn{background:#fef3c7;color:#92400e}
 .adBdg.bad{background:#fee2e2;color:#b91c1c}
 .adBdg.neu{background:#f1f5f9;color:#64748b}
-.adTv .adBdg{font-size:11.5px;vertical-align:middle;margin-left:4px}
 
 /* Réglages */
 .adFoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:2px 2px 10px}
 .adNote{font-size:12px;color:var(--muted)}
-.adRg .adSrs{padding:14px 18px 4px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px 22px}
-.adSr{display:flex;align-items:center;gap:10px;font-size:12.5px;flex-wrap:wrap}
-.adSr>span{flex:1 1 150px;font-weight:600}
-.adSr label,.adSg label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
-.adSr input,.adSg input[type=number]{width:62px;padding:4px 7px;border:1px solid var(--line);
-  border-radius:7px;font-size:13px;font-weight:700;text-align:center;font-family:inherit}
-.adSg{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:14px 18px 16px;
-  margin-top:10px;border-top:1px solid var(--line)}
-.adSg input[type=number]{width:74px}
-.adChk{cursor:pointer}
-.adChk input{width:15px;height:15px;cursor:pointer}
+.adSg{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:15px 18px 17px}
+.adSg label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.adSg input[type=number]{width:74px;padding:4px 7px;border:1px solid var(--line);border-radius:7px;
+  font-size:13px;font-weight:700;text-align:center;font-family:inherit}
+.btn.mini{padding:4px 11px;font-size:12px}
+.btn.mini.danger{color:#b91c1c}
+
+/* ---- Modèles : garder ou couper ---- */
+.amFs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.amF{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 13px;
+  font-size:12.5px;font-family:inherit;cursor:pointer;color:#475569}
+.amF b{font-variant-numeric:tabular-nums}
+.amF:hover{background:#f8fafc}
+.amF.on{border-color:#0f172a;background:#0f172a;color:#fff}
+.amF.bad{border-color:#fecaca;color:#b91c1c}
+.amF.bad.on{background:#b91c1c;border-color:#b91c1c;color:#fff}
+.amF.warn{border-color:#fde68a;color:#92400e}
+.amF.warn.on{background:#b45309;border-color:#b45309;color:#fff}
+.amF.ok{border-color:#bbf7d0;color:#166534}
+.amF.ok.on{background:#166534;border-color:#166534;color:#fff}
+
+.amR{display:grid;align-items:center;gap:14px;padding:12px 18px 6px;
+  grid-template-columns:minmax(170px,1.6fr) repeat(5,minmax(78px,1fr)) minmax(92px,auto)}
+.amR.bad{box-shadow:inset 3px 0 0 #ef4444}
+.amR.warn{box-shadow:inset 3px 0 0 #f59e0b}
+.amR.ok{box-shadow:inset 3px 0 0 #22c55e}
+.amR.neu{box-shadow:inset 3px 0 0 #cbd5e1}
+.amRn{font-size:13.5px;font-weight:700;min-width:0}
+.amRv2{text-align:right}
+/* La raison du verdict, sous la ligne : sans elle, l'écran ordonne sans expliquer. */
+.amRp{padding:0 18px 12px 21px;font-size:11.5px;color:var(--muted);
+  border-bottom:1px solid #f1f5f9;line-height:1.45}
+.amRs>.amRp:last-child{border-bottom:0}
 
 @media(max-width:900px){
-  .adR{grid-template-columns:1fr 1fr;gap:10px}
-  .adRn{grid-column:1/-1}
-  .adRi{text-align:left}
-  .adD{grid-template-columns:1fr 1fr;gap:10px}
-  .adDn{grid-column:1/-1}
+  .amR{grid-template-columns:1fr 1fr;gap:10px}
+  .amRn{grid-column:1/-1}
+  .amRv2{text-align:left}
 }
 </style>
 </head>
@@ -449,17 +439,17 @@ body{background:var(--bg,#f8fafc);margin:0}
 <div class="page" id="app" style="display:none">
   <div class="nav">
     <button id="navRe" class="on" onclick="setVue('reassort')">Réassort</button>
-    <button id="navAd" onclick="setVue('dormant')">Argent dormant</button>
+    <button id="navAd" onclick="setVue('modeles')">Modèles</button>
   </div>
   <div id="vue-reassort">
     <h1 style="margin:0">Réassort</h1>
     <div class="sub">Les modèles que la boutique garde toujours en rayon, et ce qu'il manque pour tenir la cible.</div>
     <div id="reBody" style="margin-top:18px"></div>
   </div>
-  <div id="vue-dormant" style="display:none">
-    <h1 style="margin:0">Argent dormant</h1>
-    <div class="sub">Où est coincé ton capital, et ce que chaque euro immobilisé rapporte en un an.</div>
-    <div id="adBody" style="margin-top:18px"></div>
+  <div id="vue-modeles" style="display:none">
+    <h1 style="margin:0">Modèles</h1>
+    <div class="sub">Garder ou couper, référence par référence — et ce que ça libère pour commander autre chose.</div>
+    <div id="amBody" style="margin-top:18px"></div>
   </div>
 </div>
 
@@ -684,7 +674,7 @@ function remplirSocietes(){
   sel.innerHTML='<option value="">Toutes les sociétés</option>'
     +(DB.societes||[]).map(function(s){return '<option value="'+s.id+'">'+esc(s.nom||("Société "+s.id))+'</option>';}).join("");
   sel.value=socFilter||"";
-  sel.onchange=function(){socFilter=sel.value||"";reStockInvalider();renderReassort();if(_vue==="dormant")renderArgentDormant();};
+  sel.onchange=function(){socFilter=sel.value||"";reStockInvalider();renderReassort();if(_vue==="modeles")renderModeles();};
 }
 
 /* ---------- Modules repris de l'ERP ---------- */
@@ -1014,83 +1004,12 @@ var _vue="reassort";
 function setVue(v){
   _vue=v;
   document.getElementById("vue-reassort").style.display=(v==="reassort")?"":"none";
-  document.getElementById("vue-dormant").style.display=(v==="dormant")?"":"none";
+  document.getElementById("vue-modeles").style.display=(v==="modeles")?"":"none";
   document.getElementById("navRe").className=(v==="reassort")?"on":"";
-  document.getElementById("navAd").className=(v==="dormant")?"on":"";
-  if(v==="dormant")renderArgentDormant();
+  document.getElementById("navAd").className=(v==="modeles")?"on":"";
+  if(v==="modeles")renderModeles();
 }
-/* ============================================================================
-   ARGENT DORMANT
-   ----------------------------------------------------------------------------
-   Une boutique ne meurt pas d'un mauvais chiffre d'affaires, elle meurt de
-   capital coincé. Cet écran répond à une seule question : « j'ai des euros à
-   remettre en stock, où est-ce que je les mets ? » — et son revers, « où est-ce
-   que je n'en remets plus ».
-
-   Trois partis pris, qui expliquent tous les calculs qui suivent :
-
-   1. Le dépôt-vente est EXCLU par défaut. Une pièce en dépôt appartient au
-      déposant : elle occupe du rayon, elle n'immobilise pas un euro. La compter
-      gonflerait la valeur du stock et écraserait tous les ratios. On peut la
-      réintégrer d'un clic pour raisonner en place occupée plutôt qu'en argent.
-
-   2. FlowStock est EXCLU, sans option. C'est du dropshipping : la pièce est
-      commandée une fois le client servi. Elle ne dort jamais, et sa marge n'a
-      aucune contrepartie investie — la laisser ici créerait du rendement sorti
-      de nulle part.
-
-   3. La rotation seule ne veut rien dire. Un euro peut bien travailler en
-      tournant vite avec peu de marge, ou lentement avec beaucoup. Ce qui se
-      juge, c'est le produit des deux : taux de marge × rotation, c'est-à-dire la
-      marge dégagée par euro immobilisé et par an. En dessous de 1, l'euro de
-      stock rapporte moins de 100 % l'an — avec un loyer et de la trésorerie
-      sortie d'avance, ça ne tient pas.
-   ========================================================================== */
-
-/* Les seuils sont des repères de départ, pas une vérité : ils sont modifiables
-   et rangés dans le navigateur. L'écran affiche toujours la médiane RÉELLE à
-   côté du seuil, parce que c'est en les comparant qu'on les ajuste. */
-var AD_DEFAUT={
-  bornes:[60,120,180],        // découpage des tranches d'âge, en jours
-  partMaxVieux:0.15,          // part tolérée de la valeur au-delà de la 3e borne
-  indiceMin:1.0,              // € de marge par € immobilisé : plancher
-  indiceBon:2.0,              // € de marge par € immobilisé : confortable
-  fenetre:365,                // fenêtre de ventes servant à la rotation
-  avecDepot:false,
-  // Délais d'écoulement par rayon : [sain, alerte] en jours.
-  seuils:{
-    "Sneakers · Neuf":[60,120],
-    "Sneakers · Occasion":[90,180],
-    "Maroquinerie · Neuf":[150,300],
-    "Maroquinerie · Occasion":[150,300],
-    "Textile · Neuf":[75,150],
-    "Textile · Occasion":[90,180]
-  },
-  seuilDefaut:[90,180]
-};
-var AD=null;
-function adCfg(){
-  if(AD)return AD;
-  AD=JSON.parse(JSON.stringify(AD_DEFAUT));
-  // Le stockage local peut être refusé (navigation privée) : on s'en passe.
-  try{
-    var brut=localStorage.getItem("wathe.ad.seuils");
-    if(brut){var o=JSON.parse(brut);Object.keys(o||{}).forEach(function(k){AD[k]=o[k];});}
-  }catch(e){}
-  return AD;
-}
-function adCfgSet(cle,val){
-  var c=adCfg();c[cle]=val;
-  try{localStorage.setItem("wathe.ad.seuils",JSON.stringify(c));}catch(e){}
-  renderArgentDormant();
-}
-function adCfgReset(){
-  AD=null;
-  try{localStorage.removeItem("wathe.ad.seuils");}catch(e){}
-  renderArgentDormant();
-}
-
-/* ---------- Couche de données (reprise du module d'analyse) ---------------- */
+/* ---------- Couche de données (commune aux deux écrans) ---------------- */
 
 /* Neuf ou seconde main. La liste d'attributs contient « Très bon état », « Bon
    état »… qui sont tous de l'occasion : seul ce qui commence par « Neuf » est du
@@ -1144,408 +1063,440 @@ function acIndexRefs(){
   return idx;
 }
 
-var _adExclus={stock:0,ventes:0,depot:0,depotValeur:0};
 
-/* Le stock que TON argent finance, à aujourd'hui. */
-function adStock(){
-  var c=adCfg(), out=[], fs=acFlowstockIds();
-  _adExclus.stock=0;_adExclus.depot=0;_adExclus.depotValeur=0;
+/* ============================================================================
+   GARDER OU COUPER — modèle par modèle
+   ----------------------------------------------------------------------------
+   L'écran précédent raisonnait par rayon. C'était la bonne maille pour répartir
+   un budget une fois par trimestre, et la mauvaise pour décider quoi commander :
+   trois vieilles références chères suffisaient à écraser la moyenne de tout un
+   rayon où le reste tournait très bien.
+
+   Ici, une ligne par modèle, jugé seul. Une référence morte ne peut plus tirer
+   ses voisines vers le bas.
+
+   Le chiffre central n'est PAS le rendement : il arrive trop tard, il faut avoir
+   vendu et margé pour le calculer. C'est le TAUX D'ÉCOULEMENT À 90 JOURS — sur
+   ce qui est entré en stock, quelle part est partie dans ses trois premiers
+   mois. Assez tôt pour agir pendant qu'il reste de la marchandise à écouler sans
+   brader ; assez long pour ne pas réagir à du bruit.
+
+   Le seuil n'est pas le même pour tous : il se déduit de la marge du modèle.
+   Une Spezial achetée 60 € qui laisse 31,58 € de marge doit écouler la moitié de
+   ses entrées en trois mois pour rentabiliser l'argent qu'elle immobilise. Une
+   référence à grosse marge a le droit d'être plus lente, et le calcul le dit
+   tout seul — plutôt qu'un seuil unique plaqué sur des produits qui n'ont rien
+   à voir.
+
+   Enfin, un modèle qui vend peu parce qu'il n'y avait plus de tailles n'est pas
+   mauvais, il est AFFAMÉ. Le compter comme un échec ferait couper les futurs
+   best-sellers et garderait ceux que personne n'a jamais demandés. D'où le
+   calcul des jours sans stock, qui suspend le jugement.
+   ========================================================================== */
+
+var AM_DEFAUT={
+  fenetre:365,       // profondeur d'analyse, en jours
+  jours:90,          // la fenêtre d'épreuve d'une pièce
+  rMin:1.0,          // rendement visé : plancher
+  rBon:1.5,          // rendement visé : confortable
+  minPieces:3,       // en dessous, pas assez d'historique pour juger
+  ruptureMax:0.30    // part de jours sans stock au-delà de laquelle on suspend
+};
+var AM=null;
+function amCfg(){
+  if(AM)return AM;
+  AM=JSON.parse(JSON.stringify(AM_DEFAUT));
+  try{
+    var brut=localStorage.getItem("wathe.am.seuils");
+    if(brut){var o=JSON.parse(brut);Object.keys(o||{}).forEach(function(k){AM[k]=o[k];});}
+  }catch(e){}
+  return AM;
+}
+function amCfgSet(cle,val){
+  var c=amCfg();c[cle]=val;
+  try{localStorage.setItem("wathe.am.seuils",JSON.stringify(c));}catch(e){}
+  renderModeles();
+}
+function amCfgReset(){
+  AM=null;
+  try{localStorage.removeItem("wathe.am.seuils");}catch(e){}
+  renderModeles();
+}
+
+/* ---------- Outils ---------- */
+function amJour(s){var t=new Date(String(s).slice(0,10)+"T00:00:00");
+  return isNaN(t.getTime())?null:Math.round(t.getTime()/86400000);}
+function amMoins(n){var d=new Date();d.setDate(d.getDate()-n);return isoD(d);}
+function amPct(x){return (x==null)?"—":(Math.round(x*1000)/10).toString().replace(".",",")+" %";}
+function amNum(x,d){return (x==null)?"—":(Math.round(x*Math.pow(10,d||0))/Math.pow(10,d||0)).toString().replace(".",",");}
+function amEur(x){return Math.round(+x||0).toLocaleString("fr-FR")+" €";}
+
+/* Date et marge de la PREMIÈRE vente de chaque pièce, toutes périodes confondues :
+   il faut la date de vente de chaque pièce pour mesurer son délai, même si elle
+   est partie avant la fenêtre d'analyse.
+   Les pièces reprises par un avoir sont retirées : elles ne sont pas vendues. */
+function amVentesParPiece(){
+  var refs=acIndexRefs(), out={}, annulees={};
+  (DB.factures||[]).forEach(function(f){
+    if(!f||!f.lines)return;
+    var dt=String(f.date||"").slice(0,10); if(!dt)return;
+    // Cession interne : la pièce change de société, elle n'est pas vendue.
+    if(f.source==="expedition"&&f.viInternal)return;
+    var avoir=(f.type==="avoir");
+    (f.lines||[]).forEach(function(l){
+      (l.refs||[]).forEach(function(ref){
+        var k=String(ref), a=refs[k]; if(!a)return;
+        if(avoir){annulees[k]=1;return;}
+        var cout=lineCost(l,a);
+        var sp=saleSplit(+l.puTTC||0,cout,l.tva||a.tva);
+        var cur=out[k];
+        if(cur&&cur.date<=dt)return;            // on garde la première
+        out[k]={date:dt, ht:sp.ca, cout:cout, marge:r2(sp.ca-cout)};
+      });
+    });
+  });
+  Object.keys(annulees).forEach(function(k){delete out[k];});
+  return out;
+}
+
+/* Jours pendant lesquels le modèle n'avait RIEN en stock, sur la fenêtre.
+   On repart des mouvements : +1 à l'entrée d'une pièce, −1 à sa vente. Le
+   balayage se fait jour par jour sur la fenêtre — quelques centaines
+   d'itérations par modèle, et aucune subtilité d'intervalles à se tromper. */
+function amJoursSansStock(evts, stockDebut, jDebut, jFin){
+  var delta={};
+  evts.forEach(function(e){
+    var k=e.j-jDebut;
+    if(k>0&&k<=(jFin-jDebut))delta[k]=(delta[k]||0)+e.v;
+  });
+  var n=stockDebut, zero=0;
+  for(var k=0;k<=(jFin-jDebut);k++){
+    n+=(delta[k]||0);
+    if(n<=0)zero++;
+  }
+  return zero;
+}
+
+var _amExclus={flowstock:0,depot:0};
+
+/* Toute la page se calcule ici. */
+function amModeles(){
+  var c=amCfg(), vIdx=amVentesParPiece(), fs=acFlowstockIds();
+  var jFin=amJour(today()), jDeb=jFin-(c.fenetre-1);
+  var finCohorte=amJour(amMoins(c.jours));            // entrée au plus tard ici
+  var debutCohorte=amJour(amMoins(c.fenetre+c.jours)); // et au plus tôt là
+  _amExclus.flowstock=0;_amExclus.depot=0;
+
+  var parM={};
+  var obtenir=function(mid,m){
+    return parM[mid]||(parM[mid]={id:mid,m:m,
+      titre:(m.fr||m.sku||"?"), sku:(m.sku||""), marque:(m.marque||"Sans marque"),
+      segment:acFamille(m)+" · ",
+      stock:0, valeur:0, ageMax:null,
+      cohorte:0, cohorteOk:0, delais:[],
+      vendues:0, marge:0, ratios:[], ratiosTheo:[],
+      vies:[], aUnePiece:false});
+  };
+
   (DB.articles||[]).forEach(function(a){
-    if(!a||a.archived||!inStock(a))return;
+    if(!a||a.archived)return;
     if(socFilter&&a.societeId!=socFilter)return;
-    if(a.achatId!=null&&fs[String(a.achatId)]){_adExclus.stock++;return;}
-    if(a.depot){
-      _adExclus.depot++;_adExclus.depotValeur+=(+a.prix||0);
-      if(!c.avecDepot)return;
+    if(a.achatId!=null&&fs[String(a.achatId)]){_amExclus.flowstock++;return;}
+    // Le dépôt n'immobilise pas ton argent : il ne se juge pas au rendement.
+    if(a.depot){_amExclus.depot++;return;}
+    var v=varById(a.varianteId); if(!v||v.id==null||v.modeleId==null)return;
+    var m=modeleById(v.modeleId)||{};
+    var o=obtenir(v.modeleId,m);
+    o.segment=acFamille(m)+" · "+acEtat(a);
+    o.aUnePiece=true;
+
+    var jE=amJour(a.date);
+    var vente=vIdx[String(a.ref)]||null;
+    if(!vente&&a.statut==="Vendu"&&a.dateVente){
+      // Vente enregistrée sur la pièce sans facture retrouvée : la date suffit
+      // pour le délai, la marge restera inconnue.
+      vente={date:String(a.dateVente).slice(0,10),ht:null,cout:(+a.prix||0),marge:null};
     }
-    var v=varById(a.varianteId)||{};
-    var m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
-    var fam=acFamille(m), et=acEtat(a);
-    out.push({a:a,m:m,
-      segment:fam+" · "+et, famille:fam, etat:et,
-      marque:pieceMarque(a), titre:(m.fr||m.sku||a.ref||"?"),
-      cout:(+a.prix||0), pv:(+a.pv||0), depot:!!a.depot,
-      age:acDelai(a,today())});
+    var jV=vente?amJour(vente.date):null;
+
+    // --- la vie de la pièce : entrée, sortie. Sert aux jours sans stock.
+    if(jE!=null)o.vies.push({e:jE,v:(jV!=null&&jV>=jE)?jV:null});
+
+    // --- stock d'aujourd'hui
+    if(!vente&&inStock(a)){
+      o.stock++; o.valeur+=(+a.prix||0);
+      var age=acDelai(a,today());
+      if(age!=null&&(o.ageMax==null||age>o.ageMax))o.ageMax=age;
+      // Marge théorique, en secours quand le modèle n'a encore rien vendu.
+      var pv=+a.pv||0, pa=+a.prix||0;
+      if(pv>0&&pa>0){
+        var spt=saleSplit(pv,pa,a.tva);
+        if(spt.ca>pa)o.ratiosTheo.push((spt.ca-pa)/pa);
+      }
+    }
+
+    // --- cohorte : les pièces qui ont EU leurs 90 jours pour se vendre
+    if(jE!=null&&jE<=finCohorte&&jE>=debutCohorte){
+      o.cohorte++;
+      if(jV!=null&&(jV-jE)<=c.jours)o.cohorteOk++;
+      if(jV!=null)o.delais.push(jV-jE);
+    }
+
+    // --- ventes de la fenêtre, pour le rendement
+    if(jV!=null&&jV>=jDeb&&jV<=jFin){
+      o.vendues++;
+      if(vente.marge!=null){
+        o.marge+=vente.marge;
+        if(vente.cout>0)o.ratios.push(vente.marge/vente.cout);
+      }
+    }
+  });
+
+  var an=365/c.fenetre;
+  var out=[];
+  Object.keys(parM).forEach(function(k){
+    var o=parM[k];
+    if(!o.aUnePiece)return;
+    if(!o.stock&&!o.vendues&&!o.cohorte)return;   // référence sans vie : hors sujet
+
+    o.ecoul=(o.cohorte>0)?(o.cohorteOk/o.cohorte):null;
+    o.delaiMedian=acMediane(o.delais);
+    /* La marge rapportée au COÛT, et non au prix de vente : c'est elle qui dit
+       combien d'euros rapporte un euro engagé, donc elle qui fixe le seuil. */
+    o.margeCout=acMediane2(o.ratios);
+    if(o.margeCout==null)o.margeCout=acMediane2(o.ratiosTheo);
+    o.rendement=(o.valeur>0&&o.marge>0)?r2(o.marge*an/o.valeur):null;
+
+    /* La rupture se mesure à partir de la PREMIÈRE entrée du modèle, pas du
+       début de la fenêtre : avant d'avoir été acheté une première fois, un
+       modèle n'était pas en rupture, il n'existait pas. Compter ces jours-là
+       faisait passer toutes les références récentes pour affamées. */
+    var jPrem=o.vies.reduce(function(n,x){return (n==null||x.e<n)?x.e:n;},null);
+    var jD=(jPrem!=null&&jPrem>jDeb)?jPrem:jDeb;
+    var evts=[],debut=0;
+    o.vies.forEach(function(x){
+      evts.push({j:x.e,v:1});
+      if(x.v!=null)evts.push({j:x.v,v:-1});
+      if(x.e<=jD&&(x.v==null||x.v>jD))debut++;
+    });
+    var jours=amJoursSansStock(evts,debut,jD,jFin);
+    o.joursSansStock=jours;
+    o.jourSuivis=(jFin-jD+1);
+    o.rupture=o.jourSuivis>0?(jours/o.jourSuivis):0;
+
+    o.sMin=amSeuilEcoul(o.margeCout,c.rMin,c.jours);
+    o.sBon=amSeuilEcoul(o.margeCout,c.rBon,c.jours);
+    var V=amVerdict(o);
+    o.verdict=V;
+    out.push(o);
+  });
+
+  /* Ce qu'il faut arbitrer passe en premier : on ouvre cet écran pour agir, pas
+     pour se féliciter. À verdict égal, le plus mauvais écoulement d'abord. */
+  out.sort(function(a,b){
+    if(a.verdict.rang!==b.verdict.rang)return a.verdict.rang-b.verdict.rang;
+    var ea=(a.ecoul==null?9:a.ecoul), eb=(b.ecoul==null?9:b.ecoul);
+    if(ea!==eb)return ea-eb;
+    return b.valeur-a.valeur;
   });
   return out;
 }
 
-/* Les ventes de la fenêtre, une ligne par pièce vendue. Sert à deux choses :
-   la rotation (par le coût des marchandises sorties) et le délai d'écoulement
-   réellement constaté. */
-function adVentes(jours){
-  var d0=new Date();d0.setDate(d0.getDate()-(jours-1));
-  var from=isoD(d0), to=today();
-  var idx=acIndexRefs(), fs=acFlowstockIds(), out=[];
-  _adExclus.ventes=0;
-  (DB.factures||[]).forEach(function(f){
-    if(!f||!f.lines)return;
-    var dt=String(f.date||"").slice(0,10);
-    if(!dt||dt<from||dt>to)return;
-    if(socFilter&&f.societeId!=socFilter)return;
-    /* Une cession interne n'est pas une vente : la même pièce serait comptée
-       deux fois, à la cession puis à la vente réelle. */
-    if(f.source==="expedition"&&f.viInternal)return;
-    var sign=(f.type==="avoir")?-1:1;
-    (f.lines||[]).forEach(function(l){
-      (l.refs||[]).forEach(function(ref){
-        var a=idx[String(ref)];if(!a)return;
-        if(a.achatId!=null&&fs[String(a.achatId)]){_adExclus.ventes++;return;}
-        /* Le dépôt suit la même règle que le stock : si son capital ne compte
-           pas, sa sortie ne doit pas compter non plus, sinon la rotation se
-           calculerait sur des ventes sans stock en face. */
-        if(a.depot&&!adCfg().avecDepot)return;
-        var v=varById(a.varianteId)||{};
-        var m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
-        var ttc=+l.puTTC||0, cost=lineCost(l,a);
-        /* La marge se prend sur le CA HT. Elle était calculée sur le TTC contre
-           un coût HT, ce qui la gonflait de toute la TVA — jusqu'à vingt points
-           de taux de marge sur une vente en régime normal. */
-        var sp=saleSplit(ttc,cost,l.tva||a.tva);
-        var fam=acFamille(m), et=acEtat(a);
-        out.push({a:a,m:m,date:dt,sign:sign,
-          ttc:r2(ttc*sign), ht:r2(sp.ca*sign), cout:r2(cost*sign), marge:r2((sp.ca-cost)*sign),
-          segment:fam+" · "+et, famille:fam, etat:et,
-          marque:pieceMarque(a), titre:(m.fr||m.sku||a.ref||"?"),
-          jours:acDelai(a,dt)});
-      });
-    });
-  });
-  return {from:from,to:to,jours:jours,lignes:out};
+/* Médiane sur des décimales : acMediane arrondit, ce qui est bon pour des jours
+   et faux pour un ratio de marge. */
+function acMediane2(arr){
+  if(!arr||!arr.length)return null;
+  var a=arr.slice().sort(function(x,y){return x-y;});
+  var i=Math.floor(a.length/2);
+  return a.length%2?a[i]:((a[i-1]+a[i])/2);
 }
 
-/* ---------- Calculs -------------------------------------------------------- */
-
-function adSeuil(segment){
-  var c=adCfg();
-  return c.seuils[segment]||c.seuilDefaut;
+/* Part des entrées qu'il faut écouler en « jours » pour atteindre le rendement
+   visé. Démonstration : rendement = (ventes/an ÷ stock) × (marge ÷ coût), donc
+   ventes/stock = rendement ÷ (marge/coût), ramené à la durée de l'épreuve.
+   Borné : une marge délirante produirait sinon un seuil absurde. */
+function amSeuilEcoul(margeCout,objectif,jours){
+  if(!(margeCout>0))return null;
+  var s=objectif/((365/jours)*margeCout);
+  return Math.max(0.10,Math.min(0.95,s));
 }
 
-/* Tranches d'âge. Le libellé se déduit des bornes, pour qu'il suive quand on
-   les change au lieu d'être écrit en dur quelque part. */
-function adTranches(){
-  var b=adCfg().bornes;
-  return [{cle:"t0",lib:"0 – "+b[0]+" j",max:b[0]},
-          {cle:"t1",lib:b[0]+" – "+b[1]+" j",max:b[1]},
-          {cle:"t2",lib:b[1]+" – "+b[2]+" j",max:b[2]},
-          {cle:"t3",lib:"plus de "+b[2]+" j",max:Infinity},
-          {cle:"tx",lib:"âge inconnu",max:null}];
-}
-function adTrancheDe(age){
-  if(age==null)return "tx";
-  var b=adCfg().bornes;
-  if(age<b[0])return "t0";
-  if(age<b[1])return "t1";
-  if(age<b[2])return "t2";
-  return "t3";
-}
-
-/* Tout l'écran se calcule ici, en une passe sur le stock et une sur les ventes :
-   le rendu n'a plus qu'à mettre en forme. */
-function adCalcul(){
-  var c=adCfg();
-  var stock=adStock(), V=adVentes(c.fenetre);
-
-  var total=0, ages=[], parTranche={}, parSeg={}, dormantes=[];
-  adTranches().forEach(function(t){parTranche[t.cle]={valeur:0,nb:0};});
-
-  var seg=function(k){
-    return parSeg[k]||(parSeg[k]={cle:k,nb:0,valeur:0,ages:[],
-      vn:0,vca:0,vmarge:0,vcout:0,vjours:[],dormNb:0,dormValeur:0});
-  };
-
-  stock.forEach(function(r){
-    total+=r.cout;
-    if(r.age!=null)ages.push(r.age);
-    var t=parTranche[adTrancheDe(r.age)];t.valeur+=r.cout;t.nb++;
-    var s=seg(r.segment);s.nb++;s.valeur+=r.cout;if(r.age!=null)s.ages.push(r.age);
-    var alerte=adSeuil(r.segment)[1];
-    if(r.age!=null&&r.age>alerte){
-      s.dormNb++;s.dormValeur+=r.cout;
-      dormantes.push({r:r,alerte:alerte,retard:r.age-alerte,
-        // Le coût de portage : des euros multipliés par des jours. C'est ce qui
-        // classe vraiment, pas l'âge seul — 2 000 € bloqués 200 jours pèsent plus
-        // que 80 € bloqués 600 jours.
-        poids:r.cout*r.age});
-    }
-  });
-
-  V.lignes.forEach(function(r){
-    var s=seg(r.segment);
-    s.vn+=r.sign;s.vca+=r.ht;s.vmarge+=r.marge;s.vcout+=r.cout;
-    if(r.sign>0&&r.jours!=null)s.vjours.push(r.jours);
-  });
-
-  var an=365/c.fenetre;
-  Object.keys(parSeg).forEach(function(k){
-    var s=parSeg[k];
-    s.ageMedian=acMediane(s.ages);
-    s.delaiMedian=acMediane(s.vjours);
-    s.seuil=adSeuil(k);
-    /* Rotation = coût des marchandises sorties sur l'année ÷ valeur du stock.
-       Faute d'historique de stock, c'est le stock d'AUJOURD'HUI qui sert de
-       dénominateur : une approximation, honnête dans un sens — un stock gonflé
-       par des invendus fait baisser la rotation, ce qui est exactement le
-       signal qu'on cherche. */
-    s.rotation=(s.valeur>0)?r2(s.vcout*an/s.valeur):null;
-    s.tauxMarge=(s.vca>0)?(s.vmarge/s.vca):null;
-    /* L'indice se calcule DIRECTEMENT : euros de marge dégagés sur un an, divisés
-       par les euros immobilisés. Il valait « taux de marge × rotation », ce qui
-       mélangeait deux conventions — la rotation se mesure au coût, le taux de
-       marge au prix de vente — et sortait un chiffre environ deux fois trop bas.
-       Le produit des deux colonnes affichées ne redonne donc pas l'indice, et
-       c'est normal : ce sont trois mesures, pas une décomposition. */
-    s.indice=(s.valeur>0&&s.vca>0)?r2(s.vmarge*an/s.valeur):null;
-    s.partDorm=(s.valeur>0)?(s.dormValeur/s.valeur):0;
-  });
-
-  var segs=Object.keys(parSeg).map(function(k){return parSeg[k];})
-    .sort(function(a,b){return b.valeur-a.valeur;});
-
-  dormantes.sort(function(a,b){return b.poids-a.poids;});
-
-  // Les mêmes agrégats, toutes familles confondues.
-  var vcout=0,vca=0,vmarge=0,vjours=[];
-  V.lignes.forEach(function(r){vcout+=r.cout;vca+=r.ht;vmarge+=r.marge;
-    if(r.sign>0&&r.jours!=null)vjours.push(r.jours);});
-  var rotation=(total>0)?r2(vcout*an/total):null;
-  var tauxMarge=(vca>0)?(vmarge/vca):null;
-
-  return {
-    stock:stock, ventes:V, total:r2(total), nb:stock.length,
-    ageMedian:acMediane(ages), delaiMedian:acMediane(vjours),
-    rotation:rotation, tauxMarge:tauxMarge,
-    indice:(total>0&&vca>0)?r2(vmarge*an/total):null,
-    tranches:parTranche, segments:segs, dormantes:dormantes,
-    valeurDormante:r2(dormantes.reduce(function(n,d){return n+d.r.cout;},0)),
-    partVieux:(total>0)?(parTranche.t3.valeur/total):0
-  };
+function amVerdict(o){
+  var c=amCfg();
+  if(o.cohorte<c.minPieces)
+    return {cls:"neu",txt:"trop jeune",rang:3,
+      pourquoi:"Moins de "+c.minPieces+" pièces ont eu leurs "+c.jours+" jours d'épreuve."};
+  /* Plus de stock et plus une vente sur la fenêtre : la référence est déjà
+     sortie du rayon. L'annoncer « affamée », c'est demander de réassortir
+     quelque chose qu'on a volontairement arrêté. */
+  if(!o.stock&&!o.vendues)
+    return {cls:"neu",txt:"arrêté",rang:3,
+      pourquoi:"Plus de stock et aucune vente sur la fenêtre : la référence est sortie du rayon."};
+  if(o.rupture>c.ruptureMax)
+    return {cls:"warn",txt:"affamé",rang:2,
+      pourquoi:"Sans stock "+amPct(o.rupture)+" du temps : il n'a pas eu sa chance. Réassortis avant de juger."};
+  if(!(o.margeCout>0))
+    return {cls:"bad",txt:"marge nulle",rang:0,
+      pourquoi:"Vendu sans marge, ou prix de vente non renseigné."};
+  if(o.ecoul>=o.sBon)
+    return {cls:"ok",txt:"monter",rang:5,
+      pourquoi:"Au-dessus du seuil confortable ("+amPct(o.sBon)+"). Tu peux prendre plus profond."};
+  if(o.ecoul>=o.sMin)
+    return {cls:"ok",txt:"reprendre",rang:4,
+      pourquoi:"Au-dessus du seuil de rentabilité ("+amPct(o.sMin)+"). Reprends à l'identique."};
+  if(o.ecoul>=o.sMin/2)
+    return {cls:"warn",txt:"réduire",rang:1,
+      pourquoi:"Sous le seuil de "+amPct(o.sMin)+". Reprends, mais moins profond et sur moins de tailles."};
+  return {cls:"bad",txt:"couper",rang:0,
+    pourquoi:"Très loin du seuil de "+amPct(o.sMin)+". Cette place en rayon vaut mieux ailleurs."};
 }
 
-/* ---------- Rendu ---------------------------------------------------------- */
+/* ---------- Rendu ---------- */
 
-function adPct(x){return (x==null)?"—":(Math.round(x*1000)/10).toString().replace(".",",")+" %";}
-function adNum(x,d){return (x==null)?"—":(Math.round(x*Math.pow(10,d||0))/Math.pow(10,d||0)).toString().replace(".",",");}
-function adJours(n){return (n==null)?"—":acPl(n,"jour");}
-/* Arrondi à l'euro : à ce niveau de lecture, les centimes sont du bruit. */
-function adEur(x){return Math.round(+x||0).toLocaleString("fr-FR")+" €";}
+var _amFiltre="";
+function amFiltre(v){_amFiltre=(_amFiltre===v)?"":v;renderModeles();}
+var _amReglages=false;
+function amToggleReglages(){_amReglages=!_amReglages;renderModeles();}
 
-/* « aVendu » n'est pas un détail : un rayon qui immobilise du capital et n'a
-   RIEN vendu de l'année n'a pas un indice « indisponible », il a le pire indice
-   de l'écran. Le classer en gris neutre le rendait invisible — exactement le
-   contraire de ce que cet écran doit faire. */
-function adVerdict(indice,aVendu,aStock){
-  var c=adCfg();
-  if(indice==null){
-    if(aStock&&!aVendu)return {cls:"bad",txt:"aucune vente"};
-    return {cls:"neu",txt:"rien à juger"};
-  }
-  if(indice>=c.indiceBon)return {cls:"ok",txt:"bon"};
-  if(indice>=c.indiceMin)return {cls:"warn",txt:"correct"};
-  return {cls:"bad",txt:"insuffisant"};
-}
-
-/* Rangée d'indicateurs : les quatre chiffres qui décident. */
-function adTuiles(R){
-  var c=adCfg();
-  var vd=adVerdict(R.indice,(R.tauxMarge!=null),(R.total>0));
-  var alertePart=(R.partVieux>c.partMaxVieux);
+function amTuiles(L){
+  var c=amCfg();
+  var par=function(t){return L.filter(function(o){return o.verdict.txt===t;});};
+  var cap=function(a){return a.reduce(function(n,o){return n+o.valeur;},0);};
+  var couper=par("couper").concat(par("marge nulle")), reduire=par("réduire"), affames=par("affamé");
+  var rends=L.map(function(o){return o.rendement;}).filter(function(x){return x!=null;});
   return '<div class="adKpi">'
-    +'<div class="adT"><div class="adTl">Capital immobilisé</div>'
-      +'<div class="adTv">'+adEur(R.total)+'</div>'
-      +'<div class="adTs">'+acPl(R.nb,"pièce")+' en stock propre</div></div>'
-    +'<div class="adT'+(alertePart?" bad":"")+'"><div class="adTl">Dont plus de '+c.bornes[2]+' jours</div>'
-      +'<div class="adTv">'+adEur(R.tranches.t3.valeur)+'</div>'
-      +'<div class="adTs">'+adPct(R.partVieux)+' du capital · repère : moins de '+adPct(c.partMaxVieux)+'</div></div>'
-    +'<div class="adT"><div class="adTl">Âge médian du stock</div>'
-      +'<div class="adTv">'+adJours(R.ageMedian)+'</div>'
-      +'<div class="adTs">délai d\'écoulement constaté : '+adJours(R.delaiMedian)+'</div></div>'
-    +'<div class="adT'+(vd.cls==="bad"?" bad":(vd.cls==="ok"?" ok":""))+'">'
-      +'<div class="adTl">Marge par euro immobilisé</div>'
-      +'<div class="adTv">'+adNum(R.indice,2)+' <span class="adBdg '+vd.cls+'">'+vd.txt+'</span></div>'
-      +'<div class="adTs">'+adEur(R.indice==null?0:R.indice)+' de marge HT par an, pour 1 € en stock</div></div>'
+    +'<div class="adT"><div class="adTl">Modèles suivis</div>'
+      +'<div class="adTv">'+L.length+'</div>'
+      +'<div class="adTs">'+amEur(cap(L))+' immobilisés en stock propre</div></div>'
+    +'<div class="adT'+(couper.length?" bad":"")+'"><div class="adTl">À couper</div>'
+      +'<div class="adTv">'+couper.length+'</div>'
+      +'<div class="adTs">'+amEur(cap(couper))+' à récupérer pour autre chose</div></div>'
+    +'<div class="adT"><div class="adTl">À réduire</div>'
+      +'<div class="adTv">'+reduire.length+'</div>'
+      +'<div class="adTs">'+amEur(cap(reduire))+' à alléger, sans sortir le modèle</div></div>'
+    +'<div class="adT"><div class="adTl">Affamés</div>'
+      +'<div class="adTv">'+affames.length+'</div>'
+      +'<div class="adTs">en rupture plus de '+amPct(c.ruptureMax)+' du temps — à réassortir</div></div>'
   +'</div>';
 }
 
-/* Répartition par âge : une seule barre empilée, parce qu'il n'y a qu'un tout à
-   découper. La rampe va du clair au foncé dans l'ordre des tranches — plus c'est
-   foncé, plus c'est coincé ; les couleurs d'alerte restent réservées aux verdicts. */
-function adFrise(R){
-  var ts=adTranches(), total=R.total||0;
-  if(total<=0)return "";
-  var seg=ts.map(function(t,i){
-    var v=R.tranches[t.cle].valeur, p=v/total;
-    if(v<=0)return "";
-    var large=(p>=0.12);
-    return '<div class="adSeg s'+i+'" style="flex:'+p+' 1 0" '
-      +'title="'+esc(t.lib)+' — '+adEur(v)+' ('+adPct(p)+'), '+acPl(R.tranches[t.cle].nb,"pièce")+'">'
-      +(large?('<span>'+adPct(p)+'</span>'):'')+'</div>';
+function amBarres(L){
+  var ordres=["couper","marge nulle","réduire","affamé","trop jeune","arrêté","reprendre","monter"];
+  var cls={"couper":"bad","marge nulle":"bad","réduire":"warn","affamé":"warn",
+           "trop jeune":"neu","arrêté":"neu","reprendre":"ok","monter":"ok"};
+  var items=ordres.map(function(t){
+    var n=L.filter(function(o){return o.verdict.txt===t;}).length;
+    if(!n)return "";
+    var on=(_amFiltre===t);
+    return '<button class="amF '+cls[t]+(on?" on":"")+'" onclick="amFiltre(\''+t+'\')">'
+      +esc(t)+' <b>'+n+'</b></button>';
   }).join("");
-  var leg=ts.map(function(t,i){
-    var e=R.tranches[t.cle];
-    if(e.nb<=0)return "";
-    return '<div class="adLg"><span class="adPt s'+i+'"></span>'
-      +'<span class="adLgT">'+esc(t.lib)+'</span>'
-      +'<b>'+adEur(e.valeur)+'</b>'
-      +'<span class="muted">'+adPct(e.valeur/total)+' · '+acPl(e.nb,"pièce")+'</span></div>';
-  }).join("");
-  return '<div class="adCard">'
-    +'<div class="adH"><div class="adHt">Où dort l\'argent</div>'
-      +'<div class="adHs">Valeur d\'achat du stock, par ancienneté d\'entrée.</div></div>'
-    +'<div class="adBar">'+seg+'</div>'
-    +'<div class="adLgs">'+leg+'</div>'
-  +'</div>';
-}
-
-/* Un rayon par ligne. C'est ici que se décide le budget : l'indice compare des
-   choses incomparables (une paire à 90 € et un sac à 1 200 €) sur la seule base
-   qui vaille, ce que chaque euro rapporte en un an. */
-function adParRayon(R){
-  if(!R.segments.length)return "";
-  var lignes=R.segments.map(function(s){
-    var vd=adVerdict(s.indice,(s.tauxMarge!=null),(s.valeur>0));
-    var lent=(s.delaiMedian!=null&&s.delaiMedian>s.seuil[1]);
-    var ok=(s.delaiMedian!=null&&s.delaiMedian<=s.seuil[0]);
-    return '<div class="adR'+(vd.cls==="bad"?" bad":"")+'">'
-      +'<div class="adRn">'+esc(s.cle)
-        +'<span class="adRs">'+acPl(s.nb,"pièce")
-        +(s.dormNb?(' · <b class="adDorm">'+acPl(s.dormNb,"dormante")+'</b>'):'')+'</span></div>'
-      +'<div class="adRv">'+adEur(s.valeur)+'<span class="adRs">'
-        +(R.total>0?adPct(s.valeur/R.total):"—")+' du capital</span></div>'
-      +'<div class="adRv">'+adJours(s.ageMedian)+'<span class="adRs">âge médian</span></div>'
-      +'<div class="adRv'+(lent?" bad":(ok?" ok":""))+'">'+adJours(s.delaiMedian)
-        +'<span class="adRs">écoulement · seuil '+s.seuil[1]+' j</span></div>'
-      +'<div class="adRv">'+adPct(s.tauxMarge)+'<span class="adRs">marge HT / CA HT</span></div>'
-      +'<div class="adRv'+((s.tauxMarge==null&&s.valeur>0)?' bad':'')+'">'+(s.tauxMarge==null?'0':adNum(s.rotation,2))+'<span class="adRs">rotation/an</span></div>'
-      +'<div class="adRi"><span class="adBdg '+vd.cls+'">'+(s.indice==null?'—':adNum(s.indice,2))+'</span>'
-        +'<span class="adRs">'+esc(vd.txt)+'</span></div>'
+  return '<div class="amFs">'+items
+    +(_amFiltre?'<button class="amF" onclick="amFiltre(\'\')">tout afficher</button>':'')
     +'</div>';
-  }).join("");
-  return '<div class="adCard">'
-    +'<div class="adH"><div class="adHt">Rendement par rayon</div>'
-      +'<div class="adHs">L\'indice est la marge HT dégagée en un an par euro immobilisé. '
-        +'Au-dessus de '+adNum(adCfg().indiceBon,2)+' c\'est confortable, en dessous de '
-        +adNum(adCfg().indiceMin,2)+' l\'euro travaille mal. Marge et rotation sont donnés à '
-        +'côté pour dire d\'où vient le résultat — leur produit ne redonne pas l\'indice, '
-        +'ils ne se mesurent pas sur la même base.</div></div>'
-    +'<div class="adRs2">'+lignes+'</div>'
-  +'</div>';
 }
 
-/* Les pièces à traiter, classées par coût de portage et non par âge : ce sont des
-   euros × des jours. Un sac à 2 000 € arrêté depuis 200 jours coûte plus cher
-   qu'un t-shirt à 15 € oublié depuis trois ans. */
-function adListeDormantes(R){
-  var n=R.dormantes.length;
-  if(!n)return '<div class="adCard"><div class="adH"><div class="adHt">Les pièces qui dorment</div></div>'
-    +'<div class="adVide">Aucune pièce au-delà de son seuil d\'alerte. Le stock est sain.</div></div>';
-  var max=25, liste=R.dormantes.slice(0,max);
-  var lignes=liste.map(function(d){
-    var r=d.r;
-    var marge=(r.pv>0&&r.cout>0)?(r.pv-r.cout):null;
-    return '<div class="adD">'
-      +'<div class="adDn">'+esc(r.titre)
-        +'<span class="adRs">'+esc(r.marque)+' · '+esc(r.segment)
-        +(r.depot?' · <b>dépôt</b>':'')+'</span></div>'
-      +'<div class="adDv bad">'+acPl(r.age,"jour")+'<span class="adRs">+'
-        +acPl(d.retard,"jour")+' au-delà du seuil</span></div>'
-      +'<div class="adDv">'+adEur(r.cout)+'<span class="adRs">immobilisé</span></div>'
-      +'<div class="adDv">'+(r.pv>0?adEur(r.pv):"—")
-        +'<span class="adRs">'+(marge!=null?("marge "+adEur(marge)):"prix non fixé")+'</span></div>'
-    +'</div>';
-  }).join("");
-  return '<div class="adCard">'
-    +'<div class="adH"><div class="adHt">Les pièces qui dorment</div>'
-      +'<div class="adHs">'+acPl(n,"pièce")+' au-delà du seuil d\'alerte de son rayon, '
-      +adEur(R.valeurDormante)+' immobilisés. Classées par coût de portage — des euros '
-      +'multipliés par des jours.</div>'
-      +'<button class="btn mini" onclick="adExport()">Exporter la liste</button></div>'
-    +'<div class="adDs">'+lignes+'</div>'
-    +(n>max?('<div class="adPlus">'+acPl(n-max,"pièce")+' de plus — l\'export les contient toutes.</div>'):'')
-  +'</div>';
+function amLigne(o){
+  var V=o.verdict;
+  var ecTxt=(o.ecoul==null)?"—":(o.cohorteOk+" / "+o.cohorte);
+  var seuil=(o.sMin==null)?"—":("seuil "+Math.ceil(o.sMin*o.cohorte)+" / "+o.cohorte);
+  return '<div class="amR '+V.cls+'">'
+    +'<div class="amRn">'+esc(o.titre)
+      +'<span class="adRs">'+esc(o.sku)+(o.marque?(' · '+esc(o.marque)):'')
+      +' · '+esc(o.segment)+'</span></div>'
+    +'<div class="adRv'+(V.cls==="bad"?" bad":(V.cls==="ok"?" ok":""))+'">'+ecTxt
+      +'<span class="adRs">écoulé en '+amCfg().jours+' j · '+esc(seuil)+'</span></div>'
+    +'<div class="adRv">'+o.stock+'<span class="adRs">en stock · '+amEur(o.valeur)+'</span></div>'
+    +'<div class="adRv">'+((o.ageMax==null)?"—":acPl(o.ageMax,"jour"))
+      +'<span class="adRs">la plus vieille</span></div>'
+    +'<div class="adRv">'+amNum(o.rendement,2)+'<span class="adRs">rendement/an</span></div>'
+    +'<div class="adRv'+(o.rupture>amCfg().ruptureMax?" bad":"")+'">'+amPct(o.rupture)
+      +'<span class="adRs">du temps sans stock</span></div>'
+    +'<div class="amRv2"><span class="adBdg '+V.cls+'">'+esc(V.txt)+'</span></div>'
+  +'</div>'
+  +'<div class="amRp">'+esc(V.pourquoi)+'</div>';
 }
 
-function adReglages(R){
-  var c=adCfg();
-  if(!_adReglagesOuverts)return '<div class="adFoot">'
-    +'<button class="btn mini" onclick="adToggleReglages()">Régler les seuils</button>'
-    +'<span class="adNote">'+adPhraseExclusions()+'</span></div>';
-  var rayons=Object.keys(c.seuils).map(function(k){
-    var s=c.seuils[k];
-    return '<div class="adSr"><span>'+esc(k)+'</span>'
-      +'<label>sain <input type="number" min="1" value="'+s[0]+'" onchange="adSetSeuil(\''+reJse(k)+'\',0,this.value)"> j</label>'
-      +'<label>alerte <input type="number" min="1" value="'+s[1]+'" onchange="adSetSeuil(\''+reJse(k)+'\',1,this.value)"> j</label>'
-    +'</div>';
-  }).join("");
-  return '<div class="adCard adRg">'
+function amReglages(){
+  var c=amCfg();
+  if(!_amReglages)return '<div class="adFoot">'
+    +'<button class="btn mini" onclick="amToggleReglages()">Régler</button>'
+    +'<span class="adNote">'+amPhraseExclusions()+'</span></div>';
+  return '<div class="adCard">'
     +'<div class="adH"><div class="adHt">Réglages</div>'
-      +'<div class="adHs">Mes repères de départ. Compare-les à tes médianes réelles ci-dessus et ajuste — '
-      +'ils sont gardés dans ce navigateur.</div>'
-      +'<button class="btn mini" onclick="adToggleReglages()">Fermer</button></div>'
-    +'<div class="adSrs">'+rayons+'</div>'
+      +'<div class="adHs">Les seuils d\'écoulement ne se règlent pas à la main : ils se '
+      +'déduisent de la marge de chaque modèle. Ce qui se règle, c\'est le rendement que '
+      +'tu veux en tirer, et la durée de l\'épreuve.</div>'
+      +'<button class="btn mini" onclick="amToggleReglages()">Fermer</button></div>'
     +'<div class="adSg">'
-      +'<label>Fenêtre de ventes <input type="number" min="30" max="1095" value="'+c.fenetre+'" onchange="adCfgSet(\'fenetre\',Math.max(30,+this.value||365))"> j</label>'
-      +'<label>Indice plancher <input type="number" min="0" step="0.1" value="'+c.indiceMin+'" onchange="adCfgSet(\'indiceMin\',+this.value||1)"></label>'
-      +'<label>Indice confortable <input type="number" min="0" step="0.1" value="'+c.indiceBon+'" onchange="adCfgSet(\'indiceBon\',+this.value||1.5)"></label>'
-      +'<label class="adChk"><input type="checkbox" '+(c.avecDepot?"checked":"")
-        +' onchange="adCfgSet(\'avecDepot\',this.checked)"> Inclure le dépôt-vente</label>'
-      +'<button class="btn mini danger" onclick="adCfgReset()">Rétablir mes repères</button>'
+      +'<label>Durée de l\'épreuve <input type="number" min="30" max="365" value="'+c.jours
+        +'" onchange="amCfgSet(\'jours\',Math.max(30,Math.min(365,+this.value||90)))"> j</label>'
+      +'<label>Rendement plancher <input type="number" min="0.1" step="0.1" value="'+c.rMin
+        +'" onchange="amCfgSet(\'rMin\',+this.value||1)"></label>'
+      +'<label>Rendement confortable <input type="number" min="0.1" step="0.1" value="'+c.rBon
+        +'" onchange="amCfgSet(\'rBon\',+this.value||1.5)"></label>'
+      +'<label>Pièces minimum pour juger <input type="number" min="1" value="'+c.minPieces
+        +'" onchange="amCfgSet(\'minPieces\',Math.max(1,parseInt(this.value,10)||3))"></label>'
+      +'<label>Rupture tolérée <input type="number" min="0" max="90" value="'+Math.round(c.ruptureMax*100)
+        +'" onchange="amCfgSet(\'ruptureMax\',Math.max(0,Math.min(0.9,(+this.value||30)/100)))"> %</label>'
+      +'<label>Fenêtre d\'analyse <input type="number" min="90" max="1095" value="'+c.fenetre
+        +'" onchange="amCfgSet(\'fenetre\',Math.max(90,+this.value||365))"> j</label>'
+      +'<button class="btn mini danger" onclick="amCfgReset()">Rétablir mes repères</button>'
     +'</div>'
   +'</div>';
 }
-var _adReglagesOuverts=false;
-function adToggleReglages(){_adReglagesOuverts=!_adReglagesOuverts;renderArgentDormant();}
-function adSetSeuil(cle,i,val){
-  var c=adCfg();
-  var s=(c.seuils[cle]||c.seuilDefaut).slice();
-  s[i]=Math.max(1,parseInt(val,10)||1);
-  // Un seuil d'alerte sous le seuil sain n'a pas de sens : on le remonte.
-  if(s[1]<s[0])s[1]=s[0];
-  c.seuils[cle]=s;
-  try{localStorage.setItem("wathe.ad.seuils",JSON.stringify(c));}catch(e){}
-  renderArgentDormant();
-}
 
-/* Dire ce qui a été écarté, et pourquoi : un chiffre dont on ne sait pas ce
-   qu'il contient ne sert à rien. */
-function adPhraseExclusions(){
+function amPhraseExclusions(){
   var p=[];
-  if(_adExclus.stock)p.push(acPl(_adExclus.stock,"pièce")+" FlowStock écartée"+(_adExclus.stock>1?"s":"")+" (dropshipping, aucun capital)");
-  if(_adExclus.depot&&!adCfg().avecDepot)
-    p.push(acPl(_adExclus.depot,"pièce")+" en dépôt écartée"+(_adExclus.depot>1?"s":"")
-      +" ("+adEur(_adExclus.depotValeur)+" qui ne sont pas ton argent)");
+  if(_amExclus.flowstock)p.push(acPl(_amExclus.flowstock,"pièce")+" FlowStock (dropshipping, aucun capital)");
+  if(_amExclus.depot)p.push(acPl(_amExclus.depot,"pièce")+" en dépôt (pas ton argent)");
   return p.length?("Écarté : "+p.join(" · ")+"."):"";
 }
 
-function adExport(){
-  var R=adCalcul();
-  var lignes=[["Produit","Marque","Rayon","Référence","Âge (j)","Seuil (j)","Retard (j)","Coût d'achat","Prix de vente","Dépôt"]];
-  R.dormantes.forEach(function(d){
-    var r=d.r;
-    lignes.push([r.titre,r.marque,r.segment,(r.a&&r.a.ref)||"",r.age,d.alerte,d.retard,
-      r2(r.cout),r2(r.pv),r.depot?"oui":"non"]);
+function amExport(){
+  var L=amModeles();
+  var l=[["Modèle","SKU","Marque","Rayon","Entrées jugées","Écoulées à "+amCfg().jours+" j",
+          "Taux","Seuil","Stock","Valeur stock","Plus vieille (j)","Rendement",
+          "Jours sans stock","Rupture","Verdict"]];
+  L.forEach(function(o){
+    l.push([o.titre,o.sku,o.marque,o.segment,o.cohorte,o.cohorteOk,
+      (o.ecoul==null?"":r2(o.ecoul*100)),(o.sMin==null?"":r2(o.sMin*100)),
+      o.stock,r2(o.valeur),(o.ageMax==null?"":o.ageMax),(o.rendement==null?"":o.rendement),
+      o.joursSansStock,r2(o.rupture*100),o.verdict.txt]);
   });
-  if(lignes.length<2){alert("Aucune pièce au-delà de son seuil : rien à exporter.");return;}
-  var csv=lignes.map(function(l){return l.map(function(c){
+  if(l.length<2){alert("Aucun modèle à exporter.");return;}
+  var csv=l.map(function(r){return r.map(function(c){
     return '"'+String(c).replace(/"/g,'""')+'"';}).join(";");}).join("\r\n");
   var blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
   var url=URL.createObjectURL(blob);
-  var a=document.createElement("a");a.href=url;a.download="argent-dormant-"+today()+".csv";
+  var a=document.createElement("a");a.href=url;a.download="modeles-"+today()+".csv";
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(function(){URL.revokeObjectURL(url);},1000);
 }
 
-function renderArgentDormant(){
-  var body=document.getElementById("adBody");if(!body)return;
-  var R=adCalcul();
-  if(!R.nb){
-    body.innerHTML='<div class="adCard"><div class="adVide">'
-      +'Aucune pièce en stock propre à analyser.'
-      +(_adExclus.depot?(' '+acPl(_adExclus.depot,"pièce")+' en dépôt : ouvre les réglages pour les inclure.'):'')
-      +'</div></div>'+adReglages(R);
+function renderModeles(){
+  var body=document.getElementById("amBody");if(!body)return;
+  var L=amModeles();
+  if(!L.length){
+    body.innerHTML='<div class="adCard"><div class="adVide">Aucun modèle à analyser pour ce filtre.</div></div>'
+      +amReglages();
     return;
   }
-  body.innerHTML=adTuiles(R)+adFrise(R)+adParRayon(R)+adListeDormantes(R)+adReglages(R);
+  var vus=_amFiltre?L.filter(function(o){return o.verdict.txt===_amFiltre;}):L;
+  var max=40, liste=vus.slice(0,max);
+  body.innerHTML=amTuiles(L)+amBarres(L)
+    +'<div class="adCard">'
+      +'<div class="adH"><div class="adHt">Garder ou couper</div>'
+        +'<div class="adHs">Pour chaque modèle : sur les pièces qui ont eu leurs '+amCfg().jours
+        +' jours pour se vendre, combien sont parties. Le seuil est calculé d\'après la marge '
+        +'du modèle — une référence à grosse marge a le droit d\'être plus lente. '
+        +'Ce qu\'il faut arbitrer est en haut.</div>'
+        +'<button class="btn mini" onclick="amExport()">Exporter</button></div>'
+      +'<div class="amRs">'+liste.map(amLigne).join("")+'</div>'
+      +(vus.length>max?('<div class="adPlus">'+acPl(vus.length-max,"modèle")
+        +' de plus — l\'export les contient tous.</div>'):'')
+    +'</div>'
+    +amReglages();
 }
 
 function renderReassort(){
