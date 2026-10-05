@@ -507,7 +507,7 @@ async function load(){
       +'<div class="muted" style="font-size:13px">'+esc(e.message||e)+'</div></div>';
     throw e;
   }
-  vIndexInvalidate();_snapshot();
+  vIndexInvalidate();reStockInvalider();_snapshot();
   if(info)info.textContent=DB.articles.length+" pièces · "+DB.modeles.length+" modèles";
   remplirSocietes();
   document.getElementById("chargement").style.display="none";
@@ -554,18 +554,66 @@ function sameSku(a,b){
   if(!A.length||!B.length)return false;
   return A.some(function(x){return B.indexOf(x)>=0;});
 }
+/* ---- Stock en boutique, indexé ----------------------------------------------
+   boutiqueStockOfSize parcourait les 2 300 pièces à CHAQUE taille de CHAQUE
+   produit suivi, en convertissant une pointure à chaque passage : près de deux
+   cents parcours complets pour un seul affichage, soit plus de quatre secondes
+   d'attente. Le même travail se fait en une passe.
+
+   L'index range chaque pièce sous toutes les écritures de taille qui peuvent la
+   désigner — sa taille brute, son EU, sa conversion, et les entrées de la table
+   US qui pointent vers elle — pour que la recherche reste aussi tolérante
+   qu'avant. Il est indexé par modèle ET par SKU, afin de continuer à compter les
+   pièces rattachées à une autre fiche portant le même SKU. */
+var _reStockIdx=null,_reStockN="";
+function reStockInvalider(){_reStockIdx=null;_reStockN="";}
+function reStockIndex(){
+  // La signature inclut la société choisie : changer de société doit recompter.
+  var n=(DB.articles||[]).length+"/"+(socFilter||"");
+  if(_reStockIdx&&_reStockN===n)return _reStockIdx;
+  var idx={};
+  var compte=function(prefixe,taille){
+    if(!prefixe||!taille)return;
+    var k=prefixe+"|"+String(taille).trim().toLowerCase();
+    idx[k]=(idx[k]||0)+1;
+  };
+  (DB.articles||[]).forEach(function(p){
+    if(!p||p.archived)return;
+    if(p.statut!=="En Stock"&&p.statut!=="Approvisionnement")return;
+    if(!reTvaOk(p))return;
+    if(socFilter&&String(p.societeId||"")!==String(socFilter))return;
+    var v=varById(p.varianteId); if(!v||v.id==null)return;
+    var m=modeleById(v.modeleId)||{};
+    var t=String(v.taille==null?"":v.taille).trim();
+    var cles={}; if(t)cles[t]=1;
+    if(v.eu!=null&&v.eu!=="")cles[String(v.eu).trim()]=1;
+    try{var e=shopSizeEU(v); if(e)cles[String(e).trim()]=1;}catch(_){}
+    // Table US du modèle : si une pointure EU y désigne cette taille, elle compte aussi.
+    var usMap=(DB.grilles["__us"]||{})[m.todsGrille||m.grille]||{};
+    var tl=t.toLowerCase();
+    Object.keys(usMap).forEach(function(eu){
+      if(String(usMap[eu]).trim().toLowerCase()===tl)cles[eu]=1;
+    });
+    var toks=skuTokens(m.sku);
+    Object.keys(cles).forEach(function(c){
+      compte("m:"+v.modeleId, c);
+      toks.forEach(function(tk){compte("s:"+tk, c);});
+    });
+  });
+  _reStockIdx=idx;_reStockN=n;
+  return idx;
+}
 function boutiqueStockOfSize(mid,size){
-  var m0=modeleById(mid)||{};
-  var sku=String(m0.sku||"").trim();
-  return (DB.articles||[]).filter(function(p){
-    if(p.archived||(p.statut!=="En Stock"&&p.statut!=="Approvisionnement")||!reTvaOk(p))return false;
-    var v=varById(p.varianteId);if(!v||v.id==null)return false;
-    // On compte aussi les pièces rattachées à une AUTRE fiche portant le même SKU
-    // (doublons de modèles : import, FlowStock, création manuelle…)
-    var same=(v.modeleId==mid);
-    if(!same&&sku){var mm=modeleById(v.modeleId)||{};same=sameSku(mm.sku,sku);}
-    return same&&reSameSize(v,size);
-  }).length;
+  var idx=reStockIndex();
+  var k="|"+String(size).trim().toLowerCase();
+  var n=idx["m:"+mid+k]||0;
+  /* Les fiches en doublon portent le même SKU : on prend le compte le plus large,
+     jamais la somme — additionner compterait deux fois les pièces de la fiche
+     principale, qui sont déjà dans les deux index. */
+  skuTokens((modeleById(mid)||{}).sku).forEach(function(tk){
+    var c=idx["s:"+tk+k]||0; if(c>n)n=c;
+  });
+  return n;
 }
 // Repère les SKU présents sur plusieurs fiches modèle (source de comptages faux)
 function reDupSkuHtml(){
@@ -719,23 +767,29 @@ function rePastilleEdit(m,s){
     +'</div>';
 }
 
-function reRenderCartes(){
-  var ess=reEssentiels();
-  if(!ess.length)return '<div class="tablecard" style="padding:34px;text-align:center">'
+/* Prépare chaque produit une fois : le tri par manque, l'en-tête et les cartes
+   partageaient le même calcul et le refaisaient chacun de leur côté. */
+function reProduits(){
+  return reEssentiels().map(function(m){
+    var sizes=reCardSizes(m);
+    var suivies=sizes.filter(function(s){return s.on;});
+    return {m:m, sizes:sizes, suivies:suivies,
+      manque:suivies.reduce(function(n,s){return n+s.manque;},0),
+      nbTaillesManque:suivies.filter(function(s){return s.manque>0;}).length};
+  }).sort(function(a,b){
+    // Ce qui manque passe devant : c'est ce qu'on vient voir.
+    if(a.manque!==b.manque)return b.manque-a.manque;
+    return String(a.m.fr||a.m.sku||"").localeCompare(String(b.m.fr||b.m.sku||""),"fr");
+  });
+}
+
+function reRenderCartes(prods){
+  if(!prods.length)return '<div class="tablecard" style="padding:34px;text-align:center">'
     +'<div style="font-weight:700;margin-bottom:5px">Aucun produit essentiel</div>'
     +'<div class="muted" style="font-size:13px">Ajoute un produit ci-dessus, puis règle les tailles que tu veux toujours avoir en rayon.</div></div>';
 
-  // Les produits qui manquent passent devant : c'est ce qu'on vient voir.
-  var tri=ess.slice().sort(function(a,b){
-    var ma=reModelManque(a),mb=reModelManque(b);
-    if(ma!==mb)return mb-ma;
-    return String(a.fr||a.sku||"").localeCompare(String(b.fr||b.sku||""),"fr");
-  });
-
-  return '<div class="pcs">'+tri.map(function(m){
-    var sizes=reCardSizes(m);
-    var suivies=sizes.filter(function(s){return s.on;});
-    var mq=suivies.reduce(function(n,s){return n+s.manque;},0);
+  return '<div class="pcs">'+prods.map(function(P){
+    var m=P.m, sizes=P.sizes, suivies=P.suivies, mq=P.manque;
     var reglage=(_reOpen==m.id);
     var corps;
     if(reglage){
@@ -776,20 +830,20 @@ function acPl(n,sing,plur){return n+" "+(Math.abs(n)>1?(plur||(sing+"s")):sing);
 
 function renderReassort(){
   var body=document.getElementById("reBody");if(!body)return;
-  var ess=reEssentiels();
   var dup=(function(){try{return reDupSkuHtml();}catch(e){return "";}})();
-  var rows=reRows();
-  var totalManque=rows.reduce(function(s,r){return s+r.manque;},0);
-  var nbTailles=rows.filter(function(r){return r.manque>0;}).length;
+  var prods=reProduits();
+  var totalManque=prods.reduce(function(n,P){return n+P.manque;},0);
+  var nbTailles=prods.reduce(function(n,P){return n+P.nbTaillesManque;},0);
+  var nbProd=prods.length;
 
   body.innerHTML=dup
     +'<div class="reHead">'
       +'<div class="reCount">'
         +(totalManque>0
           ?('<b>'+acPl(totalManque,"paire")+'</b> à commander sur '+acPl(nbTailles,"taille")
-            +', '+acPl(ess.length,"produit")+' suivi'+(ess.length>1?"s":""))
-          :(ess.length?('<b>Tout est au niveau</b> · '+acPl(ess.length,"produit")+' suivi'+(ess.length>1?"s":""))
-                      :'Aucun produit suivi pour l\'instant'))
+            +', '+acPl(nbProd,"produit")+' suivi'+(nbProd>1?"s":""))
+          :(nbProd?('<b>Tout est au niveau</b> · '+acPl(nbProd,"produit")+' suivi'+(nbProd>1?"s":""))
+                  :'Aucun produit suivi pour l\'instant'))
       +'</div>'
       +'<div class="reActs">'
         +'<div class="reAdd">'
@@ -801,7 +855,7 @@ function renderReassort(){
         +(totalManque>0?'<button class="btn v" onclick="reExport()">Exporter la commande</button>':'')
       +'</div>'
     +'</div>'
-    +reRenderCartes();
+    +reRenderCartes(prods);
 }
 
 function reToggleAll(id,on){var m=modeleById(id);if(!m)return;var vars=reGridVariants(m);m.cibles=m.cibles||{};if(on){vars.forEach(function(v){var k=String(v.taille);if(m.cibles[k]==null)m.cibles[k]=1;});}else{vars.forEach(function(v){delete m.cibles[String(v.taille)];});}save();renderReassort();}
