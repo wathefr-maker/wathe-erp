@@ -1177,7 +1177,15 @@ function amJoursSansStock(evts, stockDebut, jDebut, jFin){
   return zero;
 }
 
-var _amExclus={flowstock:0,depot:0};
+/* Une pièce peut être sortie du stock sans qu'on retrouve sa facture : vente
+   enregistrée avant la reprise de l'historique, pièce perdue, commande encore en
+   approvisionnement. La compter comme « entrée et jamais vendue » en ferait un
+   échec commercial alors qu'on ignore simplement ce qu'elle est devenue — et
+   suffirait à faire paraître mauvais tout le catalogue.
+   Ces pièces sortent de la cohorte, et leur nombre est annoncé sous l'écran. */
+var AM_VENDU={"Vendu":1,"Facturé":1,"Facturé boutique":1,"Livré":1,"Livrée":1};
+function amEstVendu(a){return !!AM_VENDU[String((a&&a.statut)||"")];}
+var _amExclus={flowstock:0,depot:0,sansIssue:0,pieces:0};
 
 /* Toute la page se calcule ici. */
 function amModeles(){
@@ -1185,7 +1193,7 @@ function amModeles(){
   var jFin=amJour(today()), jDeb=jFin-(c.fenetre-1);
   var finCohorte=amJour(amMoins(c.jours));            // entrée au plus tard ici
   var debutCohorte=amJour(amMoins(c.fenetre+c.jours)); // et au plus tôt là
-  _amExclus.flowstock=0;_amExclus.depot=0;
+  _amExclus.flowstock=0;_amExclus.depot=0;_amExclus.sansIssue=0;_amExclus.pieces=0;
 
   var parM={};
   var obtenir=function(mid,m){
@@ -1206,6 +1214,7 @@ function amModeles(){
     if(a.depot){_amExclus.depot++;return;}
     var v=varById(a.varianteId); if(!v||v.id==null||v.modeleId==null)return;
     var m=modeleById(v.modeleId)||{};
+    _amExclus.pieces++;
     var o=obtenir(v.modeleId,m);
     o.segment=acFamille(m)+" · "+acEtat(a);
     o.aUnePiece=true;
@@ -1235,8 +1244,13 @@ function amModeles(){
       }
     }
 
-    // --- cohorte : les pièces qui ont EU leurs 90 jours pour se vendre
-    if(jE!=null&&jE<=finCohorte&&jE>=debutCohorte){
+    /* --- cohorte : les pièces qui ont EU leurs 90 jours pour se vendre.
+       On n'y garde que celles dont l'issue est connue : encore en stock (donc
+       pas vendues, c'est une information), ou vendues à une date retrouvée. Une
+       pièce marquée vendue sans date, ou jamais passée en rayon, ne prouve rien. */
+    var issueConnue=(jV!=null)||inStock(a);
+    if(!issueConnue&&jE!=null&&jE<=finCohorte&&jE>=debutCohorte)_amExclus.sansIssue++;
+    if(issueConnue&&jE!=null&&jE<=finCohorte&&jE>=debutCohorte){
       o.cohorte++;
       if(jV!=null&&(jV-jE)<=c.jours)o.cohorteOk++;
       if(jV!=null)o.delais.push(jV-jE);
@@ -1450,7 +1464,11 @@ function amPhraseExclusions(){
   var p=[];
   if(_amExclus.flowstock)p.push(acPl(_amExclus.flowstock,"pièce")+" FlowStock (dropshipping, aucun capital)");
   if(_amExclus.depot)p.push(acPl(_amExclus.depot,"pièce")+" en dépôt (pas ton argent)");
-  return p.length?("Écarté : "+p.join(" · ")+"."):"";
+  if(_amExclus.sansIssue)p.push(acPl(_amExclus.sansIssue,"pièce")+" sortie"
+    +(_amExclus.sansIssue>1?"s":"")+" du stock sans facture retrouvée");
+  var base=acPl(_amExclus.pieces,"pièce")+" lue"+(_amExclus.pieces>1?"s":"")
+    +" · "+acPl((DB.factures||[]).length,"facture")+" chargée"+(((DB.factures||[]).length>1)?"s":"");
+  return base+(p.length?(" · écarté : "+p.join(" · ")):"")+".";
 }
 
 function amExport(){
