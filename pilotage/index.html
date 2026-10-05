@@ -1050,6 +1050,10 @@ function acMediane(arr){
 
 /* Index en une passe : un find par pièce sur plusieurs milliers d'articles
    suffisait à rendre l'écran lent. */
+/* FlowStock ET Sourcing Hub : les deux créent leurs achats avec la même source.
+   Du dropshipping dans les deux cas — la pièce est commandée au fournisseur une
+   fois le client servi, elle ne dort jamais en rayon et n'immobilise rien. Elle
+   n'a donc aucune place dans un écran qui juge ce que ton argent rapporte. */
 function acFlowstockIds(){
   var set={};
   (DB.achats||[]).forEach(function(a){
@@ -1151,7 +1155,7 @@ function amVentesParPiece(){
         var sp=saleSplit(+l.puTTC||0,cout,l.tva||a.tva);
         var cur=out[k];
         if(cur&&cur.date<=dt)return;            // on garde la première
-        out[k]={date:dt, ht:sp.ca, cout:cout, marge:r2(sp.ca-cout)};
+        out[k]={date:dt, ttc:(+l.puTTC||0), ht:sp.ca, cout:cout, marge:r2(sp.ca-cout)};
       });
     });
   });
@@ -1185,6 +1189,24 @@ function amJoursSansStock(evts, stockDebut, jDebut, jFin){
    Ces pièces sortent de la cohorte, et leur nombre est annoncé sous l'écran. */
 var AM_VENDU={"Vendu":1,"Facturé":1,"Facturé boutique":1,"Livré":1,"Livrée":1};
 function amEstVendu(a){return !!AM_VENDU[String((a&&a.statut)||"")];}
+
+/* La date de vente vit sur la PIÈCE — c'est la colonne « date de vente » du
+   stock. Je la cherchais d'abord dans les factures, qui manquent pour toute
+   vente antérieure à la reprise de l'historique, ou passée par un canal qui
+   n'en crée pas : des paires parties depuis longtemps passaient alors pour
+   invendues, et le catalogue entier paraissait mauvais.
+   La facture reste utile en complément : elle fige le prix et le coût au moment
+   de la vente, ce que la pièce ne garde pas toujours (cession interne). */
+function amVente(a,fact){
+  var dv=String((a&&a.dateVente)||"").slice(0,10);
+  if(fact)return {date:(dv||fact.date), ht:fact.ht, cout:fact.cout, marge:fact.marge};
+  if(!dv)return null;
+  var cout=lineCost(null,a);
+  var ttc=(a.venteTTC!=null&&a.venteTTC!=="")?(+a.venteTTC):null;
+  if(ttc==null)return {date:dv, ht:null, cout:cout, marge:null};
+  var sp=saleSplit(ttc,cout,a.tva);
+  return {date:dv, ht:sp.ca, cout:cout, marge:r2(sp.ca-cout)};
+}
 var _amExclus={flowstock:0,depot:0,sansIssue:0,pieces:0};
 
 /* Toute la page se calcule ici. */
@@ -1220,12 +1242,7 @@ function amModeles(){
     o.aUnePiece=true;
 
     var jE=amJour(a.date);
-    var vente=vIdx[String(a.ref)]||null;
-    if(!vente&&a.statut==="Vendu"&&a.dateVente){
-      // Vente enregistrée sur la pièce sans facture retrouvée : la date suffit
-      // pour le délai, la marge restera inconnue.
-      vente={date:String(a.dateVente).slice(0,10),ht:null,cout:(+a.prix||0),marge:null};
-    }
+    var vente=amVente(a,vIdx[String(a.ref)]||null);
     var jV=vente?amJour(vente.date):null;
 
     // --- la vie de la pièce : entrée, sortie. Sert aux jours sans stock.
@@ -1462,7 +1479,7 @@ function amReglages(){
 
 function amPhraseExclusions(){
   var p=[];
-  if(_amExclus.flowstock)p.push(acPl(_amExclus.flowstock,"pièce")+" FlowStock (dropshipping, aucun capital)");
+  if(_amExclus.flowstock)p.push(acPl(_amExclus.flowstock,"pièce")+" FlowStock ou Sourcing Hub (dropshipping, aucun capital)");
   if(_amExclus.depot)p.push(acPl(_amExclus.depot,"pièce")+" en dépôt (pas ton argent)");
   if(_amExclus.sansIssue)p.push(acPl(_amExclus.sansIssue,"pièce")+" sortie"
     +(_amExclus.sansIssue>1?"s":"")+" du stock sans facture retrouvée");
