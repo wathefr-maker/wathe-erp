@@ -9157,7 +9157,12 @@ function renderFactures(){
     const ht=(f.totalHT!=null)?((isAv?"- ":"")+money(f.totalHT,f.currency)):"-";
     const ttc=(isAv?"- ":"")+money(f.totalTTC||0,f.currency);
     const paye=(f.paiement==="Payée");
-    const tag=isAv?'<div style="color:#dc2626;font-size:11px;font-weight:700">AVOIR'+(f.avoirOfNum?' / '+esc(f.avoirOfNum):'')+'</div>':(f.parts>1?'<div class="muted" style="font-size:11px">'+esc(f.tvaGroup||"")+' ('+f.part+'/'+f.parts+')</div>':'');
+    const EA=isAv?null:factEtatAvoir(f);
+    // Une facture avoirée à moitié ne doit pas se lire comme une facture intacte.
+    const avTag=(EA&&EA.avoirs.length)
+      ?('<div style="font-size:11px;font-weight:700;color:'+(EA.complet?'#b91c1c':'#b45309')+'">'
+        +(EA.complet?'AVOIRÉE':'AVOIRÉE EN PARTIE')+'</div>'):'';
+    const tag=(isAv?'<div style="color:#dc2626;font-size:11px;font-weight:700">AVOIR'+(f.avoirOfNum?' / '+esc(f.avoirOfNum):'')+'</div>':(f.parts>1?'<div class="muted" style="font-size:11px">'+esc(f.tvaGroup||"")+' ('+f.part+'/'+f.parts+')</div>':''))+avTag;
     const orig='<span class="badge" style="'+(SRC_BADGE[f.source]||SRC_BADGE.manuelle)+'">'+(SRC_LABEL[f.source]||"—")+'</span>';
     return '<tr>'+
       '<td><b>'+esc(f.num)+'</b>'+tag+'</td>'+
@@ -9185,17 +9190,34 @@ function renderFactureD(){
   const buyer=f.buyer||f.orderName||"—";
   const lignes=(f.lines||[]).map(function(l){const tot=(l.puTTC||0)*(l.qty||1);
     return '<tr><td>'+esc(l.title)+(l.sku?' <span class="muted" style="font-size:11px">· '+esc(l.sku)+'</span>':'')+(l.refs&&l.refs.length?'<div class="muted" style="font-size:11px">Réf : '+esc(l.refs.join(", "))+'</div>':'')+'</td><td style="text-align:center">'+(l.qty||1)+'</td><td style="text-align:right">'+money(l.puTTC||0,f.currency)+'</td><td style="text-align:right">'+money(tot,f.currency)+'</td></tr>';}).join("")+((+f.shipping||0)>0?'<tr><td>Frais de livraison</td><td style="text-align:center">1</td><td style="text-align:right">'+money(f.shipping,f.currency)+'</td><td style="text-align:right">'+money(f.shipping,f.currency)+'</td></tr>':"");
+  /* Avoirs de cette facture : il peut y en avoir plusieurs. On annonce le montant
+     déjà crédité et ce qui reste, au lieu de laisser croire que tout est soldé. */
+  const EA=factEtatAvoir(f);
+  const avBadge=(f.type==="avoir"||!EA.avoirs.length)?'':
+    (EA.complet
+      ?'<span class="badge" style="background:#fee2e2;color:#b91c1c">Avoirée en totalité · '+eur(EA.montant)+'</span>'
+      :'<span class="badge" style="background:#fef3c7;color:#92400e">Avoirée en partie · '+eur(EA.montant)
+        +' sur '+eur(+f.totalTTC||0)
+        +(EA.reste.length?(' · reste '+EA.reste.length+' produit'+(EA.reste.length>1?'s':'')):'')
+        +'</span>');
+  const avBtns=(f.type==="avoir")?'':
+    EA.avoirs.map(function(av){
+      return '<button class="btn" onclick="openFactureD('+av.id+')">↩ '+esc(av.num)+'</button>';}).join("")
+    +(EA.complet?'':'<button class="btn" onclick="createAvoir('+f.id+')">↩ Créer un avoir'
+      +(EA.avoirs.length?' pour le reste':'')+'</button>');
+
   crumb.innerHTML='<b>Facturation</b> › '+esc(f.num);
   document.getElementById("fdRoot").innerHTML=
     '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'+
       '<button class="backbtn" onclick="show(\'factures\');renderFactures();">← Retour</button>'+
       '<h1 style="margin:0">'+esc(f.num)+'</h1>'+
       (f.type==="avoir"?'<span class="badge" style="background:#fee2e2;color:#b91c1c">AVOIR'+(f.avoirOfNum?' · facture '+esc(f.avoirOfNum):'')+'</span>':'')+
+      avBadge+
       '<span class="badge" style="background:var(--green-soft);color:#166534">'+esc(f.statut||"Validée")+'</span>'+
       (f.type==="avoir"?'<span class="badge" style="background:#fee2e2;color:#b91c1c">Remboursé</span>':(paye?'<span class="badge" style="background:var(--green-soft);color:#166534">Payée</span>':'<span class="badge" style="background:#fef3c7;color:#92400e">En attente de paiement</span>'))+
       '<span style="flex:1"></span>'+
       '<button class="btn v" onclick="shopInvoicePDF('+f.id+')">📄 Télécharger le PDF</button>'+(f.custCurrency&&f.custCurrency!=="EUR"?'<button class="btn" onclick="shopInvoicePDF('+f.id+',true)">📄 Facture en '+esc(f.custCurrency)+'</button>':'')+
-      (f.type!=="avoir"?(f.avoirId?'<button class="btn" onclick="openFactureD('+f.avoirId+')">↩ Voir l\'avoir '+esc(f.avoirNum||"")+'</button>':'<button class="btn" onclick="createAvoir('+f.id+')">↩ Créer un avoir</button>'):'')+
+      avBtns+
       (f.type!=="avoir"?'<button class="btn" onclick="factTogglePay('+f.id+');renderFactureD();">'+(paye?"Repasser en attente":"Marquer payée")+'</button>':'')+
       '<button class="btn r" onclick="factDelete('+f.id+')">Supprimer</button>'+
     '</div>'+
@@ -9213,6 +9235,34 @@ function renderFactureD(){
       ((f.banque||f.mentions)?'<div class="muted" style="font-size:11px;margin-top:16px;line-height:1.6;border-top:1px solid var(--line);padding-top:12px">'+(f.banque?'<b>Coordonnées bancaires :</b> '+esc(f.banque)+'<br>':'')+(f.mentions?esc(f.mentions):'')+'</div>':'')+
       '</div>';
 }
+/* Une facture peut porter PLUSIEURS avoirs : un retour partiel n'en solde qu'une
+   partie, et le reste peut être avoiré plus tard. L'ERP n'avait qu'un pointeur
+   unique, f.avoirId — dès le premier avoir partiel la facture passait pour
+   soldée, le bouton « Créer un avoir » disparaissait, et un second retour
+   écrasait le lien vers le premier avoir.
+
+   L'état se déduit maintenant des avoirs eux-mêmes : chacun porte déjà avoirOf.
+   Rien à maintenir, rien à désynchroniser, et les anciennes factures marchent
+   sans migration. */
+function factAvoirs(f){
+  if(!f||f.id==null||f.type==="avoir")return [];
+  return (DB.factures||[]).filter(function(x){return x&&x.type==="avoir"&&x.avoirOf===f.id;});
+}
+function factEtatAvoir(f){
+  var avs=factAvoirs(f), faites={};
+  avs.forEach(function(av){(av.lines||[]).forEach(function(l){
+    (l.refs||[]).forEach(function(r){faites[String(r)]=1;});});});
+  var reste=[];
+  ((f&&f.lines)||[]).forEach(function(l){(l.refs||[]).forEach(function(r){
+    if(!faites[String(r)])reste.push(r);});});
+  var portAvoire=avs.reduce(function(n,av){return n+(+av.shipping||0);},0);
+  var portReste=r2(Math.max(0,(+((f||{}).shipping)||0)-portAvoire));
+  var montant=r2(avs.reduce(function(n,av){return n+(+av.totalTTC||0);},0));
+  return {avoirs:avs, montant:montant, reste:reste, portReste:portReste,
+          partiel:(avs.length>0&&(reste.length>0||portReste>0.005)),
+          complet:(avs.length>0&&!reste.length&&portReste<=0.005)};
+}
+
 function buildAvoir(f,opts){
   opts=opts||{};const refsFilter=opts.refs;
   const id=newId(DB.factures);
@@ -9240,19 +9290,29 @@ function buildAvoir(f,opts){
 function createAvoir(factureId){
   const f=(DB.factures||[]).find(x=>x.id==factureId);if(!f){alert("Facture introuvable.");return;}
   if(f.type==="avoir"){alert("Ce document est déjà un avoir.");return;}
-  const existing=(DB.factures||[]).find(x=>x.type==="avoir"&&x.avoirOf===f.id);
-  if(existing&&!confirm("Un avoir existe déjà pour cette facture ("+existing.num+").\nEn créer un autre ?"))return;
-  const refs=[];(f.lines||[]).forEach(l=>(l.refs||[]).forEach(r=>refs.push(r)));
+  const E=factEtatAvoir(f);
+  if(E.complet){alert("Cette facture est déjà entièrement avoirée ("+E.avoirs.map(a=>a.num).join(", ")+").");return;}
+  /* Déjà avoirée en partie : le nouvel avoir ne porte que ce qui reste, sinon on
+     rembourserait deux fois les paires déjà rendues. */
+  const partiel=E.avoirs.length>0;
+  const refs=partiel?E.reste.slice():(function(){const r=[];(f.lines||[]).forEach(l=>(l.refs||[]).forEach(x=>r.push(x)));return r;})();
+  if(partiel&&!refs.length&&E.portReste<=0.005){alert("Il ne reste rien à avoirer sur cette facture.");return;}
   const toRestock=refs.map(r=>DB.articles.find(a=>a.ref===r)).filter(a=>a&&!(a.dispo===1&&a.statut==="En Stock"));
-  if(!confirm("Créer un avoir TOTAL pour la facture "+f.num+" ?"+(toRestock.length?("\n\n"+toRestock.length+" produit(s) seront remis en stock."):"")))return;
+  if(!confirm(partiel
+      ?("Créer un avoir pour le RESTE de la facture "+f.num+" ?\n\nDéjà avoiré : "+eur(E.montant)
+        +" ("+E.avoirs.map(a=>a.num).join(", ")+")."
+        +(refs.length?("\nReste "+refs.length+" produit(s) à créditer."):"\nReste uniquement le port.")
+        +(toRestock.length?("\n\n"+toRestock.length+" produit(s) seront remis en stock."):""))
+      :("Créer un avoir TOTAL pour la facture "+f.num+" ?"+(toRestock.length?("\n\n"+toRestock.length+" produit(s) seront remis en stock."):""))))return;
   const doIt=function(shipRefund){
-    const av=buildAvoir(f,{full:true,shippingRefund:shipRefund});
+    const av=buildAvoir(f,partiel?{refs:refs,shippingRefund:shipRefund}:{full:true,shippingRefund:shipRefund});
+    if(!av.lines.length&&!av.shipping){alert("Rien à créditer : aucune ligne restante.");return;}
     DB.factures.push(av);f.avoirId=av.id;f.avoirNum=av.num;
     let n=0;toRestock.forEach(function(a){a.statut="En Stock";a.dispo=1;a.shopifyInvoiced=0;a.avoirRestocked=1;a.maj=today();n++;});
     logAct("Avoir",f.num,av.num+(n?(" · "+n+" pièce(s) remise(s) en stock"):""));
     save();renderAll();openFactureD(av.id);
   };
-  if(+f.shipping>0)askShippingRefund(+f.shipping,doIt);else doIt(0);
+  if(E.portReste>0)askShippingRefund(E.portReste,doIt);else doIt(0);
 }
 function avoirForReturnedRefs(refs,shipRefund){
   if(!refs||!refs.length)return [];
@@ -9266,20 +9326,31 @@ function avoirForReturnedRefs(refs,shipRefund){
   return created;
 }
 function createAvoirForExped(expedId){
-  const facs=(DB.factures||[]).filter(f=>f.type!=="avoir"&&f.source==="expedition"&&f.expedId===expedId&&!f.avoirId);
-  if(!facs.length){alert("Aucune facture à créditer pour cette expédition (déjà avoirée, ou expédition non facturée).");return;}
-  const refs=[];facs.forEach(f=>(f.lines||[]).forEach(l=>(l.refs||[]).forEach(r=>refs.push(r))));
+  /* Même défaut que sur la fiche facture : écarter toute facture portant déjà un
+     avoir rendait impossible de créditer le reste après un retour partiel. On ne
+     retire que les factures RÉELLEMENT soldées, et on ne reprend que leur reste. */
+  const facs=(DB.factures||[]).filter(f=>f.type!=="avoir"&&f.source==="expedition"&&f.expedId===expedId&&!factEtatAvoir(f).complet);
+  if(!facs.length){alert("Aucune facture à créditer pour cette expédition (déjà avoirée en totalité, ou expédition non facturée).");return;}
+  const refs=[];facs.forEach(function(f){var E=factEtatAvoir(f);
+    if(E.avoirs.length)E.reste.forEach(r=>refs.push(r));
+    else (f.lines||[]).forEach(l=>(l.refs||[]).forEach(r=>refs.push(r)));});
   const toRestock=refs.map(r=>DB.articles.find(a=>a.ref===r)).filter(a=>a&&!(a.dispo===1&&a.statut==="En Stock"));
   if(!confirm("Créer un avoir pour cette expédition ("+facs.map(f=>f.num).join(", ")+") ?"+(toRestock.length?("\n\n"+toRestock.length+" produit(s) seront remis en stock."):"")))return;
-  const shipFac=facs.find(f=>+f.shipping>0);
+  const shipFac=facs.find(f=>factEtatAvoir(f).portReste>0);
   const doIt=function(shipRefund){
     const created=[];
-    facs.forEach(function(f){const ship=(+f.shipping>0)?shipRefund:0;const av=buildAvoir(f,{full:true,shippingRefund:ship});DB.factures.push(av);f.avoirId=av.id;f.avoirNum=av.num;created.push(av);});
+    facs.forEach(function(f){var E=factEtatAvoir(f);
+      const ship=(E.portReste>0)?Math.min(shipRefund,E.portReste):0;
+      const av=E.avoirs.length?buildAvoir(f,{refs:E.reste,shippingRefund:ship})
+                              :buildAvoir(f,{full:true,shippingRefund:ship});
+      if(!av.lines.length&&!av.shipping)return;
+      DB.factures.push(av);f.avoirId=av.id;f.avoirNum=av.num;created.push(av);});
+    if(!created.length){alert("Rien à créditer : ces factures sont déjà entièrement avoirées.");return;}
     let n=0;toRestock.forEach(function(a){a.statut="En Stock";a.dispo=1;a.shopifyInvoiced=0;a.avoirRestocked=1;a.maj=today();n++;});
     logAct("Avoir","Expédition",created.map(a=>a.num).join(", ")+(n?(" · "+n+" pièce(s) remise(s) en stock"):""));
     save();renderAll();renderExpeds();if(created[0])openFactureD(created[0].id);
   };
-  if(shipFac)askShippingRefund(+shipFac.shipping,doIt);else doIt(0);
+  if(shipFac)askShippingRefund(factEtatAvoir(shipFac).portReste,doIt);else doIt(0);
 }
 function askShippingRefund(maxShip,cb){
   const ov=document.createElement("div");
