@@ -7592,6 +7592,40 @@ function shopLowMarginBanner(o){
   +'</div>';
 }
 
+/* Paires déjà retournées sur cette commande. Elles n'apparaissent plus comme
+   assignées — c'est voulu — mais leur absence sans explication est déroutante
+   dès qu'une commande en compte plusieurs : on ne sait plus laquelle est
+   revenue. Ce bandeau le dit, avec la date et l'état de chacune. */
+function shopReturnedBanner(o){
+  var rets=shopOrderReturns(o);
+  if(!rets.length)return "";
+  var lignes=rets.map(function(a){
+    var v=varById(a.varianteId)||{}, m=modeleById(v.modeleId)||{};
+    var etat=a.shopifyLost
+      ? '<span style="color:#b91c1c;font-weight:700">colis perdu</span>'
+      : '<span style="color:#166534;font-weight:700">remise en stock</span>';
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:3px 0">'
+      +'<b>'+esc(a.ref||"")+'</b> · '+esc(m.fr||m.sku||"")+' '+szcellV(v)
+      +' <span class="muted">· '+etat
+      +(a.shopifyReturnedAt?(' le '+esc(a.shopifyReturnedAt)):'')
+      +((a.shopifyReturnSnapshot&&a.shopifyReturnSnapshot.invoiceNum)
+        ?(' · facture '+esc(a.shopifyReturnSnapshot.invoiceNum)):'')
+      +'</span></div>';
+  }).join("");
+  return '<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:12px 14px;margin-bottom:14px">'
+    +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
+      +'<div style="font-weight:800;font-size:13.5px;color:#b91c1c">↩ '
+        +rets.length+' paire'+(rets.length>1?'s':'')+' retournée'+(rets.length>1?'s':'')+' sur cette commande</div>'
+      +'<span style="flex:1"></span>'
+      +'<button type="button" class="btn" style="padding:4px 11px;font-size:12px" '
+        +'onclick="shopUndoReturn(\''+o.id+'\')">↺ Annuler le retour</button>'
+    +'</div>'
+    +'<div class="muted" style="font-size:12px;margin-bottom:7px">'
+      +'Elles ne sont plus rattachées à la commande et ne comptent plus dans les paires à assigner.</div>'
+    +'<div style="font-size:12.5px;line-height:1.55">'+lignes+'</div>'
+  +'</div>';
+}
+
 function shopAssignSection(o){
   const lines=(o.lines||[]).map(function(l,i){
     const assigned=shopAssignedFor(o.id,i),need=l.qty||1;
@@ -7604,6 +7638,7 @@ function shopAssignSection(o){
     return '<tr><td style="vertical-align:top"><b>'+esc(l.title)+'</b>'+(l.variantTitle?' <b style="color:var(--violet)">'+esc(l.variantTitle)+'</b>':'')+'<br><span class="muted" style="font-size:12px">SKU '+esc(l.sku||"—")+'</span></td><td style="vertical-align:top">'+money(l.price,o.currency)+'</td><td style="vertical-align:top">'+need+'</td><td style="vertical-align:top"><b>'+money((l.price||0)*need,o.currency)+'</b></td><td style="min-width:320px">'+chips+box+'</td></tr>';
   }).join("");
   return '<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Produits de la vente — assignation des paires du stock</h3>'+
+    shopReturnedBanner(o)+
     shopLowMarginBanner(o)+
     '<div style="overflow-x:auto"><table><thead><tr><th>Produit</th><th>Prix unitaire</th><th>Qté</th><th>Prix total</th><th>Paire(s) du stock assignée(s)</th></tr></thead><tbody>'+lines+'</tbody></table></div>'+
     '<div style="color:var(--muted);font-size:12.5px;margin-top:14px;line-height:1.5">Colle la <b>référence interne</b> (ou le SKU) de la paire correspondante pour la relier à cette commande.</div></div>';
@@ -9078,6 +9113,14 @@ function flowstockReconcile(silent){
   DB.articles.forEach(function(a){
     if(a.archived||!a.flowstockId||a.shopifyOrderId||a.statut!=="En Stock")return;
     const onum=normNum(a.flowstockOrderNumber);if(!onum)return;
+    /* Une paire qui vient d'être retournée est exactement dans l'état que ce
+       rattachement cherche : « En Stock », sans commande, et portant encore le
+       numéro de commande d'origine. Elle se recollait donc toute seule sur la
+       commande dont on venait de la sortir, et réapparaissait comme assignée.
+       On ne la rattache plus à CETTE commande-là ; elle reste disponible pour
+       une autre, et l'assignation manuelle passe toujours (elle pose
+       manualLink, que l'étape de détachement ci-dessus respecte). */
+    if(a.shopifyReturnedFrom&&normNum(a.shopifyReturnedFrom)===onum)return;
     const o=_shopOrders.find(function(x){return x&&!x.cancelled&&normNum(x.name)===onum;});if(!o)return;
     const idx=fsPickLine(o,null,null);if(idx<0)return; // commande pleine
     a.shopifyOrderId=o.id;a.shopifyOrderName=o.name;a.shopifyLineIdx=idx;a.autoLinked=1;a.maj=today();n++;
