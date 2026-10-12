@@ -2460,6 +2460,17 @@ async function rzSorties(){
     });
     if(!a)return;                                // pièce inconnue de l'ERP, ou déjà sortie
     if(a.rzIgnore)return;                        // écartée manuellement
+    /* Une pièce que l'ERP n'a JAMAIS fait entrer en caisse ne peut pas en être
+       sortie : son stock à 0 veut dire « pas encore approvisionnée », pas
+       « vendue ». rzInCaisse n'est posé qu'après une entrée de stock acceptée.
+
+       Sans ce test, toute bascule vers une caisse neuve devient un piège : le
+       cron crée les articles un par un puis les approvisionne, et entre les
+       deux ils existent à 0. Ouvrir « Vente boutique » pendant cette montée
+       aurait proposé de vendre tout le stock d'un coup.
+       Le cas vaut aussi hors migration : une entrée de stock refusée laisse
+       l'article à 0 en caisse, et ce n'est pas une vente non plus. */
+    if(!a.rzInCaisse||a.rzOutCaisse)return;
     var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
     out.push({piece:a,codeArt:b.codeArt,titre:(m.fr||m.sku||a.ref),taille:vSizeTxt(v),
       prixSuggere:(+a.pv||0),achat:(+a.prix||0)});
@@ -2496,8 +2507,11 @@ async function rzCheckVentes(opts){
       try{logAct("Caisse Rezomatic","Injoignable",msg.slice(0,160));}catch(_){}
       if(opts.force||!_rzHorsLigneSignale){
         _rzHorsLigneSignale=true;
+        /* L'hôte n'est plus nommé ici : il vit dans la fonction edge, et
+           l'écrire en dur dans l'ERP garantissait de mentir au premier
+           changement de serveur. */
         alert("🔌 La caisse Rezomatic ne répond pas.\n\n"
-          +"Le serveur wathe.rezomatic.info est injoignable — ce n'est pas un "
+          +"Le serveur de la caisse est injoignable — ce n'est pas un "
           +"problème de l'ERP.\n\nTant qu'il est hors ligne : aucune vente ne "
           +"remonte, et le stock envoyé par l'ERP est mis en attente. Tout "
           +"repartira seul au retour du serveur.\n\nSi ça dure, préviens TGM.\n\n"
@@ -6578,20 +6592,29 @@ async function shopSyncModelsForArticles(list,btn){
    la référence ERP — c'est déjà le code-barres imprimé sur l'étiquette 57x32,
    donc le scan en caisse fonctionne sans rien changer.
 
-   L'interrupteur est COUPÉ par défaut : il reste à couper tant que la bascule
-   n'est pas faite, les fonctions edge pointant encore sur la PRÉPRODUCTION.
+   L'URL et les identifiants de la caisse vivent dans les fonctions edge, jamais
+   ici : l'ERP ne sait pas à quel serveur il parle, et c'est voulu — changer de
+   serveur ne doit pas demander de retoucher l'ERP.
    ============================================================================ */
 var RZ_KEY="erp_rezomatic_on";
 /* Expéditeur des bons d'entrée de stock : un fournisseur qui doit EXISTER dans
-   Rezomatic — le Web Service ne permet pas de le créer. Il est présent en
-   préproduction ; à créer en production au moment de la bascule. */
+   Rezomatic — le Web Service ne permet pas de le créer. Il doit donc être créé
+   à la main dans la caisse avant toute première entrée de stock. */
 var RZ_FOURNISSEUR="WATHEERP";
 var RZ_PDV="vichy2";
-/* La synchro ERP -> caisse tourne désormais côté serveur (fonction edge
-   « rezomatic-cron », déclenchée par pg_cron), donc en continu et sans que
-   l'ERP soit ouvert. L'interrupteur n'a plus lieu d'être : il est forcé à ON.
-   La constante reste lue pour un éventuel retour en arrière. */
-function rzEnabled(){return true;}
+/* La synchro de fond tourne côté serveur (« rezomatic-cron », déclenché par
+   pg_cron) : elle n'a pas besoin de l'ERP. Mais l'ERP parle AUSSI à la caisse
+   de son côté — une vente boutique, une sortie Shopify, une réception déclenche
+   un appel immédiat depuis le navigateur.
+
+   D'où ce coupe-circuit, qui ne coupe que ces appels-là. Il sert pendant une
+   migration : arrêter pg_cron laisse le navigateur continuer à écrire dans une
+   caisse qu'on est en train de reconfigurer.
+   Par défaut ouvert — on ne coupe que volontairement, et la coupure est
+   affichée en rouge pour qu'elle ne s'oublie pas. */
+function rzEnabled(){
+  try{return localStorage.getItem(RZ_KEY)!=="0";}catch(_){return true;}
+}
 function rzSetEnabled(v){try{localStorage.setItem(RZ_KEY,v?"1":"0");}catch(_){}}
 
 /* Traduit une pièce de l'ERP vers la forme attendue par rezomatic-sync.
@@ -6834,22 +6857,33 @@ window.rzPushStock=rzPushStock;
 function rzPaintBtn(){
   var b=document.getElementById("rzSyncBtn");if(!b)return;
   var on=rzEnabled();
-  b.textContent="Caisse : auto";b.title="Synchronisation permanente, assurée côté serveur";
-  b.style.background=on?"#dcfce7":"";
-  b.style.borderColor=on?"#16a34a":"";
-  b.style.color=on?"#166534":"";
+  b.textContent=on?"Caisse : auto":"Caisse : COUPÉE";
+  b.title=on?"L'ERP écrit dans la caisse. La synchro de fond tourne côté serveur."
+            :"L'ERP n'écrit plus dans la caisse. La synchro de fond du serveur, elle, continue.";
+  b.style.background=on?"#dcfce7":"#fee2e2";
+  b.style.borderColor=on?"#16a34a":"#dc2626";
+  b.style.color=on?"#166534":"#b91c1c";
+  b.style.fontWeight=on?"":"800";
 }
 function rzToggle(){
-  alert("La synchronisation avec la caisse tourne en permanence côté serveur, "
-    +"même ERP fermé.\n\nElle n'a plus besoin d'être activée ici.");
-  return;
-  /* eslint-disable no-unreachable */
-  if(rzEnabled()){rzSetEnabled(false);rzPaintBtn();return;}
-  if(!confirm("Activer la synchronisation avec la caisse Rezomatic ?\n\n"
-    +"• Chaque pièce mise en stock crée un article dans la caisse, avec sa quantité — vendable immédiatement.\n"
-    +"• Chaque pièce qui sort du stock (vente Shopify, boutique, expédition) en est retirée.\n"
+  if(rzEnabled()){
+    if(!confirm("Couper les appels de l'ERP vers la caisse ?\n\n"
+      +"À utiliser pendant une migration ou une maintenance de la caisse.\n\n"
+      +"Ce qui s'arrête : les écritures déclenchées depuis ce navigateur — mise en "
+      +"stock, retrait après une vente, mise à jour de prix, relève des sorties.\n\n"
+      +"Ce qui CONTINUE : la synchro de fond du serveur (pg_cron). Pour l'arrêter "
+      +"aussi, il faut désactiver le cron côté Supabase.\n\n"
+      +"Rien n'est perdu : tout repart au rétablissement."))return;
+    rzSetEnabled(false);rzPaintBtn();
+    alert("⛔ Appels de l'ERP vers la caisse COUPÉS.\n\nN'oublie pas de les rouvrir : "
+      +"tant qu'ils sont coupés, une vente boutique ne retire pas la paire de la caisse.");
+    return;
+  }
+  if(!confirm("Rétablir les appels de l'ERP vers la caisse ?\n\n"
+    +"• Chaque pièce mise en stock crée un article dans la caisse, avec sa quantité.\n"
+    +"• Chaque pièce qui sort du stock en est retirée.\n"
     +"• Les sorties constatées en caisse sont proposées pour validation du prix encaissé.\n\n"
-    +"Le fournisseur « "+RZ_FOURNISSEUR+" » doit exister dans Rezomatic, sinon l\'entrée de stock échouera."))return;
+    +"Le fournisseur « "+RZ_FOURNISSEUR+" » doit exister dans la caisse, sinon l\'entrée de stock échouera."))return;
   rzSetEnabled(true);rzPaintBtn();
 }
 window.rzToggle=rzToggle;
