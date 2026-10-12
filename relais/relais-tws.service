@@ -1,0 +1,30 @@
+# Service systemd du relais TWS.
+# À déposer dans /etc/systemd/system/relais-tws.service
+[Unit]
+Description=Relais TWS (IP fixe vers la caisse Rezomatic)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=relais
+WorkingDirectory=/opt/relais-tws
+ExecStart=/usr/bin/node /opt/relais-tws/relais-tws.js
+# Les secrets vivent dans ce fichier, lisible du seul utilisateur « relais ».
+# Les mettre ici plutôt que dans la ligne de commande : sinon ils apparaissent
+# dans la liste des processus, visible par tout le monde sur la machine.
+EnvironmentFile=/etc/relais-tws.env
+Restart=always
+RestartSec=3
+
+# Cloisonnement : le relais n'a besoin de rien d'autre que du réseau.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=
+CapabilityBoundingSet=
+MemoryMax=192M
+
+[Install]
+WantedBy=multi-user.target
