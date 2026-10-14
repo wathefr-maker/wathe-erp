@@ -1360,87 +1360,128 @@ async function _sbTry(fn){let last;for(let a=0;a<3;a++){try{const r=await fn();i
 async function _sbUpsert(table,rows){for(let i=0;i<rows.length;i+=200){const slice=rows.slice(i,i+200);await _sbTry(()=>sb.from(table).upsert(slice));}}
 async function _sbDelete(table,ids){for(let i=0;i<ids.length;i+=100){const slice=ids.slice(i,i+100);await _sbTry(()=>sb.from(table).delete().in('id',slice));}}
 /* ============================================================================
-   MARQUEURS ÉCRITS PAR LE SERVEUR
-   rzInCaisse, rzOutCaisse et rzPvSent sont posés par la fonction edge
-   « rezomatic-cron », dans articles.data. Or save() réécrit la LIGNE ENTIÈRE à
-   partir d'un instantané pris au CHARGEMENT de la page : tout marqueur posé par
-   le cron depuis l'ouverture de l'onglet était effacé à la première sauvegarde.
-   Conséquence : au passage suivant le cron ne voyait plus rzPvSent, croyait le
-   prix jamais transmis et le repoussait — à chaque ouverture/fermeture de l'ERP.
-   Même mécanique pour rzInCaisse, qui faisait retravailler la création.
-   On relit donc ces trois champs en base juste avant d'écrire, et on garde la
-   valeur du serveur quand le navigateur n'en a pas.
-   Règle de résolution, dans cet ordre :
-     valeur définie en mémoire -> elle gagne (écriture volontaire de l'ERP)
-     null en mémoire           -> suppression volontaire, on efface le champ
-     absente en mémoire        -> on reprend celle de la base
-   Seuls ces trois champs sont concernés : tout le reste appartient au navigateur.
+   FUSION AVEC LE SERVEUR — un onglet n'impose plus sa photo
+   ----------------------------------------------------------------------------
+   save() réécrivait la LIGNE ENTIÈRE à partir d'un instantané pris au
+   CHARGEMENT de la page. Dès qu'une autre source touchait la même pièce entre
+   temps — second onglet, téléphone, fonction edge « rezomatic-cron » — la
+   première sauvegarde du premier onglet rétablissait sa version périmée.
+
+   Le dégât observé en production : une paire vendue au comptoir à 10 h
+   redevenait « En Stock » à 11 h, sa dateVente effacée, parce qu'un onglet
+   ouvert depuis 9 h avait réécrit sa fiche. La facture, elle, vit dans une
+   AUTRE table que cet onglet ne réécrivait pas : elle survivait. 31 paires se
+   sont retrouvées facturées ET toujours en stock, soit 5 972 € encaissés sur
+   des paires que l'ERP croyait encore en rayon — et donc revendables.
+
+   La correction : avant d'écrire, relire la ligne en base et n'y réappliquer
+   que les champs que CET onglet a réellement changés depuis sa photo. Tout le
+   reste vient du serveur. C'est une fusion à trois versions — photo, mémoire,
+   base — soit ce que faisait déjà _rzPreserveMarkers pour les trois marqueurs
+   Rezomatic, étendu à tous les champs et à toutes les tables.
+
+   Règle, champ par champ :
+     changé en mémoire depuis la photo   -> la mémoire gagne (saisie volontaire)
+     supprimé en mémoire depuis la photo -> on le supprime aussi
+     inchangé depuis la photo            -> on reprend la valeur du serveur
+   Une ligne absente de la photo est une création : rien à fusionner.
    ============================================================================ */
 var RZ_CHAMPS_SERVEUR=["rzInCaisse","rzOutCaisse","rzPvSent"];
-async function _rzPreserveMarkers(){
-  var snap=_snap&&_snap["articles"];
-  if(!snap||!snap.size)return;                 // premier chargement : rien à comparer
-  // Seules les lignes qui vont être écrites nous intéressent.
-  var modifies=(DB.articles||[]).filter(function(a){
-    return a&&a.id!=null&&snap.get(a.id)!==JSON.stringify(a);
-  });
-  if(!modifies.length)return;
-  var parId={};modifies.forEach(function(a){parId[a.id]=a;});
-  var ids=modifies.map(function(a){return a.id;});
-  for(var i=0;i<ids.length;i+=200){
-    var lot=ids.slice(i,i+200);
-    var r=await sb.from("articles").select("id,data").in("id",lot);
-    if(r.error)throw r.error;
-    (r.data||[]).forEach(function(row){
-      var a=parId[row.id],base=(row&&row.data)||{};
-      if(!a)return;
-      RZ_CHAMPS_SERVEUR.forEach(function(k){
-        if(a[k]===null){delete a[k];return;}    // l'ERP a voulu effacer ce marqueur
-        if(a[k]===undefined&&base[k]!==undefined&&base[k]!==null)a[k]=base[k];
-      });
-    });
-  }
-  // Les lignes jamais lues (nouvel article) n'ont pas de marqueur : un null
-  // résiduel y serait écrit tel quel, on le nettoie.
-  modifies.forEach(function(a){
-    RZ_CHAMPS_SERVEUR.forEach(function(k){if(a[k]===null)delete a[k];});
+
+/* Forme canonique : jsonb réordonne les clés, un JSON.stringify brut ferait
+   croire à un changement là où seul l'ordre diffère. */
+function _canon(o){
+  if(o===null||typeof o!=="object")return JSON.stringify(o===undefined?null:o);
+  if(Array.isArray(o))return "["+o.map(_canon).join(",")+"]";
+  return "{"+Object.keys(o).sort().map(function(k){
+    return JSON.stringify(k)+":"+_canon(o[k]);
+  }).join(",")+"}";
+}
+
+/* Convention héritée du cron : une valeur null en mémoire veut dire « efface ce
+   marqueur ». La fusion raisonne en clés présentes/absentes, on traduit donc le
+   null en suppression avant de comparer. */
+function _nettoyerMarqueursNuls(lignes){
+  lignes.forEach(function(a){
+    RZ_CHAMPS_SERVEUR.forEach(function(k){if(a&&a[k]===null)delete a[k];});
   });
 }
 
+/* Fusionne sur place les lignes sur le point d'être écrites avec leur état réel
+   en base. Les objets gardent leur identité : l'écran affiche ce qui sera écrit. */
+async function _fusionServeur(table,lignes,snap){
+  if(!lignes||!lignes.length||!snap||!snap.size)return;
+  var parId={};lignes.forEach(function(r){if(r&&r.id!=null)parId[r.id]=r;});
+  var ids=Object.keys(parId).map(function(k){return parId[k].id;});
+  for(var i=0;i<ids.length;i+=200){
+    var lot=ids.slice(i,i+200);
+    var rep=await sb.from(table).select("id,data").in("id",lot);
+    if(rep.error)throw rep.error;
+    (rep.data||[]).forEach(function(row){
+      var objet=parId[row.id],photo=snap.get(row.id),srv=row&&row.data;
+      // Pas de photo : la ligne est née dans cet onglet, il n'y a rien à fusionner.
+      if(!objet||photo===undefined||!srv||typeof srv!=="object")return;
+      var avant;try{avant=JSON.parse(photo);}catch(_){return;}
+      if(_canon(srv)===_canon(avant))return;     // personne d'autre n'y a touché
+      var fusion={};
+      Object.keys(srv).forEach(function(k){fusion[k]=srv[k];});
+      Object.keys(objet).forEach(function(k){
+        if(_canon(objet[k])!==_canon(avant[k]))fusion[k]=objet[k];
+      });
+      Object.keys(avant).forEach(function(k){
+        if(!(k in objet))delete fusion[k];
+      });
+      Object.keys(objet).forEach(function(k){delete objet[k];});
+      Object.keys(fusion).forEach(function(k){objet[k]=fusion[k];});
+    });
+  }
+}
+
+/* Écrit une table : repère les lignes modifiées depuis la photo, les fusionne
+   avec la base, puis les envoie. L'instantané est recalculé APRÈS la fusion,
+   sinon la ligne fusionnée paraîtrait encore modifiée à la sauvegarde suivante.
+   Renvoie la nouvelle photo, à la charge de l'appelant de la ranger. */
+async function _ecrireTable(table,cur,snap,fusionner){
+  const modif=[];
+  for(const r of cur){
+    if(!r||r.id==null)continue;
+    if(snap.get(r.id)!==JSON.stringify(r))modif.push(r);
+  }
+  const lignes=[...new Map(modif.map(r=>[r.id,r])).values()];
+  if(fusionner&&lignes.length){
+    /* Non bloquant : si la relecture échoue, mieux vaut sauvegarder à l'ancienne
+       que perdre la saisie en cours. Le risque d'écrasement redevient celui
+       d'avant le correctif, et seulement pour cette sauvegarde-là. */
+    try{await _fusionServeur(table,lignes,snap);}
+    catch(e){console.warn("["+table+"] fusion impossible, écriture directe :",(e&&e.message)||e);}
+  }
+  const curMap=new Map();
+  for(const r of cur){if(r&&r.id!=null)curMap.set(r.id,JSON.stringify(r));}
+  const del=[];snap.forEach((_v,id)=>{if(!curMap.has(id))del.push(id);});
+  if(lignes.length)await _sbUpsert(table,lignes.map(r=>({id:r.id,data:r})));
+  if(del.length)await _sbDelete(table,del);
+  return curMap;
+}
+
 async function save(){
-  /* Avant toute écriture : ne pas écraser ce que le cron a posé depuis que la
-     page est ouverte. Non bloquant — un échec de lecture ne doit pas empêcher
-     une sauvegarde, au pire le cron refera un envoi inutile. */
-  try{await _rzPreserveMarkers();}
-  catch(e){console.warn("[Rezomatic] marqueurs non préservés :",(e&&e.message)||e);}
+  /* Traduction du null en suppression avant toute comparaison : la fusion
+     raisonne en clés présentes ou absentes, pas en valeurs sentinelles. */
+  try{_nettoyerMarqueursNuls(DB.articles||[]);}catch(_){}
   try{
     for(const t of ARR_TABLES){
-      const cur=DB[t]||[];const snap=_snap[t]||new Map();const curMap=new Map();const up=[];
-      for(const r of cur){if(r.id==null)continue;const j=JSON.stringify(r);curMap.set(r.id,j);if(snap.get(r.id)!==j)up.push({id:r.id,data:r});}
-      const del=[];snap.forEach((_v,id)=>{if(!curMap.has(id))del.push(id);});
-      if(up.length){await _sbUpsert(t,[...new Map(up.map(r=>[r.id,r])).values()]);}
-      if(del.length){await _sbDelete(t,del);}
-      _snap[t]=curMap;
+      _snap[t]=await _ecrireTable(t,DB[t]||[],_snap[t]||new Map(),true);
     }
     const gj=JSON.stringify(DB.grilles||{});
     if(gj!==_snapGrilles){const {error}=await sb.from('grilles').upsert([{id:1,data:DB.grilles||{}}]);if(error)throw error;_snapGrilles=gj;}
     try{
-      const cur=DB.factures||[];const snap=_snapFactures||new Map();const curMap=new Map();const up=[];
-      for(const r of cur){if(r.id==null)continue;const j=JSON.stringify(r);curMap.set(r.id,j);if(snap.get(r.id)!==j)up.push({id:r.id,data:r});}
-      const del=[];snap.forEach((_v,id)=>{if(!curMap.has(id))del.push(id);});
-      if(up.length){await _sbUpsert('factures',[...new Map(up.map(r=>[r.id,r])).values()]);}
-      if(del.length){await _sbDelete('factures',del);}
-      _snapFactures=curMap;
+      _snapFactures=await _ecrireTable('factures',DB.factures||[],_snapFactures||new Map(),true);
     }catch(e){console.warn("Factures non sauvegardées (table 'factures' manquante ?)",e);}
     // Journal d'activité : non critique. Un échec (ex. RLS Supabase) ne doit JAMAIS
     // bloquer la sauvegarde ni afficher d'alerte. On l'écrit à part, en silencieux.
     try{
-      const cur=DB.journal||[];const snap=_snap['journal']||new Map();const curMap=new Map();const up=[];
-      for(const r of cur){if(r.id==null)continue;const j=JSON.stringify(r);curMap.set(r.id,j);if(snap.get(r.id)!==j)up.push({id:r.id,data:r});}
-      const del=[];snap.forEach((_v,id)=>{if(!curMap.has(id))del.push(id);});
-      if(up.length){await _sbUpsert('journal',[...new Map(up.map(r=>[r.id,r])).values()]);}
-      if(del.length){await _sbDelete('journal',del);}
-      _snap['journal']=curMap;
+      // Journal : on n'ajoute que des lignes neuves, jamais de concurrence sur une
+      // ligne existante. Pas de fusion, donc pas de relecture inutile.
+      _snap['journal']=await _ecrireTable('journal',DB.journal||[],_snap['journal']||new Map(),false);
     }catch(e){console.warn("Journal non sauvegardé (non bloquant) :",e&&e.message?e.message:e);}
   }catch(e){console.error("Sauvegarde:",e);alert("Erreur de sauvegarde : "+(e.message||e));}
 }
@@ -6729,8 +6770,8 @@ async function rzPush(pieces,opts){
             d.stockEntre=ds.lignesAcceptees||0;d.bonCommande=ds.numBonCommande;
             // Marqueur : cette pièce est en stock dans la caisse, il faudra l'en retirer
             // quand elle sortira du stock ERP.
-            /* null et non delete : _rzPreserveMarkers doit distinguer « effacé exprès »
-               de « pas encore chargé », sans quoi le marqueur serait restauré depuis la base. */
+            /* null et non delete : _nettoyerMarqueursNuls doit distinguer « effacé exprès »
+               de « pas encore chargé », sans quoi la fusion le restaurerait depuis la base. */
             list.forEach(function(a){if(okRefs[rzCodeArt(a.ref)]){a.rzInCaisse=today();a.rzOutCaisse=null;}});
             try{logAct("Caisse Rezomatic","Stock entré","bon "+ds.numBonCommande+" · "+d.stockEntre+" pièce(s)");}catch(_){}
           }
