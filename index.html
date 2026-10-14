@@ -1834,12 +1834,27 @@ function periodBuckets(from,to){const ms=86400000,d0=new Date(from+"T00:00:00"),
     while(y<ey||(y===ey&&mo<=em)){const st=new Date(y,mo,1).getTime();const en=new Date(y,mo+1,0,23,59,59).getTime();
       b.push({label:MO[mo]+" "+String(y).slice(2),start:st,end:en,value:0});mo++;if(mo>11){mo=0;y++;}}}
   return b;}
+/* Un jour où les avoirs dépassent les ventes donne un CA négatif. L'ancienne
+   version en tirait une hauteur négative : le navigateur refusait le <rect>
+   ("A negative value is not valid") et la barre n'était pas dessinée — le plus
+   mauvais jour de la période devenait invisible, sans rien signaler à l'écran.
+   On dessine donc depuis une ligne de zéro, qui n'est au bas du graphique que
+   si toutes les valeurs sont positives, et on colore les barres négatives. */
 function barChart(data,color){const W=640,H=240,padL=46,padB=26,padT=12,n=data.length||1;
-  const max=Math.max(1,...data.map(d=>d.value));const innerH=H-padB-padT,innerW=W-padL-10,bw=innerW/n,lblEvery=Math.ceil(n/13);
+  const vals=data.map(d=>+d.value||0);
+  const hi=Math.max(0,...vals),lo=Math.min(0,...vals),etendue=(hi-lo)||1;
+  const innerH=H-padB-padT,innerW=W-padL-10,bw=innerW/n,lblEvery=Math.ceil(n/13);
+  const yDe=v=>padT+innerH*(1-((v-lo)/etendue));   // ordonnée d'une valeur
+  const y0=yDe(0);
   let grid="",bars="",labels="";
-  [0,.5,1].forEach(f=>{const yv=padT+innerH*(1-f);grid+=`<line x1="${padL}" y1="${yv}" x2="${W-10}" y2="${yv}" stroke="var(--line)"/><text x="${padL-6}" y="${yv+3}" font-size="10" fill="var(--muted)" text-anchor="end">${eur(max*f)}</text>`;});
-  data.forEach((d,i)=>{const h=innerH*(d.value/max);const x=padL+i*bw+bw*0.15;const y=padT+innerH-h;const w=bw*0.7;
-    bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${color}"><title>${d.label} : ${eur(d.value)}</title></rect>`;
+  [hi,(hi+lo)/2,lo].forEach(v=>{const yv=yDe(v);
+    grid+=`<line x1="${padL}" y1="${yv.toFixed(1)}" x2="${W-10}" y2="${yv.toFixed(1)}" stroke="var(--line)"/>`
+      +`<text x="${padL-6}" y="${(yv+3).toFixed(1)}" font-size="10" fill="var(--muted)" text-anchor="end">${eur(v)}</text>`;});
+  // Repère du zéro, seulement quand il ne se confond pas avec le bas du cadre.
+  if(lo<0)grid+=`<line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W-10}" y2="${y0.toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3"/>`;
+  data.forEach((d,i)=>{const v=+d.value||0,yv=yDe(v);
+    const haut=Math.abs(yv-y0),x=padL+i*bw+bw*0.15,w=bw*0.7,top=(v>=0?yv:y0);
+    bars+=`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0,haut).toFixed(1)}" rx="3" fill="${v<0?'var(--red)':color}"><title>${d.label} : ${eur(v)}</title></rect>`;
     if(i%lblEvery===0)labels+=`<text x="${(x+w/2).toFixed(1)}" y="${H-8}" font-size="10" fill="var(--muted)" text-anchor="middle">${d.label}</text>`;});
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${grid}${bars}${labels}</svg>`;}
 function donut(segs){const total=segs.reduce((s,x)=>s+x.value,0)||0;const r=60,c=2*Math.PI*r,cx=80,cy=80;let off=0,arcs="";
