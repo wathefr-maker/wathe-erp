@@ -605,6 +605,7 @@
         <div class="fld" style="margin:0"><label>Du</label><input type="date" id="shopF_from"></div>
         <div class="fld" style="margin:0"><label>Au</label><input type="date" id="shopF_to"></div>
         <button class="btn" id="shopF_clear">Effacer</button>
+        <button class="btn" id="shopArchBtn" title="Les commandes au-delà des 1 000 plus récentes">Archives</button>
       </div></div>
       <div class="tablecard"><div class="tmeta" id="shopMeta">Clique sur « Actualiser » pour charger les commandes.</div><div style="overflow-x:auto"><table>
         <thead><tr><th>Commande</th><th>Date</th><th>Client</th><th>Statut</th><th>Produits</th><th>Pièces</th><th>Total TTC</th><th>Actions</th></tr></thead>
@@ -7262,6 +7263,7 @@ function renderShopify(){
     document.getElementById("shopRefresh").onclick=function(){loadShopifyOrders(true);};
     ["shopF_q","shopF_stage","shopF_from","shopF_to"].forEach(function(id){const el=document.getElementById(id);if(el){el.addEventListener("input",shopFilterChanged);el.addEventListener("change",shopFilterChanged);}});
     const cl=document.getElementById("shopF_clear");if(cl)cl.onclick=function(){["shopF_q","shopF_stage","shopF_from","shopF_to"].forEach(function(id){const e=document.getElementById(id);if(e)e.value="";});shopFilterChanged();};
+    const ab=document.getElementById("shopArchBtn");if(ab)ab.onclick=shopToggleArchives;
     const mb=document.getElementById("shopMoreBtn");if(mb)mb.onclick=shopLoadMore;
     _shopWired=true;
   }
@@ -8076,45 +8078,75 @@ async function shopCleanupBefore(){
   try{renderShopRows();}catch(e){}try{renderAll();}catch(e){}
   alert("C'est appliqué (rien n'est supprimé, réversible) :\n• Tout ce qui est avant #"+cut+" est masqué.\n"+(d?("• Le stock FlowStock acheté avant "+d+" est masqué."):"• (pas de filtre par date)"));
 }
+/* Au-delà de ce rang, une commande passe dans l'onglet Archives. Le découpage se
+   fait sur le RANG et non sur une date : la liste courante garde toujours la
+   même taille, quel que soit le rythme des ventes. */
+var SHOP_ACTIVES_MAX=1000, _shopArchives=false;
+
+/* Source selon la société active : Wathe, SBT, ou les deux (« Toutes »). */
+function shopSource(){
+  var _w=watheSocId(),_sbt=sbtSocId();
+  if(socFilter&&_w!=null&&socFilter==_w)return _shopOrders||[];
+  if(socFilter&&_sbt!=null&&socFilter==_sbt)return _shopOrdersSbt||[];
+  return (_shopOrders||[]).concat(_shopOrdersSbt||[]);
+}
+/* Tri chronologique : la plus récente en tête. Une copie garde la date de sa
+   commande d'origine (elle se range à côté d'elle au lieu de remonter en tête). */
+function shopTriDate(a,b){
+  var da=String(a&&a.date||""),db=String(b&&b.date||"");
+  if(da!==db)return db.localeCompare(da);
+  if(a&&a.duplicated&&!(b&&b.duplicated))return -1;
+  if(b&&b.duplicated&&!(a&&a.duplicated))return 1;
+  return 0;
+}
+/* Commandes retenues avant tout filtre d'écran : c'est sur cet ensemble que se
+   calcule le rang, pour qu'une recherche dans les archives trouve bien les
+   anciennes au lieu de chercher dans les 1 000 récentes. */
+function shopVisibles(){
+  return shopSource().filter(function(o){
+    return !(_shopMinOrder>0&&!o.duplicated&&shopOrderNum(o)>0&&shopOrderNum(o)<_shopMinOrder);
+  }).sort(shopTriDate);
+}
+function shopCompteArchives(){return Math.max(0,shopVisibles().length-SHOP_ACTIVES_MAX);}
 function shopFilteredOrders(){
   const q=(document.getElementById("shopF_q")?document.getElementById("shopF_q").value:"").trim().toLowerCase();
   const st=document.getElementById("shopF_stage")?document.getElementById("shopF_stage").value:"";
   const from=document.getElementById("shopF_from")?document.getElementById("shopF_from").value:"";
   const to=document.getElementById("shopF_to")?document.getElementById("shopF_to").value:"";
-  // Source selon la société active : Wathe, SBT, ou les deux ("Toutes").
-  var _w=watheSocId(),_sbt=sbtSocId();
-  var src;
-  if(socFilter&&_w!=null&&socFilter==_w)src=_shopOrders;                 // vue Wathe
-  else if(socFilter&&_sbt!=null&&socFilter==_sbt)src=_shopOrdersSbt;      // vue SBT
-  else src=(_shopOrders||[]).concat(_shopOrdersSbt||[]);                  // Toutes sociétés
-  return src.filter(function(o){
-    if(_shopMinOrder>0&&!o.duplicated&&shopOrderNum(o)>0&&shopOrderNum(o)<_shopMinOrder)return false;
+  const toutes=shopVisibles();
+  const lot=_shopArchives?toutes.slice(SHOP_ACTIVES_MAX):toutes.slice(0,SHOP_ACTIVES_MAX);
+  return lot.filter(function(o){
     if(q){const name=(o.name||"").toLowerCase(),cli=shopOrderClient(o).toLowerCase();if(name.indexOf(q)<0&&cli.indexOf(q)<0)return false;}
     if(st&&String(shopOrderStage(o))!==st)return false;
     if(from||to){const d=(o.date||"").slice(0,10);if(from&&d<from)return false;if(to&&d>to)return false;}
     return true;
-  })
-  // Tri chronologique : la plus récente en haut. Une copie garde la date de sa commande d'origine
-  // (elle se range donc à côté d'elle, au lieu de remonter systématiquement en tête).
-  .sort(function(a,b){
-    var da=String(a&&a.date||""),db=String(b&&b.date||"");
-    if(da!==db)return db.localeCompare(da);
-    if(a&&a.duplicated&&!(b&&b.duplicated))return -1;   // à date égale, la copie juste au-dessus de l'originale
-    if(b&&b.duplicated&&!(a&&a.duplicated))return 1;
-    return 0;
   });
+}
+function shopPaintArch(){
+  var b=document.getElementById("shopArchBtn");if(!b)return;
+  var n=shopCompteArchives();
+  b.textContent=_shopArchives?"← Commandes récentes":("Archives"+(n?" ("+n+")":""));
+  b.className="btn"+(_shopArchives?" v":"");
+  // Rien à archiver : le bouton n'a aucune raison d'être proposé.
+  b.style.display=(n||_shopArchives)?"":"none";
+}
+function shopToggleArchives(){
+  _shopArchives=!_shopArchives;_shopPage=1;
+  shopPaintArch();renderShopRows();
 }
 function renderShopRows(){
   const meta=document.getElementById("shopMeta"),rows=document.getElementById("shopRows"),wrap=document.getElementById("shopMoreWrap");if(!rows)return;
   var _w=watheSocId();
   if(socFilter&&_w!=null&&socFilter!=_w&&(sbtSocId()==null||socFilter!=sbtSocId())){if(meta)meta.textContent="Aucune vente Shopify pour cette société.";rows.innerHTML="";if(wrap)wrap.style.display="none";var _pg=document.getElementById("shopPager");if(_pg)_pg.innerHTML="";return;}
-  if(wrap)wrap.style.display=_shopMore?"":"none";
+  // « Charger plus » n'a de sens que sur la vue courante : les archives sont déjà là.
+  if(wrap)wrap.style.display=(_shopMore&&!_shopArchives)?"":"none";
+  try{shopPaintArch();}catch(e){}
   const list=shopFilteredOrders();
-  if(!list.length){if(meta)meta.textContent="Aucune commande.";rows.innerHTML="";const pg=document.getElementById("shopPager");if(pg)pg.innerHTML="";if(wrap)wrap.style.display="none";return;}
+  if(!list.length){if(meta)meta.textContent=_shopArchives?"Aucune commande archivée.":"Aucune commande.";rows.innerHTML="";const pg=document.getElementById("shopPager");if(pg)pg.innerHTML="";if(wrap)wrap.style.display="none";return;}
   const PS=50,totalPages=Math.max(1,Math.ceil(list.length/PS));
   if(_shopPage>totalPages)_shopPage=totalPages;if(_shopPage<1)_shopPage=1;
   const pageList=list.slice((_shopPage-1)*PS,_shopPage*PS);
-  if(meta)meta.textContent=list.length+" commande"+(list.length>1?"s":"")+" · page "+_shopPage+"/"+totalPages+" · "+_shopOrders.length+" chargée"+(_shopOrders.length>1?"s":"")+(_shopMore?" (il en reste)":"");
+  if(meta)meta.textContent=(_shopArchives?"Archives — ":"")+list.length+" commande"+(list.length>1?"s":"")+" · page "+_shopPage+"/"+totalPages+" · "+_shopOrders.length+" chargée"+(_shopOrders.length>1?"s":"")+(_shopMore?" (il en reste)":"");
   if(!list.length){rows.innerHTML='<tr><td colspan="8" class="muted" style="text-align:center;padding:18px">Aucune commande ne correspond aux filtres.</td></tr>';shopRenderPager(1);return;}
   rows.innerHTML=pageList.map(function(o){
     const prod=(o.lines||[]).map(function(l){return esc(l.title)+' <span class="muted">×'+l.qty+(l.sku?' · '+esc(l.sku):"")+'</span>';}).join("<br>");
