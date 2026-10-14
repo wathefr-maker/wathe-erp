@@ -2254,7 +2254,7 @@ function cohIndex(){
       /* Plusieurs factures peuvent citer la même paire au fil de ses reventes.
          On garde la plus récente : c'est elle qui décrit la vente en cours. */
       if(!idx[k]||String(f.date||"")>String(idx[k].date||""))
-        idx[k]={num:f.num||"",date:f.date||"",source:f.source||"",ttc:(+l.puTTC||0)};
+        idx[k]={id:f.id,num:f.num||"",date:f.date||"",source:f.source||"",ttc:(+l.puTTC||0)};
     });});
   });
   _cohMemo=idx;return idx;
@@ -2637,26 +2637,18 @@ function rzHorsLigne(msg){
 }
 var _rzHorsLigneSignale=false;
 
-/* Interroge la caisse et renvoie les pièces sorties depuis la dernière relève. */
-async function rzSorties(){
-  /* Fenêtre fixe, sans curseur. L'ancien rzLastScan vivait dans le localStorage
-     et avançait à chaque ouverture de Vente boutique, même quand la relève
-     n'avait rien trouvé. Une vente arrivée pendant une relève infructueuse — ou
-     noyée dans une réponse tronquée — passait définitivement derrière le
-     curseur et devenait irrécupérable. C'est ce qui a fait perdre la vente du
-     9 septembre. Sans curseur, rien ne peut plus tomber derrière. */
+/* Une seule interrogation de la caisse par relève : les ventes et les retours se
+   lisent dans la MÊME réponse. Les faire chercher chacun la leur doublait les
+   appels et pouvait les faire travailler sur deux instants différents. */
+async function rzBlocsCaisse(){
   var depuis=rzStamp(new Date(Date.now()-RZ_FENETRE_JOURS*86400e3));
   var r=await sb.functions.invoke("rezomatic-call",{body:{
     method:"getUpdatedStocksFromTimeStamp", args:{dtModif:depuis},
     maxValeurs:RZ_MAX_VALEURS}});
   if(r.error)throw new Error(await rzErrDetail(r.error));
   var d=r.data||{};
-  var vals=d.premieresValeurs||[];
   /* Une relève incomplète ne doit jamais passer pour une relève vide : c'est
-     précisément ce qui a fait disparaître les ventes en silence. Si la fonction
-     edge a coupé, on le dit, on le trace, et on traite quand même ce qu'on a.
-     Le message remonte désormais à l'écran dans tous les cas, pas seulement en
-     relève manuelle — une troncature signifie une vente possiblement invisible. */
+     précisément ce qui a fait disparaître les ventes en silence. */
   _rzTronque=d.tronque
     ? ("la caisse a renvoyé "+d.nbValeurs+" valeurs, seules "+d.maxValeurs+" ont été lues")
     : "";
@@ -2664,7 +2656,18 @@ async function rzSorties(){
     console.warn("[Rezomatic] relève tronquée : "+_rzTronque);
     try{logAct("Caisse Rezomatic","Relève tronquée",_rzTronque);}catch(_){}
   }
-  var blocs=rzParseBlocs(vals);
+  return rzParseBlocs(d.premieresValeurs||[]);
+}
+
+/* Interroge la caisse et renvoie les pièces sorties depuis la dernière relève. */
+async function rzSorties(blocs){
+  /* Fenêtre fixe, sans curseur. L'ancien rzLastScan vivait dans le localStorage
+     et avançait à chaque ouverture de Vente boutique, même quand la relève
+     n'avait rien trouvé. Une vente arrivée pendant une relève infructueuse — ou
+     noyée dans une réponse tronquée — passait définitivement derrière le
+     curseur et devenait irrécupérable. C'est ce qui a fait perdre la vente du
+     9 septembre. Sans curseur, rien ne peut plus tomber derrière. */
+  blocs=blocs||await rzBlocsCaisse();
   var out=[];
   blocs.forEach(function(b){
     /* Seules les sorties nous intéressent. Le test sur null est indispensable :
@@ -2696,6 +2699,125 @@ async function rzSorties(){
   return out;
 }
 
+/* ============================================================================
+   RETOURS ENCAISSÉS À LA CAISSE
+   ----------------------------------------------------------------------------
+   La relève ne regardait que les stocks TOMBÉS à zéro : les ventes. Un retour
+   fait l'inverse — il remonte le stock de 0 à 1 — et ne passait donc aucun
+   filtre. L'ERP gardait la paire « Vendu » avec sa facture pendant que la caisse
+   l'avait de nouveau en rayon.
+
+   Trois dégâts, tous silencieux : le chiffre d'affaires restait gonflé de la
+   vente annulée ; une revente au comptoir devenait indétectable, puisque
+   rzSorties ne cherche que des pièces « En Stock » ; et rezomatic-regul, qui
+   voit la caisse à 1 face à un ERP qui attend 0, aurait proposé de REMETTRE la
+   caisse à zéro — annulant le retour physique sans laisser de trace.
+
+   On détecte donc aussi le sens inverse. La condition est stricte : il faut que
+   l'ERP ait lui-même sorti la paire de la caisse (rzOutCaisse posé). Sans ce
+   test, chaque entrée de stock faite par le cron — qui fait aussi passer un
+   article de 0 à 1 — serait prise pour un retour.
+   ============================================================================ */
+async function rzRetours(blocs){
+  blocs=blocs||await rzBlocsCaisse();
+  var out=[];
+  blocs.forEach(function(b){
+    var st=rzStockPdv(b);
+    if(!b.codeArt||st===null||!(st>=1))return;        // seules les remontées nous intéressent
+    var a=(DB.articles||[]).find(function(x){
+      return x&&!x.archived&&rzCodeArt(x.ref)===b.codeArt
+        &&!(typeof inStock==="function"?inStock(x):x.statut==="En Stock");
+    });
+    if(!a)return;                      // inconnue, ou déjà en stock : rien à signaler
+    if(a.rzIgnoreRetour)return;        // écartée manuellement
+    /* Le marqueur de sortie est la preuve que cette remontée est un retour et
+       non un approvisionnement : seul l'ERP pose rzOutCaisse, et seulement
+       après avoir retiré la paire de la caisse. */
+    if(!a.rzOutCaisse)return;
+    var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
+    var vente=(typeof cohVenteDe==="function")?cohVenteDe(a.ref):null;
+    out.push({piece:a,codeArt:b.codeArt,titre:(m.fr||m.sku||a.ref),taille:vSizeTxt(v),
+      stock:st,vente:vente});
+  });
+  return out;
+}
+
+/* Pop-up des retours. Volontairement séparé de celui des ventes : on ne mélange
+   pas un encaissement et son annulation dans la même fenêtre. */
+function rzOpenPopRetours(list){
+  _rzPopOpen=true;
+  var ov=document.createElement("div");ov.id="rzRetOv";
+  ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99998;display:flex;align-items:center;justify-content:center;padding:16px";
+  var lignes=list.map(function(x,i){
+    var v=x.vente;
+    return '<div class="_rzRetCard" style="border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:10px">'
+      +'<div style="font-weight:700">'+esc(x.titre)+' <span class="muted" style="font-weight:500">'+esc(x.taille||"")+'</span></div>'
+      +'<div class="muted" style="font-size:12.5px;margin:3px 0 9px">'+esc(x.piece.ref)+' · statut ERP : '+esc(x.piece.statut||"")
+        +(v?(' · vente du '+esc(v.date)+' — facture '+esc(v.num)+' · '+eur(v.ttc)):' · <b style="color:#b45309">aucune facture retrouvée</b>')+'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +'<button class="btn v _rzRetOk" data-i="'+i+'" style="padding:7px 12px;font-size:13px">'
+          +(v?'Enregistrer le retour (avoir)':'Remettre en stock')+'</button>'
+        +'<button class="btn _rzRetSkip" data-i="'+i+'" style="padding:7px 12px;font-size:13px" '
+          +'title="La caisse s\'est trompée, ou le stock a remonté pour une autre raison">Pas un retour</button>'
+      +'</div></div>';
+  }).join("");
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:620px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:86vh;overflow-y:auto">'
+    +'<div style="font-weight:800;font-size:18px;margin-bottom:3px">'+list.length+' paire(s) revenue(s) en stock caisse</div>'
+    +'<div class="sub" style="margin-bottom:14px">La caisse les a de nouveau en rayon alors que l\'ERP les croit vendues. '
+    +'Enregistrer le retour crée l\'avoir et remet la paire en stock.</div>'
+    +lignes
+    +'<div style="display:flex;justify-content:flex-end;margin-top:6px">'
+    +'<button class="btn _rzRetClose">Fermer</button></div></div>';
+  document.body.appendChild(ov);
+  var fini=function(){
+    if(!ov.querySelectorAll("._rzRetCard").length){ov.remove();_rzPopOpen=false;}
+  };
+  ov.querySelector("._rzRetClose").onclick=function(){ov.remove();_rzPopOpen=false;};
+  ov.querySelectorAll("._rzRetOk").forEach(function(b){
+    b.onclick=async function(){
+      var x=list[+b.dataset.i];b.disabled=true;b.textContent="…";
+      try{
+        await rzAppliquerRetour(x);
+        var c=b.closest("._rzRetCard");if(c)c.remove();fini();
+      }catch(e){alert("Erreur : "+((e&&e.message)||e));b.disabled=false;b.textContent="Réessayer";}
+    };
+  });
+  ov.querySelectorAll("._rzRetSkip").forEach(function(b){
+    b.onclick=async function(){
+      var x=list[+b.dataset.i];
+      if(!confirm("Écarter ce retour ?\n\nLa paire restera « "+(x.piece.statut||"")+" » dans l'ERP et ne sera plus proposée."))return;
+      x.piece.rzIgnoreRetour=today();
+      try{await save();}catch(_){}
+      var c=b.closest("._rzRetCard");if(c)c.remove();fini();
+    };
+  });
+}
+
+/* Applique un retour venu de la caisse. Avec facture d'origine on passe par
+   vbReturnSale, qui sait déjà émettre l'avoir ; sans elle (vente enregistrée
+   sans facture) on se contente de remettre la paire en stock, et on le dit. */
+async function rzAppliquerRetour(x){
+  var a=x.piece;
+  if(x.vente&&x.vente.id!=null){
+    await vbReturnSale(a.ref,x.vente.id,{silencieux:true});
+  }else{
+    if(!confirm("Aucune facture n'a été retrouvée pour "+a.ref+".\n\n"
+      +"La paire sera simplement remise en stock, sans avoir. "
+      +"Si elle avait été encaissée, pense à régulariser à la main."))return;
+    a.statut="En Stock";a.dispo=(a.dispo!=null?a.dispo:1);
+    delete a.venteTTC;delete a.dateVente;delete a.heureVente;delete a.canal;
+    a.maj=today();
+  }
+  /* La paire est physiquement de retour dans la caisse : on remet les marqueurs
+     en accord, sans quoi sa prochaine vente au comptoir ne serait pas détectée
+     (rzSorties exige rzInCaisse posé et rzOutCaisse absent). */
+  a.rzInCaisse=today();a.rzOutCaisse=null;delete a.rzIgnore;delete a.rzIgnoreRetour;
+  try{logAct("Caisse Rezomatic","Retour encaissé",a.ref+(x.vente?(" · avoir sur "+x.vente.num):" · sans facture"));}catch(_){}
+  await save();
+  try{renderStock&&renderStock();}catch(_){}
+  try{renderVBoutique&&renderVBoutique();}catch(_){}
+}
+
 /* Relève périodique. Le pop-up ne s'ouvre que s'il y a quelque chose à traiter. */
 var _rzLastCheck=0;
 async function rzCheckVentes(opts){
@@ -2705,9 +2827,15 @@ async function rzCheckVentes(opts){
   if(!opts.force&&Date.now()-_rzLastCheck<60000)return;
   _rzLastCheck=Date.now();
   try{
-    var l=await rzSorties();
+    // Une seule lecture de la caisse, deux analyses : les ventes et les retours.
+    var blocs=await rzBlocsCaisse();
+    var l=await rzSorties(blocs);
+    var ret=await rzRetours(blocs);
+    /* Les ventes d'abord : elles sont plus urgentes, le client est au comptoir.
+       Les retours attendront la relève suivante, une minute plus tard. */
     if(l.length)rzOpenPop(l);
-    else if(opts.force)alert("Aucune sortie de stock détectée sur la caisse.");
+    else if(ret.length)rzOpenPopRetours(ret);
+    else if(opts.force)alert("Aucun mouvement de stock à traiter sur la caisse.");
     /* Averti quoi qu'il arrive : tronquée, la relève a pu manquer une vente,
        y compris quand elle vient d'en trouver d'autres. Se taire ici revient à
        laisser croire que tout a été vu. */
@@ -3903,7 +4031,10 @@ function renderVentesDepDetail(body){
       +'</tbody></table></div></div>';
 }
 
-async function vbReturnSale(ref,factId){
+/* opts.silencieux : l'appelant a déjà confirmé et rendra compte lui-même.
+   Utilisé par le pop-up des retours caisse, pour ne pas demander deux fois. */
+async function vbReturnSale(ref,factId,opts){
+  opts=opts||{};
   var a=(DB.articles||[]).find(function(x){return x.ref===ref;});
   if(!a)return alert("Pièce introuvable.");
   var f=(DB.factures||[]).find(function(x){return x.id==factId;});
@@ -3911,7 +4042,7 @@ async function vbReturnSale(ref,factId){
   var wasCession=(a.viSoldBy!=null);
   var msg="Retourner la paire "+ref+" ?\n\nUn avoir (ligne négative) sera créé, la vente d'origine reste visible, et la paire repasse « En Stock ».";
   if(wasCession)msg+="\n\n⚠️ Vente interne (cession) : la marge et la TVA de cession seront également annulées par l'avoir.";
-  if(!confirm(msg))return;
+  if(!opts.silencieux&&!confirm(msg))return;
   // Avoir pour CETTE paire uniquement
   var av=buildAvoir(f,{refs:[ref]});
   if(!av||!av.lines.length){return alert("Impossible de créer l'avoir pour cette paire.");}
@@ -3927,7 +4058,8 @@ async function vbReturnSale(ref,factId){
   await save();
   renderVBoutique();
   try{renderStock&&renderStock();}catch(_){}
-  alert("Retour enregistré. Avoir "+(av.num||"")+" créé, la paire "+ref+" est de retour en stock.");
+  if(!opts.silencieux)alert("Retour enregistré. Avoir "+(av.num||"")+" créé, la paire "+ref+" est de retour en stock.");
+  return av;
 }
 /* Moyen de paiement d'une vente, tel qu'il a été saisi au moment de l'encaissement.
    Il vit sur la PIÈCE et non sur la facture : regMode pour un règlement unique,
