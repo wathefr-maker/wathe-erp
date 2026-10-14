@@ -1463,6 +1463,39 @@ async function _ecrireTable(table,cur,snap,fusionner){
   return curMap;
 }
 
+/* Les grilles de tailles tiennent sur UNE SEULE ligne (id=1) qui contient tout
+   l'objet. Un onglet qui enregistrait une sizechart réécrivait donc le bloc
+   entier : deux onglets modifiant deux grilles différentes, et le travail du
+   premier disparaissait. Même fusion que pour les lignes, mais grille par
+   grille à l'intérieur de l'objet. */
+async function _ecrireGrilles(){
+  const maintenant=JSON.stringify(DB.grilles||{});
+  if(maintenant===_snapGrilles)return;
+  let aEcrire=DB.grilles;
+  if(aEcrire&&typeof aEcrire==="object"&&!Array.isArray(aEcrire)){
+    try{
+      let avant={};try{avant=JSON.parse(_snapGrilles||"{}")||{};}catch(_){avant={};}
+      const lu=await sb.from('grilles').select('data').eq('id',1);
+      if(lu.error)throw lu.error;
+      const srv=(lu.data&&lu.data[0]&&lu.data[0].data)||null;
+      if(srv&&typeof srv==="object"&&_canon(srv)!==_canon(avant)){
+        const fusion={};
+        Object.keys(srv).forEach(function(k){fusion[k]=srv[k];});
+        Object.keys(aEcrire).forEach(function(k){
+          if(_canon(aEcrire[k])!==_canon(avant[k]))fusion[k]=aEcrire[k];
+        });
+        Object.keys(avant).forEach(function(k){if(!(k in aEcrire))delete fusion[k];});
+        // L'objet garde son identité : l'écran doit montrer ce qui part en base.
+        Object.keys(aEcrire).forEach(function(k){delete aEcrire[k];});
+        Object.keys(fusion).forEach(function(k){aEcrire[k]=fusion[k];});
+      }
+    }catch(e){console.warn("[grilles] fusion impossible, écriture directe :",(e&&e.message)||e);}
+  }
+  const {error}=await sb.from('grilles').upsert([{id:1,data:aEcrire||{}}]);
+  if(error)throw error;
+  _snapGrilles=JSON.stringify(aEcrire||{});
+}
+
 async function save(){
   /* Traduction du null en suppression avant toute comparaison : la fusion
      raisonne en clés présentes ou absentes, pas en valeurs sentinelles. */
@@ -1471,8 +1504,7 @@ async function save(){
     for(const t of ARR_TABLES){
       _snap[t]=await _ecrireTable(t,DB[t]||[],_snap[t]||new Map(),true);
     }
-    const gj=JSON.stringify(DB.grilles||{});
-    if(gj!==_snapGrilles){const {error}=await sb.from('grilles').upsert([{id:1,data:DB.grilles||{}}]);if(error)throw error;_snapGrilles=gj;}
+    await _ecrireGrilles();
     try{
       _snapFactures=await _ecrireTable('factures',DB.factures||[],_snapFactures||new Map(),true);
     }catch(e){console.warn("Factures non sauvegardées (table 'factures' manquante ?)",e);}
