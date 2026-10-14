@@ -421,6 +421,9 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murResV{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .murResL{font-size:12.5px;color:var(--muted);margin-top:4px}
 .murResD{font-size:11.5px;color:var(--muted);margin-top:7px;font-variant-numeric:tabular-nums}
+/* Avertissement attaché au résultat : ce que le seul rendement ne dit pas. */
+.murAvis{font-size:11.5px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fde68a;
+  border-radius:8px;padding:7px 10px;margin-top:9px}
 
 /* Recherche d'un modèle à poser. */
 .murQ{width:calc(100% - 36px);margin:15px 18px 0;padding:9px 12px;border:1px solid var(--line);
@@ -1386,6 +1389,12 @@ function amModeles(){
     o.joursSansStock=jours;
     o.jourSuivis=(jFin-jD+1);
     o.rupture=o.jourSuivis>0?(jours/o.jourSuivis):0;
+    /* Jours où le modèle a RÉELLEMENT pu se vendre : depuis sa première entrée,
+       moins le temps passé à zéro. C'est le seul dénominateur honnête pour un
+       rythme de ventes. Rapporter 4 ventes à 365 jours quand la référence est
+       arrivée il y a 4 jours la fait passer pour un échec alors qu'elle part
+       plus vite que tout le reste du mur. */
+    o.joursEnVente=Math.max(0,o.jourSuivis-jours);
 
     o.sMin=amSeuilEcoul(o.margeCout,c.rMin,c.jours);
     o.sBon=amSeuilEcoul(o.margeCout,c.rBon,c.jours);
@@ -1626,7 +1635,12 @@ function murMargeCout(m,o){
 function murCalc(m){
   var o=murStats()[String(m.id)]||null;
   var c=amCfg();
-  var mesVAn=(o&&o.vendues)?r2(o.vendues*365/c.fenetre):null;
+  /* Le rythme se rapporte aux jours où le modèle a pu se vendre, pas à la
+     fenêtre entière : une référence reçue il y a quatre jours n'a pas eu un an
+     pour faire ses preuves. Sans ce dénominateur, tout ce qui est récent paraît
+     mort. */
+  var jours=(o&&o.joursEnVente!=null)?o.joursEnVente:null;
+  var mesVAn=(o&&o.vendues&&jours>0)?r2(o.vendues*365/jours):null;
   var mesProf=(o&&o.stock)?o.stock:null;
   var mc=murMargeCout(m,o);
 
@@ -1638,8 +1652,16 @@ function murCalc(m){
   var capital=r2(prof*cout);
   var margeAn=(vAn!=null&&mc!=null)?r2(vAn*mc*cout):null;
 
+  /* Quatre ventes en quatre jours donnent un rythme spectaculaire et ne prouvent
+     rien : c'est peut-être la nouveauté, un client qui a pris trois tailles, ou
+     un vrai succès. Sous ce seuil d'observation, on affiche la projection mais
+     on refuse de la colorer — on ne condamne ni ne sacre une référence qui n'a
+     pas encore eu le temps de parler. */
+  var jeune=(m.mur.vAn==null)&&(jours==null||jours<MUR_JOURS_MINI);
+
   return {m:m,o:o,prof:prof,vAn:vAn,cout:cout,margeCout:mc,
     rendement:rend,capital:capital,margeAn:margeAn,
+    jours:jours, jeune:jeune, rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
     /* « estimé » dès qu'un chiffre vient de l'utilisateur ou qu'aucune vente
        n'a été mesurée : on ne présente pas une hypothèse comme un relevé. */
     estime:(m.mur.vAn!=null||mesVAn==null||m.mur.prof!=null),
@@ -1653,10 +1675,17 @@ function murNum(x){
   return (Math.round(x*100)/100).toFixed(2).replace(".",",");
 }
 
-/* Bandes de couleur, calées sur les mêmes seuils que le reste de la plateforme. */
-function murBande(rend){
+/* Durée d'observation en dessous de laquelle un rythme de ventes ne prouve rien.
+   Un mois : assez pour qu'un modèle ait croisé des clients de toutes tailles,
+   trop peu pour qu'un emballement de nouveauté passe pour une tendance. */
+var MUR_JOURS_MINI=30;
+
+/* Bandes de couleur, calées sur les mêmes seuils que le reste de la plateforme.
+   Un modèle trop récent reste neutre : le colorer reviendrait à juger. */
+function murBande(rend,jeune){
   var c=amCfg();
   if(rend==null)return {cls:"neu",txt:"à estimer"};
+  if(jeune)return {cls:"neu",txt:"trop tôt"};
   if(rend>=c.rBon)return {cls:"ok",txt:"fort"};
   if(rend>=c.rMin)return {cls:"ok",txt:"correct"};
   if(rend>=c.rMin/2)return {cls:"warn",txt:"faible"};
@@ -1738,11 +1767,20 @@ function murVider(){
 
 function murTuiles(L){
   var cap=L.reduce(function(n,x){return n+x.capital;},0);
-  var mg=L.reduce(function(n,x){return n+(x.margeAn||0);},0);
-  var rend=(cap>0&&mg>0)?r2(mg/cap):null;
+  /* Le rendement du mur ne se calcule QUE sur les modèles jugeables. Une
+     référence reçue il y a quatre jours projette un rythme énorme : la laisser
+     entrer dans la moyenne faisait afficher un rendement de 11 pour un mur qui
+     en vaut 1,2, et un chiffre pareil ne se discute pas, il se jette. */
+  var J=L.filter(function(x){return !x.jeune&&x.rendement!=null;});
+  var capJ=J.reduce(function(n,x){return n+x.capital;},0);
+  var mg=J.reduce(function(n,x){return n+(x.margeAn||0);},0);
+  var rend=(capJ>0&&mg>0)?r2(mg/capJ):null;
   var B=murBande(rend);
+  var ecartes=L.length-J.length;
   var sans=L.filter(function(x){return x.rendement==null;}).length;
-  var faibles=L.filter(function(x){return x.rendement!=null&&x.rendement<amCfg().rMin;});
+  var jeunes=L.filter(function(x){return x.jeune&&x.rendement!=null;}).length;
+  // Un modèle trop récent n'est pas « sous le seuil » : il n'a pas encore couru.
+  var faibles=L.filter(function(x){return x.rendement!=null&&!x.jeune&&x.rendement<amCfg().rMin;});
   var capF=faibles.reduce(function(n,x){return n+x.capital;},0);
   return '<div class="adKpi">'
     +'<div class="adT"><div class="adTl">Capital engagé</div>'
@@ -1751,14 +1789,21 @@ function murTuiles(L){
       +acPl(L.reduce(function(n,x){return n+x.prof;},0),"paire")+'</div></div>'
     +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">Rendement du mur</div>'
       +'<div class="adTv">'+murNum(rend)+'</div>'
-      +'<div class="adTs">1 € engagé rapporte '+(rend==null?"—":(murNum(rend)+" € de marge par an"))+'</div></div>'
+      +'<div class="adTs">'+(rend==null
+        ? "aucun modèle jugeable pour l'instant"
+        : ("1 € engagé rapporte "+murNum(rend)+" € de marge par an"
+           +(ecartes?(" · sur "+acPl(J.length,"modèle")+" jugeable"+(J.length>1?"s":"")):"")))
+      +'</div></div>'
     +'<div class="adT"><div class="adTl">Marge attendue</div>'
       +'<div class="adTv">'+amEur(mg)+'</div>'
-      +'<div class="adTs">par an, au rythme retenu</div></div>'
+      +'<div class="adTs">par an'+(ecartes
+        ? (" · "+acPl(ecartes,"modèle")+" mis de côté, trop récent"+(ecartes>1?"s":"")+" ou à estimer")
+        : ", au rythme retenu")+'</div></div>'
     +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">Sous le seuil</div>'
       +'<div class="adTv">'+faibles.length+'</div>'
       +'<div class="adTs">'+amEur(capF)+' engagés sous '+murNum(amCfg().rMin)
-      +(sans?(' · '+sans+' à estimer'):'')+'</div></div>'
+      +(sans?(' · '+sans+' à estimer'):'')
+      +(jeunes?(' · '+jeunes+' trop récent'+(jeunes>1?"s":"")):'')+'</div></div>'
   +'</div>';
 }
 
@@ -1766,25 +1811,31 @@ function murCase(r,c){
   var m=murAt(r,c);
   if(!m)return '<button class="murVideC" onclick="murOuvrirPose('+r+','+c+')" '
     +'title="Poser un modèle ici">+</button>';
-  var x=murCalc(m),B=murBande(x.rendement);
+  var x=murCalc(m),B=murBande(x.rendement,x.jeune);
   var ouvert=(_murEdit===String(m.id));
+  var marque=x.jeune?'<i>jeune</i>':(x.estime?'<i>est.</i>':'');
   return '<div class="murC '+B.cls+(ouvert?" on":"")+'" onclick="murEditer('+m.id+')" '
     +'title="'+esc((m.fr||m.sku||"")+" — cliquer pour régler")+'">'
     +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCs">'+esc(m.sku||"")+'</div>'
-    +'<div class="murCv">'+murNum(x.rendement)+(x.estime?'<i>est.</i>':'')+'</div>'
+    +'<div class="murCv">'+murNum(x.rendement)+marque+'</div>'
     +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
-    +'<div class="murCf">'+x.prof+' p · '+amEur(x.capital)+'</div>'
+    +'<div class="murCf">'+x.prof+' p · '+amEur(x.capital)
+    +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
   +'</div>';
 }
 
 function murReglage(){
   if(!_murEdit)return "";
   var m=modeleById(+_murEdit);if(!m||!m.mur)return "";
-  var x=murCalc(m),B=murBande(x.rendement),c=amCfg();
+  var x=murCalc(m),B=murBande(x.rendement,x.jeune),c=amCfg();
   var src=function(mes){return mes==null
     ? '<i class="murSrc">aucune vente mesurée</i>'
     : '<i class="murSrc">mesuré : '+amNum(mes,2)+'</i>';};
+  /* Le dénominateur du rythme, écrit en toutes lettres : c'est lui qui décide
+     si « 4 ventes » est un succès ou un échec, et personne ne peut le deviner. */
+  var base=(x.jours==null||x.vendues==null)?""
+    :('<i class="murSrc">'+acPl(x.vendues,"vente")+' en '+acPl(x.jours,"jour")+' de présence</i>');
   return '<div class="adCard murRg">'
     +'<div class="adH"><div class="adHt">'+esc(m.fr||m.sku||"?")+'</div>'
       +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")
@@ -1797,7 +1848,7 @@ function murReglage(){
         +'onchange="murSet('+m.id+',\'prof\',this.value)">'+src(x.mesProf)+'</label>'
       +'<label>Ventes par an<span>rythme attendu</span>'
         +'<input type="number" min="0" step="0.5" value="'+(x.vAn==null?"":x.vAn)+'" '
-        +'onchange="murSet('+m.id+',\'vAn\',this.value)">'+src(x.mesVAn)+'</label>'
+        +'onchange="murSet('+m.id+',\'vAn\',this.value)">'+src(x.mesVAn)+base+'</label>'
       +'<label>Coût unitaire<span>prix d\'achat HT</span>'
         +'<input type="number" min="0" step="1" value="'+(x.cout||"")+'" '
         +'onchange="murSet('+m.id+',\'cout\',this.value)">'
@@ -1813,7 +1864,19 @@ function murReglage(){
             : ('('+amNum(x.vAn,1)+' ventes ÷ '+x.prof+' paires) × '+amNum(x.margeCout,2)
                +' de marge par euro = '+murNum(x.rendement)))
         +'</div>'
-        +'<div class="murResD">Seuils : plancher '+amNum(c.rMin,2)+' · confortable '+amNum(c.rBon,2)+'</div>'
+        +'<div class="murResD">Seuils : plancher '+murNum(c.rMin)+' · confortable '+murNum(c.rBon)+'</div>'
+        /* Deux faits que le rendement seul ne dit pas, et qui renversent souvent
+           la lecture : depuis quand on observe, et combien de temps le modèle a
+           été introuvable en rayon. */
+        +(x.jeune
+          ? ('<div class="murAvis">Observé sur '+(x.jours==null?"très peu de temps":acPl(x.jours,"jour"))
+             +' seulement : le rythme est une projection, pas un verdict. '
+             +'Reviens-y après '+MUR_JOURS_MINI+' jours de présence.</div>')
+          : '')
+        +((x.rupture!=null&&x.rupture>c.ruptureMax)
+          ? ('<div class="murAvis">En rupture '+amPct(x.rupture)+' du temps : '
+             +'les ventes mesurées sous-estiment la demande. Réassortis avant de juger.</div>')
+          : '')
       +'</div>'
     +'</div>'
   +'</div>';
@@ -1861,7 +1924,7 @@ function renderMur(){
         +'<span class="murLgI ok">correct et plus</span>'
         +'<span class="murLgI warn">faible</span>'
         +'<span class="murLgI bad">perdant</span>'
-        +'<span class="murLgI neu">à estimer</span>'
+        +'<span class="murLgI neu">trop tôt ou à estimer</span>'
       +'</div>'
     +'</div>'
     +amReglages();
