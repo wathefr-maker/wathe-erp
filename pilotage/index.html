@@ -1173,11 +1173,17 @@ function acIndexRefs(){
    calcul des jours sans stock, qui suspend le jugement.
    ========================================================================== */
 
+/* TOUT SE MESURE À LA SAISON, pas à l'année. La boutique en vit deux par an, et
+   douze mois mélangent un hiver et un été : une UGG jugée en juillet paraît
+   morte, une sandale jugée en janvier aussi. Annualiser serait pire encore —
+   ce serait prêter à un modèle d'hiver un été qu'il n'aura jamais. On mesure
+   donc ce qui s'est réellement passé sur une saison, et on s'arrête là. */
+var SAISON=180;
 var AM_DEFAUT={
-  fenetre:365,       // profondeur d'analyse, en jours
+  fenetre:SAISON,    // profondeur d'analyse, en jours — une saison
   jours:90,          // la fenêtre d'épreuve d'une pièce
-  rMin:1.0,          // rendement visé : plancher
-  rBon:1.5,          // rendement visé : confortable
+  rMin:0.5,          // rendement visé sur UNE saison : plancher
+  rBon:0.75,         // rendement visé sur UNE saison : confortable
   minPieces:3,       // en dessous, pas assez d'historique pour juger
   ruptureMax:0.30    // part de jours sans stock au-delà de laquelle on suspend
 };
@@ -1358,7 +1364,7 @@ function amModeles(){
     }
   });
 
-  var an=365/c.fenetre;
+  var parSaison=SAISON/c.fenetre;
   var out=[];
   Object.keys(parM).forEach(function(k){
     var o=parM[k];
@@ -1371,7 +1377,7 @@ function amModeles(){
        combien d'euros rapporte un euro engagé, donc elle qui fixe le seuil. */
     o.margeCout=acMediane2(o.ratios);
     if(o.margeCout==null)o.margeCout=acMediane2(o.ratiosTheo);
-    o.rendement=(o.valeur>0&&o.marge>0)?r2(o.marge*an/o.valeur):null;
+    o.rendement=(o.valeur>0&&o.marge>0)?r2(o.marge*parSaison/o.valeur):null;
 
     /* La rupture se mesure à partir de la PREMIÈRE entrée du modèle, pas du
        début de la fenêtre : avant d'avoir été acheté une première fois, un
@@ -1429,7 +1435,7 @@ function acMediane2(arr){
    Borné : une marge délirante produirait sinon un seuil absurde. */
 function amSeuilEcoul(margeCout,objectif,jours){
   if(!(margeCout>0))return null;
-  var s=objectif/((365/jours)*margeCout);
+  var s=objectif/((SAISON/jours)*margeCout);
   return Math.max(0.10,Math.min(0.95,s));
 }
 
@@ -1482,16 +1488,16 @@ function amReglages(){
     +'<div class="adSg">'
       +'<label>Durée de l\'épreuve <input type="number" min="30" max="365" value="'+c.jours
         +'" onchange="amCfgSet(\'jours\',Math.max(30,Math.min(365,+this.value||90)))"> j</label>'
-      +'<label>Rendement plancher <input type="number" min="0.1" step="0.1" value="'+c.rMin
-        +'" onchange="amCfgSet(\'rMin\',+this.value||1)"></label>'
-      +'<label>Rendement confortable <input type="number" min="0.1" step="0.1" value="'+c.rBon
-        +'" onchange="amCfgSet(\'rBon\',+this.value||1.5)"></label>'
+      +'<label>Rendement plancher, par saison <input type="number" min="0.05" step="0.05" value="'+c.rMin
+        +'" onchange="amCfgSet(\'rMin\',+this.value||0.5)"></label>'
+      +'<label>Rendement confortable, par saison <input type="number" min="0.05" step="0.05" value="'+c.rBon
+        +'" onchange="amCfgSet(\'rBon\',+this.value||0.75)"></label>'
       +'<label>Pièces minimum pour juger <input type="number" min="1" value="'+c.minPieces
         +'" onchange="amCfgSet(\'minPieces\',Math.max(1,parseInt(this.value,10)||3))"></label>'
       +'<label>Rupture tolérée <input type="number" min="0" max="90" value="'+Math.round(c.ruptureMax*100)
         +'" onchange="amCfgSet(\'ruptureMax\',Math.max(0,Math.min(0.9,(+this.value||30)/100)))"> %</label>'
-      +'<label>Fenêtre d\'analyse <input type="number" min="90" max="1095" value="'+c.fenetre
-        +'" onchange="amCfgSet(\'fenetre\',Math.max(90,+this.value||365))"> j</label>'
+      +'<label>Fenêtre d\'analyse <input type="number" min="60" max="1095" value="'+c.fenetre
+        +'" onchange="amCfgSet(\'fenetre\',Math.max(60,+this.value||SAISON))"> j</label>'
       +'<button class="btn mini danger" onclick="amCfgReset()">Rétablir mes repères</button>'
     +'</div>'
   +'</div>';
@@ -1521,7 +1527,7 @@ function amPhraseExclusions(){
    rapportée au capital immobilisé — mais il se décompose ici en deux leviers
    que l'on peut bouger :
 
-       rendement = (ventes par an ÷ profondeur) × (marge ÷ coût)
+       rendement = (ventes par saison ÷ profondeur) × (marge ÷ coût)
 
    La profondeur, c'est le nombre de paires qu'on tient pour ce modèle ; en
    acheter dix pour couvrir les tailles double le capital sans doubler les
@@ -1640,32 +1646,35 @@ function murCalc(m){
      pour faire ses preuves. Sans ce dénominateur, tout ce qui est récent paraît
      mort. */
   var jours=(o&&o.joursEnVente!=null)?o.joursEnVente:null;
-  var mesVAn=(o&&o.vendues&&jours>0)?r2(o.vendues*365/jours):null;
+  var mesVSai=(o&&o.vendues&&jours>0)?r2(o.vendues*SAISON/jours):null;
   var mesProf=(o&&o.stock)?o.stock:null;
   var mc=murMargeCout(m,o);
 
   var prof=(m.mur.prof!=null)?(+m.mur.prof||0):(mesProf||1);
-  var vAn=(m.mur.vAn!=null)?(+m.mur.vAn||0):(mesVAn!=null?mesVAn:null);
+  /* Reprise des murs composés avant le passage à la saison : la valeur saisie
+     y était annuelle, on la ramène à une saison plutôt que de la jeter. */
+  if(m.mur.vAn!=null&&m.mur.vSai==null){m.mur.vSai=r2((+m.mur.vAn||0)/2);delete m.mur.vAn;}
+  var vSai=(m.mur.vSai!=null)?(+m.mur.vSai||0):(mesVSai!=null?mesVSai:null);
   var cout=(m.mur.cout!=null)?(+m.mur.cout||0):murCout(m);
 
-  var rend=(prof>0&&vAn!=null&&mc!=null)?r2((vAn/prof)*mc):null;
+  var rend=(prof>0&&vSai!=null&&mc!=null)?r2((vSai/prof)*mc):null;
   var capital=r2(prof*cout);
-  var margeAn=(vAn!=null&&mc!=null)?r2(vAn*mc*cout):null;
+  var margeSai=(vSai!=null&&mc!=null)?r2(vSai*mc*cout):null;
 
   /* Quatre ventes en quatre jours donnent un rythme spectaculaire et ne prouvent
      rien : c'est peut-être la nouveauté, un client qui a pris trois tailles, ou
      un vrai succès. Sous ce seuil d'observation, on affiche la projection mais
      on refuse de la colorer — on ne condamne ni ne sacre une référence qui n'a
      pas encore eu le temps de parler. */
-  var jeune=(m.mur.vAn==null)&&(jours==null||jours<MUR_JOURS_MINI);
+  var jeune=(m.mur.vSai==null)&&(jours==null||jours<MUR_JOURS_MINI);
 
-  return {m:m,o:o,prof:prof,vAn:vAn,cout:cout,margeCout:mc,
-    rendement:rend,capital:capital,margeAn:margeAn,
+  return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mc,
+    rendement:rend,capital:capital,margeSai:margeSai,
     jours:jours, jeune:jeune, rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
     /* « estimé » dès qu'un chiffre vient de l'utilisateur ou qu'aucune vente
        n'a été mesurée : on ne présente pas une hypothèse comme un relevé. */
-    estime:(m.mur.vAn!=null||mesVAn==null||m.mur.prof!=null),
-    mesVAn:mesVAn,mesProf:mesProf};
+    estime:(m.mur.vSai!=null||mesVSai==null||m.mur.prof!=null),
+    mesVSai:mesVSai,mesProf:mesProf};
 }
 
 /* Deux décimales, toujours : amNum rogne les zéros de fin, et « 0,1 » posé à
@@ -1751,7 +1760,7 @@ function murSet(id,cle,val){
 }
 function murReset(id){
   var m=modeleById(id);if(!m||!m.mur)return;
-  delete m.mur.prof;delete m.mur.vAn;delete m.mur.cout;
+  delete m.mur.prof;delete m.mur.vSai;delete m.mur.vAn;delete m.mur.cout;
   save();renderMur();
 }
 function murVider(){
@@ -1773,7 +1782,7 @@ function murTuiles(L){
      en vaut 1,2, et un chiffre pareil ne se discute pas, il se jette. */
   var J=L.filter(function(x){return !x.jeune&&x.rendement!=null;});
   var capJ=J.reduce(function(n,x){return n+x.capital;},0);
-  var mg=J.reduce(function(n,x){return n+(x.margeAn||0);},0);
+  var mg=J.reduce(function(n,x){return n+(x.margeSai||0);},0);
   var rend=(capJ>0&&mg>0)?r2(mg/capJ):null;
   var B=murBande(rend);
   var ecartes=L.length-J.length;
@@ -1787,16 +1796,16 @@ function murTuiles(L){
       +'<div class="adTv">'+amEur(cap)+'</div>'
       +'<div class="adTs">'+acPl(L.length,"modèle")+' · '
       +acPl(L.reduce(function(n,x){return n+x.prof;},0),"paire")+'</div></div>'
-    +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">Rendement du mur</div>'
+    +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">Rendement de saison</div>'
       +'<div class="adTv">'+murNum(rend)+'</div>'
       +'<div class="adTs">'+(rend==null
         ? "aucun modèle jugeable pour l'instant"
-        : ("1 € engagé rapporte "+murNum(rend)+" € de marge par an"
+        : ("1 € engagé rapporte "+murNum(rend)+" € de marge sur la saison"
            +(ecartes?(" · sur "+acPl(J.length,"modèle")+" jugeable"+(J.length>1?"s":"")):"")))
       +'</div></div>'
-    +'<div class="adT"><div class="adTl">Marge attendue</div>'
+    +'<div class="adT"><div class="adTl">Marge de saison</div>'
       +'<div class="adTv">'+amEur(mg)+'</div>'
-      +'<div class="adTs">par an'+(ecartes
+      +'<div class="adTs">sur une saison de '+SAISON+' jours'+(ecartes
         ? (" · "+acPl(ecartes,"modèle")+" mis de côté, trop récent"+(ecartes>1?"s":"")+" ou à estimer")
         : ", au rythme retenu")+'</div></div>'
     +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">Sous le seuil</div>'
@@ -1846,9 +1855,9 @@ function murReglage(){
       +'<label>Profondeur<span>paires tenues</span>'
         +'<input type="number" min="0" step="1" value="'+x.prof+'" '
         +'onchange="murSet('+m.id+',\'prof\',this.value)">'+src(x.mesProf)+'</label>'
-      +'<label>Ventes par an<span>rythme attendu</span>'
-        +'<input type="number" min="0" step="0.5" value="'+(x.vAn==null?"":x.vAn)+'" '
-        +'onchange="murSet('+m.id+',\'vAn\',this.value)">'+src(x.mesVAn)+base+'</label>'
+      +'<label>Ventes par saison<span>rythme sur '+SAISON+' jours</span>'
+        +'<input type="number" min="0" step="0.5" value="'+(x.vSai==null?"":x.vSai)+'" '
+        +'onchange="murSet('+m.id+',\'vSai\',this.value)">'+src(x.mesVSai)+base+'</label>'
       +'<label>Coût unitaire<span>prix d\'achat HT</span>'
         +'<input type="number" min="0" step="1" value="'+(x.cout||"")+'" '
         +'onchange="murSet('+m.id+',\'cout\',this.value)">'
@@ -1856,12 +1865,12 @@ function murReglage(){
       +'<div class="murRes '+B.cls+'">'
         +'<div class="murResV">'+murNum(x.rendement)+'</div>'
         +'<div class="murResL">'+esc(B.txt)+' · 1 € engagé rapporte '
-        +(x.rendement==null?"—":(murNum(x.rendement)+" € par an"))+'</div>'
+        +(x.rendement==null?"—":(murNum(x.rendement)+" € sur la saison"))+'</div>'
         +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
         +'<div class="murResD">'
           +(x.margeCout==null
             ? 'Marge inconnue : renseigne un prix de vente sur ce modèle.'
-            : ('('+amNum(x.vAn,1)+' ventes ÷ '+x.prof+' paires) × '+amNum(x.margeCout,2)
+            : ('('+amNum(x.vSai,1)+' ventes ÷ '+x.prof+' paires) × '+amNum(x.margeCout,2)
                +' de marge par euro = '+murNum(x.rendement)))
         +'</div>'
         +'<div class="murResD">Seuils : plancher '+murNum(c.rMin)+' · confortable '+murNum(c.rBon)+'</div>'
@@ -1911,7 +1920,7 @@ function renderMur(){
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
         +'<div class="adHs">Chaque case porte le rendement du modèle : ce qu\'un euro engagé '
-        +'dessus rapporte en marge sur un an. Clique une case vide pour poser une référence, '
+        +'dessus rapporte en marge sur une saison. Clique une case vide pour poser une référence, '
         +'une case pleine pour la régler.</div>'
         +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
           +'onchange="murFmtSet(\'rangees\',this.value)"></label>'
