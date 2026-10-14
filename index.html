@@ -597,6 +597,7 @@
         <div style="flex:1"><h1>Vente Shopify</h1><div class="sub">Commandes reçues sur ta boutique Shopify (wathe)</div></div>
         <div style="display:flex;gap:10px;align-items:flex-end">
           <button class="btn g" id="shopRefresh">Actualiser</button>
+          <button class="btn" id="shopArchBtn" title="Les commandes au-delà des 1 000 plus récentes">Archives</button>
         </div>
       </div>
       <div class="tablecard" style="padding:14px;margin:12px 0 14px"><div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
@@ -605,7 +606,6 @@
         <div class="fld" style="margin:0"><label>Du</label><input type="date" id="shopF_from"></div>
         <div class="fld" style="margin:0"><label>Au</label><input type="date" id="shopF_to"></div>
         <button class="btn" id="shopF_clear">Effacer</button>
-        <button class="btn" id="shopArchBtn" title="Les commandes au-delà des 1 000 plus récentes">Archives</button>
       </div></div>
       <div class="tablecard"><div class="tmeta" id="shopMeta">Clique sur « Actualiser » pour charger les commandes.</div><div style="overflow-x:auto"><table>
         <thead><tr><th>Commande</th><th>Date</th><th>Client</th><th>Statut</th><th>Produits</th><th>Pièces</th><th>Total TTC</th><th>Actions</th></tr></thead>
@@ -8127,8 +8127,9 @@ function shopPaintArch(){
   var n=shopCompteArchives();
   b.textContent=_shopArchives?"← Commandes récentes":("Archives"+(n?" ("+n+")":""));
   b.className="btn"+(_shopArchives?" v":"");
-  // Rien à archiver : le bouton n'a aucune raison d'être proposé.
-  b.style.display=(n||_shopArchives)?"":"none";
+  /* Toujours visible, même sans rien à archiver : un bouton qui apparaît et
+     disparaît selon l'état des données est introuvable quand on le cherche. */
+  b.style.display="";
 }
 function shopToggleArchives(){
   _shopArchives=!_shopArchives;_shopPage=1;
@@ -8136,11 +8137,13 @@ function shopToggleArchives(){
 }
 function renderShopRows(){
   const meta=document.getElementById("shopMeta"),rows=document.getElementById("shopRows"),wrap=document.getElementById("shopMoreWrap");if(!rows)return;
+  // Avant toute sortie anticipée : le bouton doit porter le bon libellé même
+  // quand la société affichée n'a aucune commande Shopify.
+  try{shopPaintArch();}catch(e){}
   var _w=watheSocId();
   if(socFilter&&_w!=null&&socFilter!=_w&&(sbtSocId()==null||socFilter!=sbtSocId())){if(meta)meta.textContent="Aucune vente Shopify pour cette société.";rows.innerHTML="";if(wrap)wrap.style.display="none";var _pg=document.getElementById("shopPager");if(_pg)_pg.innerHTML="";return;}
   // « Charger plus » n'a de sens que sur la vue courante : les archives sont déjà là.
   if(wrap)wrap.style.display=(_shopMore&&!_shopArchives)?"":"none";
-  try{shopPaintArch();}catch(e){}
   const list=shopFilteredOrders();
   if(!list.length){if(meta)meta.textContent=_shopArchives?"Aucune commande archivée.":"Aucune commande.";rows.innerHTML="";const pg=document.getElementById("shopPager");if(pg)pg.innerHTML="";if(wrap)wrap.style.display="none";return;}
   const PS=50,totalPages=Math.max(1,Math.ceil(list.length/PS));
