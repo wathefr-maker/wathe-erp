@@ -4061,6 +4061,121 @@ async function vbReturnSale(ref,factId,opts){
   if(!opts.silencieux)alert("Retour enregistré. Avoir "+(av.num||"")+" créé, la paire "+ref+" est de retour en stock.");
   return av;
 }
+/* ============================================================================
+   CORRECTION D'UNE LIGNE DE VENTE BOUTIQUE
+   ----------------------------------------------------------------------------
+   Une erreur de saisie au comptoir — prix tapé de travers, mauvais moyen de
+   paiement — n'avait aucun moyen d'être corrigée : il fallait retourner la
+   paire, donc émettre un avoir, puis la revendre. Trois documents pour une
+   faute de frappe.
+
+   Le prix vit à DEUX endroits : sur la ligne de facture et sur la pièce
+   (venteTTC). Les corriger séparément est exactement le genre de divergence qui
+   nous a coûté la journée ; ici les deux sont écrits ensemble, et les totaux de
+   la facture recalculés avec la même formule que celle qui les a produits.
+
+   Deux refus volontaires :
+   · une ligne portant plusieurs références — le prix y est unitaire et le
+     modifier toucherait des paires qu'on n'a pas choisies ;
+   · une paire déjà avoirée — la vente est annulée, la corriger n'a pas de sens
+     et désaccorderait l'avoir.
+   ============================================================================ */
+
+/* Recalcule les totaux d'une facture à partir de ses lignes, exactement comme
+   buildSaleFactures les a calculés à l'origine. */
+function vbRecalcFacture(f){
+  if(!f)return;
+  var sub=0,ht=0;
+  (f.lines||[]).forEach(function(l){
+    var q=(l.qty||1);
+    var sp=saleSplit(+l.puTTC||0,(l.cost!=null?+l.cost:0),l.tva||f.tvaHeader,countryStdRate(f.country));
+    sub+=(+l.puTTC||0)*q; ht+=sp.ca*q;
+  });
+  var ship=+f.shipping||0;
+  var shipHT=ship?htFromTtc(ship,countryStdTaxName(f.country)):0;
+  f.subtotal=r2(sub);f.totalHT=r2(ht+shipHT);f.totalTTC=r2(sub+ship);
+}
+
+function vbEditLine(ref,factId){
+  var a=(DB.articles||[]).find(function(x){return x&&x.ref===ref;});
+  var f=(DB.factures||[]).find(function(x){return x&&x.id==factId;});
+  if(!f)return alert("Facture introuvable.");
+  var l=(f.lines||[]).find(function(x){return (x.refs||[]).indexOf(ref)>=0;});
+  if(!l)return alert("Ligne introuvable sur cette facture.");
+
+  var avoiree=(typeof factEtatAvoir==="function")
+    ? factEtatAvoir(f).reste.indexOf(ref)<0 && factEtatAvoir(f).avoirs.length>0
+    : false;
+  if(avoiree)return alert("Cette paire a déjà été retournée : sa vente est annulée par un avoir.\n\n"
+    +"Pour la revendre, passe par Vente boutique.");
+  var prixModifiable=((l.refs||[]).length===1);
+
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;display:flex;"
+    +"align-items:center;justify-content:center;padding:16px";
+  var champ="padding:8px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px";
+  var sp=(a&&a.regSplit&&typeof a.regSplit==="object")?a.regSplit:null;
+  var moyens=sp?Object.keys(sp).filter(function(k){return Math.abs(+sp[k]||0)>0.005;}):[];
+  var m1=moyens.length?moyens[0]:((a&&a.regMode)||"CB");
+  var m2=moyens.length>1?moyens[1]:"";
+  var mt2=m2?(+sp[m2]||0):0;
+  var opt=function(sel){return REGLEMENTS.map(function(m){
+    return '<option'+(m===sel?' selected':'')+'>'+m+'</option>';}).join("");};
+
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:430px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+    +'<div style="font-weight:800;font-size:17px;margin-bottom:2px">Corriger la vente</div>'
+    +'<div class="sub" style="margin-bottom:14px">'+esc(l.title||"")+' · '+esc(ref)+' · facture '+esc(f.num||"")+'</div>'
+    +'<label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px">Prix de vente TTC</label>'
+    +'<input id="_vbePv" type="number" step="0.01" min="0" value="'+(+l.puTTC||0)+'" '
+      +(prixModifiable?'':'disabled ')+'style="'+champ+';width:140px;text-align:right">'
+    +(prixModifiable?'':'<div class="muted" style="font-size:12px;margin-top:5px;color:#b45309">Cette ligne porte plusieurs paires : '
+      +'son prix est unitaire et ne peut pas être corrigé ici.</div>')
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
+      +'<div><label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px">Règlement</label>'
+        +'<select id="_vbeM1" style="'+champ+';width:130px">'+opt(m1)+'</select></div>'
+      +'<div><label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px">2ᵉ moyen</label>'
+        +'<select id="_vbeM2" style="'+champ+';width:130px"><option value="">—</option>'+opt(m2)+'</select></div>'
+      +'<div><label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px">Montant 2ᵉ</label>'
+        +'<input id="_vbeMt2" type="number" step="0.01" min="0" value="'+(mt2||"")+'" style="'+champ+';width:110px;text-align:right"></div>'
+    +'</div>'
+    +'<div class="muted" style="font-size:12px;margin-top:7px">Laisse le 2ᵉ moyen vide pour un règlement unique. '
+      +'Sinon, le premier moyen prend le reste.</div>'
+    +'<div id="_vbeErr" style="font-size:12.5px;color:#b91c1c;margin-top:8px"></div>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">'
+      +'<button class="btn" id="_vbeNon">Annuler</button>'
+      +'<button class="btn v" id="_vbeOui">Enregistrer</button></div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector("#_vbeNon").onclick=function(){ov.remove();};
+  ov.querySelector("#_vbeOui").onclick=async function(){
+    var err=ov.querySelector("#_vbeErr");err.textContent="";
+    var pv=prixModifiable?parseFloat(ov.querySelector("#_vbePv").value):(+l.puTTC||0);
+    if(!isFinite(pv)||pv<0){err.textContent="Prix invalide.";return;}
+    pv=r2(pv);
+    var n1=ov.querySelector("#_vbeM1").value||"CB";
+    var n2=ov.querySelector("#_vbeM2").value||"";
+    var v2=parseFloat(ov.querySelector("#_vbeMt2").value)||0;
+    if(n2&&v2>pv+0.005){err.textContent="Le 2ᵉ montant dépasse le prix de vente.";return;}
+    if(n2&&n2===n1){err.textContent="Les deux moyens de paiement sont identiques.";return;}
+
+    var avant=(+l.puTTC||0);
+    l.puTTC=pv;
+    vbRecalcFacture(f);
+    if(a){
+      a.venteTTC=pv;
+      if(n2&&v2>0.004){var o={};o[n2]=r2(v2);var reste=r2(pv-v2);if(reste>0.004)o[n1]=reste;a.regSplit=o;a.regMode=n1;}
+      else{delete a.regSplit;a.regMode=n1;}
+      a.maj=today();
+    }
+    try{logAct("Modification","Vente boutique",ref+" · "+eur(avant)+" → "+eur(pv)
+      +" · règlement "+(a?(vbRegTxt(a).replace(/<[^>]*>/g,"")):n1));}catch(e){}
+    await save();
+    ov.remove();
+    try{renderVBoutique();}catch(e){}
+    try{renderStock&&renderStock();}catch(e){}
+  };
+}
+window.vbEditLine=vbEditLine;
+
 /* Moyen de paiement d'une vente, tel qu'il a été saisi au moment de l'encaissement.
    Il vit sur la PIÈCE et non sur la facture : regMode pour un règlement unique,
    regSplit quand le client a payé en deux fois (CB + espèces, par exemple).
@@ -4085,7 +4200,7 @@ function renderVBoutique(){var _wb=watheSocId();var _tb0=document.getElementById
   }).forEach(function(f){var _isAv=(f.type==="avoir");(f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(ref){var a=DB.articles.find(function(x){return x.ref===ref;})||{};var _cost=lineCost(l,a);var sp=saleSplit(l.puTTC,_cost,l.tva||f.tvaHeader);var _sgn=_isAv?-1:1;var _pv=(+l.puTTC||0)*_sgn;
       // Coût affiché : figé sur la ligne au moment de la vente (coût cédé si cession Wathe->SBT).
       var _mg=(sp.ca-_cost)*_sgn;
-      rows.push('<tr'+(_isAv?' style="background:#fef2f2"':'')+'><td class="muted">'+esc(f.date)+(function(){var hh=f.heure||(f.createdAt?hmLocal(f.createdAt):"");return hh?(" · "+esc(hh)):"";})()+(_isAv?' <span class="badge" style="background:#fee2e2;color:#991b1b">Retour</span>':'')+'</td><td>'+esc(l.title||"")+'</td><td class="muted">'+esc(ref)+'</td><td class="price">'+eur(_pv)+'</td><td class="muted">'+eur(_isAv?-_cost:_cost)+'</td><td class="price"><b>'+eur(_mg)+'</b></td><td>'+esc(l.tva||f.tvaHeader||"")+'</td><td class="muted" style="white-space:nowrap">'+(vbRegTxt(a)||'—')+'</td><td><a href="#" onclick="openFactureD('+f.id+');return false">'+esc(f.num)+'</a></td><td style="text-align:center">'+(_isAv?'—':('<button type="button" class="btn" title="Retourner cette paire (crée un avoir, garde la vente)" style="padding:3px 10px;color:#dc2626" onclick="vbReturnSale(\''+esc(ref)+'\','+f.id+')">↩</button>'))+'</td></tr>');});});});var tb=document.getElementById("vbRows");if(tb)tb.innerHTML=rows.join("")||'<tr><td colspan="10" class="muted" style="text-align:center;padding:20px">Aucune vente boutique pour l\'instant.</td></tr>';}
+      rows.push('<tr'+(_isAv?' style="background:#fef2f2"':'')+'><td class="muted">'+esc(f.date)+(function(){var hh=f.heure||(f.createdAt?hmLocal(f.createdAt):"");return hh?(" · "+esc(hh)):"";})()+(_isAv?' <span class="badge" style="background:#fee2e2;color:#991b1b">Retour</span>':'')+'</td><td>'+esc(l.title||"")+'</td><td class="muted">'+esc(ref)+'</td><td class="price">'+eur(_pv)+'</td><td class="muted">'+eur(_isAv?-_cost:_cost)+'</td><td class="price"><b>'+eur(_mg)+'</b></td><td>'+esc(l.tva||f.tvaHeader||"")+'</td><td class="muted" style="white-space:nowrap">'+(vbRegTxt(a)||'—')+'</td><td><a href="#" onclick="openFactureD('+f.id+');return false">'+esc(f.num)+'</a></td><td style="text-align:center">'+(_isAv?'—':('<button type="button" class="btn" title="Corriger le prix ou le moyen de paiement" style="padding:3px 10px" onclick="vbEditLine(\''+esc(ref)+'\','+f.id+')">✎</button> <button type="button" class="btn" title="Retourner cette paire (crée un avoir, garde la vente)" style="padding:3px 10px;color:#dc2626" onclick="vbReturnSale(\''+esc(ref)+'\','+f.id+')">↩</button>'))+'</td></tr>');});});});var tb=document.getElementById("vbRows");if(tb)tb.innerHTML=rows.join("")||'<tr><td colspan="10" class="muted" style="text-align:center;padding:20px">Aucune vente boutique pour l\'instant.</td></tr>';}
 var _navHist=[],_navBack=false;
 function goBack(fallback){var v=null;while(_navHist.length){var c=_navHist.pop();if(c&&document.getElementById("view-"+c)){v=c;break;}}if(!v)v=fallback||"dash";_navBack=true;try{show(v,document.querySelector('.item[data-view="'+v+'"]')||undefined);}finally{_navBack=false;}}
 function show(view,item){
