@@ -358,6 +358,82 @@ body{background:var(--bg,#f8fafc);margin:0}
 .adRv.ok{color:#166534}
 .adRs{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:2px;line-height:1.35}
 
+/* ---------- LE MUR ----------------------------------------------------------
+   Une case par emplacement d'étagère. Le rendement y est le chiffre principal,
+   et la barre de couleur le rend lisible sans le lire : on balaie le mur du
+   regard et le rouge saute aux yeux. */
+.murG{padding:14px 16px 4px;overflow-x:auto}
+.murR{display:flex;gap:8px;margin-bottom:8px;min-width:max-content}
+.murR:last-child{margin-bottom:12px}
+.murC{flex:0 0 132px;border:1px solid var(--line);border-left-width:4px;border-radius:10px;
+  padding:8px 10px 7px;background:#fff;cursor:pointer;transition:box-shadow .12s,transform .12s}
+.murC:hover{box-shadow:var(--shadow);transform:translateY(-1px)}
+.murC.on{outline:2px solid var(--violet);outline-offset:1px}
+.murC.ok{border-left-color:#16a34a}
+.murC.warn{border-left-color:#d97706}
+.murC.bad{border-left-color:#dc2626;background:#fffbfb}
+.murC.neu{border-left-color:#cbd5e1}
+.murCn{font-size:11.5px;font-weight:700;line-height:1.25;height:29px;overflow:hidden}
+.murCs{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.murCv{font-size:19px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums;line-height:1}
+.murCv i{font-size:9.5px;font-weight:700;font-style:normal;color:var(--muted);margin-left:4px;
+  vertical-align:2px}
+.murCf{font-size:10px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}
+.murVideC{flex:0 0 132px;min-height:96px;border:1px dashed #cbd5e1;border-radius:10px;background:#fcfcfd;
+  color:#94a3b8;font-size:19px;font-weight:700;cursor:pointer;font-family:inherit}
+.murVideC:hover{border-color:var(--violet);color:var(--violet);background:#f8faff}
+
+/* La barre : même échelle partout, pleine à une fois et demie le seuil confortable. */
+.murB{height:5px;border-radius:3px;background:#eef1f5;margin-top:6px;overflow:hidden}
+.murB>span{display:block;height:100%;border-radius:3px;background:#cbd5e1}
+.murC.ok .murB>span,.murRes.ok .murB>span{background:#16a34a}
+.murC.warn .murB>span,.murRes.warn .murB>span{background:#d97706}
+.murC.bad .murB>span,.murRes.bad .murB>span{background:#dc2626}
+
+.murLg{display:flex;gap:14px;flex-wrap:wrap;padding:10px 18px 13px;border-top:1px solid var(--line);
+  font-size:11.5px;color:var(--muted)}
+.murLgI{display:flex;align-items:center;gap:6px}
+.murLgI::before{content:"";width:11px;height:4px;border-radius:2px;background:#cbd5e1}
+.murLgI.ok::before{background:#16a34a}
+.murLgI.warn::before{background:#d97706}
+.murLgI.bad::before{background:#dc2626}
+
+.murFmt{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex:0 0 auto}
+.murFmt:first-of-type{margin-left:auto}
+.murFmt input{width:56px;padding:5px 7px;border:1px solid var(--line);border-radius:8px;font-size:13px;
+  font-family:inherit;text-align:right}
+
+/* Panneau de réglage d'un emplacement. */
+.murRg{border-color:#bfdbfe}
+.murF{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;padding:15px 18px 17px;
+  align-items:start}
+.murF label{display:flex;flex-direction:column;font-size:12px;font-weight:700;gap:3px}
+.murF label>span{font-size:11px;font-weight:500;color:var(--muted)}
+.murF input{padding:8px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px;
+  font-family:inherit;text-align:right;font-variant-numeric:tabular-nums}
+.murSrc{font-size:10.5px;font-style:normal;font-weight:500;color:var(--muted);margin-top:3px}
+.murRes{grid-column:1/-1;border:1px solid var(--line);border-left-width:4px;border-radius:11px;padding:12px 14px;
+  background:#fcfcfd}
+.murRes.ok{border-left-color:#16a34a}
+.murRes.warn{border-left-color:#d97706}
+.murRes.bad{border-left-color:#dc2626;background:#fffbfb}
+.murRes.neu{border-left-color:#cbd5e1}
+.murResV{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.murResL{font-size:12.5px;color:var(--muted);margin-top:4px}
+.murResD{font-size:11.5px;color:var(--muted);margin-top:7px;font-variant-numeric:tabular-nums}
+
+/* Recherche d'un modèle à poser. */
+.murQ{width:calc(100% - 36px);margin:15px 18px 0;padding:9px 12px;border:1px solid var(--line);
+  border-radius:10px;font-size:14px;font-family:inherit}
+.murSugBox{margin:8px 18px 16px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  max-height:260px;overflow-y:auto}
+.murSug{padding:9px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;
+  display:flex;gap:8px;align-items:baseline}
+.murSug:last-child{border-bottom:none}
+.murSug:hover{background:#f8fafc}
+.murSug span{font-size:11.5px;color:var(--muted)}
+.murVide{padding:11px 12px;color:var(--muted);font-size:12.5px}
+
 .adBdg{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:800;
   font-variant-numeric:tabular-nums}
 .adBdg.ok{background:#dcfce7;color:#166534}
@@ -439,17 +515,17 @@ body{background:var(--bg,#f8fafc);margin:0}
 <div class="page" id="app" style="display:none">
   <div class="nav">
     <button id="navRe" class="on" onclick="setVue('reassort')">Réassort</button>
-    <button id="navAd" onclick="setVue('modeles')">Modèles</button>
+    <button id="navAd" onclick="setVue('mur')">Mur</button>
   </div>
   <div id="vue-reassort">
     <h1 style="margin:0">Réassort</h1>
     <div class="sub">Les modèles que la boutique garde toujours en rayon, et ce qu'il manque pour tenir la cible.</div>
     <div id="reBody" style="margin-top:18px"></div>
   </div>
-  <div id="vue-modeles" style="display:none">
-    <h1 style="margin:0">Modèles</h1>
-    <div class="sub">Garder ou couper, référence par référence — et ce que ça libère pour commander autre chose.</div>
-    <div id="amBody" style="margin-top:18px"></div>
+  <div id="vue-mur" style="display:none">
+    <h1 style="margin:0">Mur</h1>
+    <div class="sub">Compose le mur que tu voudrais, référence par référence, et vois ce que chaque euro engagé te rapporte avant de l'engager.</div>
+    <div id="murBody" style="margin-top:18px"></div>
   </div>
 </div>
 
@@ -674,13 +750,10 @@ function remplirSocietes(){
   sel.innerHTML='<option value="">Toutes les sociétés</option>'
     +(DB.societes||[]).map(function(s){return '<option value="'+s.id+'">'+esc(s.nom||("Société "+s.id))+'</option>';}).join("");
   sel.value=socFilter||"";
-  sel.onchange=function(){socFilter=sel.value||"";reStockInvalider();renderReassort();if(_vue==="modeles")renderModeles();};
+  sel.onchange=function(){socFilter=sel.value||"";reStockInvalider();renderReassort();if(_vue==="mur")renderMur();};
 }
 
 /* ---------- Modules repris de l'ERP ---------- */
-
-
-
 
 var _reSel=null,_reOpen=null;
 function reJse(x){return String(x==null?"":x).replace(/\\/g,"\\\\").replace(/'/g,"\\'");}
@@ -1004,10 +1077,10 @@ var _vue="reassort";
 function setVue(v){
   _vue=v;
   document.getElementById("vue-reassort").style.display=(v==="reassort")?"":"none";
-  document.getElementById("vue-modeles").style.display=(v==="modeles")?"":"none";
+  document.getElementById("vue-mur").style.display=(v==="mur")?"":"none";
   document.getElementById("navRe").className=(v==="reassort")?"on":"";
-  document.getElementById("navAd").className=(v==="modeles")?"on":"";
-  if(v==="modeles")renderModeles();
+  document.getElementById("navAd").className=(v==="mur")?"on":"";
+  if(v==="mur")renderMur();
 }
 /* ---------- Couche de données (commune aux deux écrans) ---------------- */
 
@@ -1067,7 +1140,6 @@ function acIndexRefs(){
   return idx;
 }
 
-
 /* ============================================================================
    GARDER OU COUPER — modèle par modèle
    ----------------------------------------------------------------------------
@@ -1119,12 +1191,12 @@ function amCfg(){
 function amCfgSet(cle,val){
   var c=amCfg();c[cle]=val;
   try{localStorage.setItem("wathe.am.seuils",JSON.stringify(c));}catch(e){}
-  renderModeles();
+  renderMur();
 }
 function amCfgReset(){
   AM=null;
   try{localStorage.removeItem("wathe.am.seuils");}catch(e){}
-  renderModeles();
+  renderMur();
 }
 
 /* ---------- Outils ---------- */
@@ -1384,69 +1456,8 @@ function amVerdict(o){
 
 /* ---------- Rendu ---------- */
 
-var _amFiltre="";
-function amFiltre(v){_amFiltre=(_amFiltre===v)?"":v;renderModeles();}
 var _amReglages=false;
-function amToggleReglages(){_amReglages=!_amReglages;renderModeles();}
-
-function amTuiles(L){
-  var c=amCfg();
-  var par=function(t){return L.filter(function(o){return o.verdict.txt===t;});};
-  var cap=function(a){return a.reduce(function(n,o){return n+o.valeur;},0);};
-  var couper=par("couper").concat(par("marge nulle")), reduire=par("réduire"), affames=par("affamé");
-  var rends=L.map(function(o){return o.rendement;}).filter(function(x){return x!=null;});
-  return '<div class="adKpi">'
-    +'<div class="adT"><div class="adTl">Modèles suivis</div>'
-      +'<div class="adTv">'+L.length+'</div>'
-      +'<div class="adTs">'+amEur(cap(L))+' immobilisés en stock propre</div></div>'
-    +'<div class="adT'+(couper.length?" bad":"")+'"><div class="adTl">À couper</div>'
-      +'<div class="adTv">'+couper.length+'</div>'
-      +'<div class="adTs">'+amEur(cap(couper))+' à récupérer pour autre chose</div></div>'
-    +'<div class="adT"><div class="adTl">À réduire</div>'
-      +'<div class="adTv">'+reduire.length+'</div>'
-      +'<div class="adTs">'+amEur(cap(reduire))+' à alléger, sans sortir le modèle</div></div>'
-    +'<div class="adT"><div class="adTl">Affamés</div>'
-      +'<div class="adTv">'+affames.length+'</div>'
-      +'<div class="adTs">en rupture plus de '+amPct(c.ruptureMax)+' du temps — à réassortir</div></div>'
-  +'</div>';
-}
-
-function amBarres(L){
-  var ordres=["couper","marge nulle","réduire","affamé","trop jeune","arrêté","reprendre","monter"];
-  var cls={"couper":"bad","marge nulle":"bad","réduire":"warn","affamé":"warn",
-           "trop jeune":"neu","arrêté":"neu","reprendre":"ok","monter":"ok"};
-  var items=ordres.map(function(t){
-    var n=L.filter(function(o){return o.verdict.txt===t;}).length;
-    if(!n)return "";
-    var on=(_amFiltre===t);
-    return '<button class="amF '+cls[t]+(on?" on":"")+'" onclick="amFiltre(\''+t+'\')">'
-      +esc(t)+' <b>'+n+'</b></button>';
-  }).join("");
-  return '<div class="amFs">'+items
-    +(_amFiltre?'<button class="amF" onclick="amFiltre(\'\')">tout afficher</button>':'')
-    +'</div>';
-}
-
-function amLigne(o){
-  var V=o.verdict;
-  var ecTxt=(o.ecoul==null)?"—":(o.cohorteOk+" / "+o.cohorte);
-  var seuil=(o.sMin==null)?"—":("seuil "+Math.ceil(o.sMin*o.cohorte)+" / "+o.cohorte);
-  return '<div class="amR '+V.cls+'">'
-    +'<div class="amRn">'+esc(o.titre)
-      +'<span class="adRs">'+esc(o.sku)+(o.marque?(' · '+esc(o.marque)):'')
-      +' · '+esc(o.segment)+'</span></div>'
-    +'<div class="adRv'+(V.cls==="bad"?" bad":(V.cls==="ok"?" ok":""))+'">'+ecTxt
-      +'<span class="adRs">écoulé en '+amCfg().jours+' j · '+esc(seuil)+'</span></div>'
-    +'<div class="adRv">'+o.stock+'<span class="adRs">en stock · '+amEur(o.valeur)+'</span></div>'
-    +'<div class="adRv">'+((o.ageMax==null)?"—":acPl(o.ageMax,"jour"))
-      +'<span class="adRs">la plus vieille</span></div>'
-    +'<div class="adRv">'+amNum(o.rendement,2)+'<span class="adRs">rendement/an</span></div>'
-    +'<div class="adRv'+(o.rupture>amCfg().ruptureMax?" bad":"")+'">'+amPct(o.rupture)
-      +'<span class="adRs">du temps sans stock</span></div>'
-    +'<div class="amRv2"><span class="adBdg '+V.cls+'">'+esc(V.txt)+'</span></div>'
-  +'</div>'
-  +'<div class="amRp">'+esc(V.pourquoi)+'</div>';
-}
+function amToggleReglages(){_amReglages=!_amReglages;renderMur();}
 
 function amReglages(){
   var c=amCfg();
@@ -1488,48 +1499,370 @@ function amPhraseExclusions(){
   return base+(p.length?(" · écarté : "+p.join(" · ")):"")+".";
 }
 
-function amExport(){
-  var L=amModeles();
-  var l=[["Modèle","SKU","Marque","Rayon","Entrées jugées","Écoulées à "+amCfg().jours+" j",
-          "Taux","Seuil","Stock","Valeur stock","Plus vieille (j)","Rendement",
-          "Jours sans stock","Rupture","Verdict"]];
-  L.forEach(function(o){
-    l.push([o.titre,o.sku,o.marque,o.segment,o.cohorte,o.cohorteOk,
-      (o.ecoul==null?"":r2(o.ecoul*100)),(o.sMin==null?"":r2(o.sMin*100)),
-      o.stock,r2(o.valeur),(o.ageMax==null?"":o.ageMax),(o.rendement==null?"":o.rendement),
-      o.joursSansStock,r2(o.rupture*100),o.verdict.txt]);
+
+
+/* ============================================================================
+   LE MUR
+   ----------------------------------------------------------------------------
+   L'écran « Modèles » jugeait ce qui est déjà en rayon. Celui-ci sert à décider
+   AVANT d'engager l'argent : on compose le mur qu'on voudrait, référence par
+   référence, et chaque emplacement dit ce qu'un euro engagé dessus rapporte.
+
+   Le rendement garde la définition qu'on lui a donnée — marge annualisée
+   rapportée au capital immobilisé — mais il se décompose ici en deux leviers
+   que l'on peut bouger :
+
+       rendement = (ventes par an ÷ profondeur) × (marge ÷ coût)
+
+   La profondeur, c'est le nombre de paires qu'on tient pour ce modèle ; en
+   acheter dix pour couvrir les tailles double le capital sans doubler les
+   ventes, et le mur le montre immédiatement. Le coût unitaire ne sert qu'à
+   afficher des euros : il disparaît du ratio.
+
+   Les valeurs de départ viennent des statistiques réelles du modèle (amModeles)
+   quand il en a. Une référence jamais vendue n'en a pas : on la pose quand même,
+   avec ses prix d'achat et de vente, et c'est à l'utilisateur de dire combien il
+   espère en vendre. Ce chiffre-là est marqué comme une hypothèse, jamais présenté
+   comme une mesure.
+
+   La disposition vit sur le MODÈLE (m.mur), seule table que cette page sait
+   enregistrer.
+   ============================================================================ */
+
+var MUR_DEFAUT={rangees:9,places:8};
+var _murFmt=null,_murSel=null,_murEdit=null;
+
+function murFmt(){
+  if(_murFmt)return _murFmt;
+  _murFmt=JSON.parse(JSON.stringify(MUR_DEFAUT));
+  try{
+    var b=localStorage.getItem("wathe.mur.format");
+    if(b){var o=JSON.parse(b);if(o&&o.rangees>0&&o.places>0)_murFmt=o;}
+  }catch(e){}
+  return _murFmt;
+}
+function murFmtSet(cle,val){
+  var f=murFmt();
+  var n=Math.max(1,Math.min(20,parseInt(val,10)||1));
+  f[cle]=n;
+  try{localStorage.setItem("wathe.mur.format",JSON.stringify(f));}catch(e){}
+  murRecadrer();renderMur();
+}
+/* Réduire le mur ne doit pas faire disparaître un modèle sans le dire : on le
+   remonte sur la première place libre au lieu de l'effacer en silence. */
+function murRecadrer(){
+  var f=murFmt(),pris={},orphelins=[];
+  murPoses().forEach(function(m){
+    var p=m.mur;
+    if(p.r<f.rangees&&p.c<f.places&&!pris[p.r+"-"+p.c]){pris[p.r+"-"+p.c]=1;return;}
+    orphelins.push(m);
   });
-  if(l.length<2){alert("Aucun modèle à exporter.");return;}
-  var csv=l.map(function(r){return r.map(function(c){
-    return '"'+String(c).replace(/"/g,'""')+'"';}).join(";");}).join("\r\n");
-  var blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement("a");a.href=url;a.download="modeles-"+today()+".csv";
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  if(!orphelins.length)return;
+  for(var r=0;r<f.rangees&&orphelins.length;r++)
+    for(var c=0;c<f.places&&orphelins.length;c++){
+      if(pris[r+"-"+c])continue;
+      var m=orphelins.shift();m.mur.r=r;m.mur.c=c;pris[r+"-"+c]=1;
+    }
+  orphelins.forEach(function(m){delete m.mur;});   // plus de place : on retire
+  save();
 }
 
-function renderModeles(){
-  var body=document.getElementById("amBody");if(!body)return;
-  var L=amModeles();
-  if(!L.length){
-    body.innerHTML='<div class="adCard"><div class="adVide">Aucun modèle à analyser pour ce filtre.</div></div>'
-      +amReglages();
-    return;
+function murPoses(){
+  return (DB.modeles||[]).filter(function(m){
+    return m&&m.mur&&typeof m.mur==="object"&&m.mur.r!=null&&m.mur.c!=null;
+  });
+}
+function murAt(r,c){
+  return murPoses().find(function(m){return m.mur.r===r&&m.mur.c===c;})||null;
+}
+
+/* Statistiques réelles du modèle, indexées par identifiant. Recalculées à
+   chaque rendu : amModeles parcourt tout le stock, mais l'écran ne se
+   redessine qu'à la demande. */
+var _murStats=null;
+function murStatsInvalider(){_murStats=null;}
+function murStats(){
+  if(_murStats)return _murStats;
+  var idx={};
+  try{amModeles().forEach(function(o){idx[String(o.id)]=o;});}catch(e){}
+  _murStats=idx;return idx;
+}
+
+/* Coût unitaire d'une paire de ce modèle : celui du stock s'il y en a, sinon le
+   dernier prix d'achat connu. Il ne pèse pas sur le rendement, seulement sur
+   les euros affichés. */
+function murCout(m){
+  var pieces=(DB.articles||[]).filter(function(a){
+    if(!a||a.archived)return false;
+    if(socFilter&&a.societeId!=socFilter)return false;
+    var v=varById(a.varianteId);
+    return v&&v.modeleId==m.id&&(+a.prix||0)>0;
+  });
+  if(!pieces.length)return 0;
+  var enStock=pieces.filter(function(a){return inStock(a);});
+  var src=enStock.length?enStock:pieces;
+  return acMediane2(src.map(function(a){return +a.prix||0;}))||0;
+}
+
+/* Marge par euro engagé, mesurée sur les ventes si possible, déduite des prix
+   affichés sinon. C'est le second facteur du rendement. */
+function murMargeCout(m,o){
+  if(o&&o.margeCout!=null)return o.margeCout;
+  var pieces=(DB.articles||[]).filter(function(a){
+    if(!a||a.archived)return false;
+    var v=varById(a.varianteId);
+    return v&&v.modeleId==m.id&&(+a.pv||0)>0&&(+a.prix||0)>0;
+  });
+  var rr=[];
+  pieces.forEach(function(a){
+    var sp=saleSplit(+a.pv||0,+a.prix||0,a.tva);
+    if(sp.ca>(+a.prix||0))rr.push((sp.ca-(+a.prix||0))/(+a.prix||0));
+  });
+  return acMediane2(rr);
+}
+
+/* Tout ce qu'un emplacement a besoin de savoir. Les valeurs saisies priment sur
+   les mesures ; l'origine est conservée pour que l'écran puisse le dire. */
+function murCalc(m){
+  var o=murStats()[String(m.id)]||null;
+  var c=amCfg();
+  var mesVAn=(o&&o.vendues)?r2(o.vendues*365/c.fenetre):null;
+  var mesProf=(o&&o.stock)?o.stock:null;
+  var mc=murMargeCout(m,o);
+
+  var prof=(m.mur.prof!=null)?(+m.mur.prof||0):(mesProf||1);
+  var vAn=(m.mur.vAn!=null)?(+m.mur.vAn||0):(mesVAn!=null?mesVAn:null);
+  var cout=(m.mur.cout!=null)?(+m.mur.cout||0):murCout(m);
+
+  var rend=(prof>0&&vAn!=null&&mc!=null)?r2((vAn/prof)*mc):null;
+  var capital=r2(prof*cout);
+  var margeAn=(vAn!=null&&mc!=null)?r2(vAn*mc*cout):null;
+
+  return {m:m,o:o,prof:prof,vAn:vAn,cout:cout,margeCout:mc,
+    rendement:rend,capital:capital,margeAn:margeAn,
+    /* « estimé » dès qu'un chiffre vient de l'utilisateur ou qu'aucune vente
+       n'a été mesurée : on ne présente pas une hypothèse comme un relevé. */
+    estime:(m.mur.vAn!=null||mesVAn==null||m.mur.prof!=null),
+    mesVAn:mesVAn,mesProf:mesProf};
+}
+
+/* Deux décimales, toujours : amNum rogne les zéros de fin, et « 0,1 » posé à
+   côté de « 1,04 » se compare mal d'un coup d'œil sur une grille. */
+function murNum(x){
+  if(x==null)return "—";
+  return (Math.round(x*100)/100).toFixed(2).replace(".",",");
+}
+
+/* Bandes de couleur, calées sur les mêmes seuils que le reste de la plateforme. */
+function murBande(rend){
+  var c=amCfg();
+  if(rend==null)return {cls:"neu",txt:"à estimer"};
+  if(rend>=c.rBon)return {cls:"ok",txt:"fort"};
+  if(rend>=c.rMin)return {cls:"ok",txt:"correct"};
+  if(rend>=c.rMin/2)return {cls:"warn",txt:"faible"};
+  return {cls:"bad",txt:"perdant"};
+}
+/* Remplissage de la barre : le plein est atteint à une fois et demie le seuil
+   confortable, pour qu'un très bon rendement reste lisible sans écraser les autres. */
+function murRemplissage(rend){
+  var c=amCfg(),haut=c.rBon*1.5;
+  if(rend==null||rend<=0)return 0;
+  return Math.max(3,Math.min(100,Math.round(rend/haut*100)));
+}
+
+/* ---------- Poser, retirer, régler ---------- */
+
+function murChercher(q){
+  q=String(q||"").trim().toLowerCase();
+  if(!q)return [];
+  var poses={};murPoses().forEach(function(m){poses[String(m.id)]=1;});
+  return (DB.modeles||[]).filter(function(m){
+    if(!m||poses[String(m.id)])return false;
+    return String(m.sku||"").toLowerCase().indexOf(q)>=0
+        || String(m.fr||"").toLowerCase().indexOf(q)>=0
+        || String(m.marque||"").toLowerCase().indexOf(q)>=0;
+  }).slice(0,12);
+}
+function murOuvrirPose(r,c){_murSel={r:r,c:c};_murEdit=null;renderMur();
+  setTimeout(function(){var e=document.getElementById("murQ");if(e)e.focus();},0);}
+function murFermerPose(){_murSel=null;renderMur();}
+function murSug(){
+  var inp=document.getElementById("murQ"),box=document.getElementById("murSug");
+  if(!inp||!box)return;
+  var l=murChercher(inp.value);
+  if(!l.length){box.innerHTML='<div class="murVide">Aucun modèle. Tape un SKU, un nom ou une marque.</div>';return;}
+  box.innerHTML=l.map(function(m){
+    return '<div class="murSug" onmousedown="event.preventDefault();murPoser('+m.id+')">'
+      +'<b>'+esc(m.fr||m.sku||"?")+'</b><span>'+esc(m.sku||"")
+      +(m.marque?(" · "+esc(m.marque)):"")+'</span></div>';
+  }).join("");
+}
+function murPoser(id){
+  var m=modeleById(id);if(!m||!_murSel)return;
+  m.mur={r:_murSel.r,c:_murSel.c};
+  _murSel=null;_murEdit=String(id);
+  try{logAct("Mur","Pose",(m.fr||m.sku||""));}catch(e){}
+  save();renderMur();
+}
+function murRetirer(id){
+  var m=modeleById(id);if(!m)return;
+  if(!confirm("Retirer « "+(m.fr||m.sku||"")+" » du mur ?\n\nRien n'est modifié dans ton stock."))return;
+  delete m.mur;
+  if(_murEdit===String(id))_murEdit=null;
+  try{logAct("Mur","Retrait",(m.fr||m.sku||""));}catch(e){}
+  save();renderMur();
+}
+function murEditer(id){_murEdit=(_murEdit===String(id))?null:String(id);_murSel=null;renderMur();}
+function murSet(id,cle,val){
+  var m=modeleById(id);if(!m||!m.mur)return;
+  var v=parseFloat(String(val).replace(",","."));
+  if(!isFinite(v)||v<0){delete m.mur[cle];}       // vide : on revient à la mesure
+  else m.mur[cle]=r2(v);
+  save();renderMur();
+}
+function murReset(id){
+  var m=modeleById(id);if(!m||!m.mur)return;
+  delete m.mur.prof;delete m.mur.vAn;delete m.mur.cout;
+  save();renderMur();
+}
+function murVider(){
+  var l=murPoses();
+  if(!l.length)return;
+  if(!confirm("Vider le mur de ses "+l.length+" modèle(s) ?\n\nRien n'est modifié dans ton stock."))return;
+  l.forEach(function(m){delete m.mur;});
+  _murEdit=null;_murSel=null;
+  save();renderMur();
+}
+
+/* ---------- Rendu ---------- */
+
+function murTuiles(L){
+  var cap=L.reduce(function(n,x){return n+x.capital;},0);
+  var mg=L.reduce(function(n,x){return n+(x.margeAn||0);},0);
+  var rend=(cap>0&&mg>0)?r2(mg/cap):null;
+  var B=murBande(rend);
+  var sans=L.filter(function(x){return x.rendement==null;}).length;
+  var faibles=L.filter(function(x){return x.rendement!=null&&x.rendement<amCfg().rMin;});
+  var capF=faibles.reduce(function(n,x){return n+x.capital;},0);
+  return '<div class="adKpi">'
+    +'<div class="adT"><div class="adTl">Capital engagé</div>'
+      +'<div class="adTv">'+amEur(cap)+'</div>'
+      +'<div class="adTs">'+acPl(L.length,"modèle")+' · '
+      +acPl(L.reduce(function(n,x){return n+x.prof;},0),"paire")+'</div></div>'
+    +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">Rendement du mur</div>'
+      +'<div class="adTv">'+murNum(rend)+'</div>'
+      +'<div class="adTs">1 € engagé rapporte '+(rend==null?"—":(murNum(rend)+" € de marge par an"))+'</div></div>'
+    +'<div class="adT"><div class="adTl">Marge attendue</div>'
+      +'<div class="adTv">'+amEur(mg)+'</div>'
+      +'<div class="adTs">par an, au rythme retenu</div></div>'
+    +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">Sous le seuil</div>'
+      +'<div class="adTv">'+faibles.length+'</div>'
+      +'<div class="adTs">'+amEur(capF)+' engagés sous '+murNum(amCfg().rMin)
+      +(sans?(' · '+sans+' à estimer'):'')+'</div></div>'
+  +'</div>';
+}
+
+function murCase(r,c){
+  var m=murAt(r,c);
+  if(!m)return '<button class="murVideC" onclick="murOuvrirPose('+r+','+c+')" '
+    +'title="Poser un modèle ici">+</button>';
+  var x=murCalc(m),B=murBande(x.rendement);
+  var ouvert=(_murEdit===String(m.id));
+  return '<div class="murC '+B.cls+(ouvert?" on":"")+'" onclick="murEditer('+m.id+')" '
+    +'title="'+esc((m.fr||m.sku||"")+" — cliquer pour régler")+'">'
+    +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
+    +'<div class="murCs">'+esc(m.sku||"")+'</div>'
+    +'<div class="murCv">'+murNum(x.rendement)+(x.estime?'<i>est.</i>':'')+'</div>'
+    +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
+    +'<div class="murCf">'+x.prof+' p · '+amEur(x.capital)+'</div>'
+  +'</div>';
+}
+
+function murReglage(){
+  if(!_murEdit)return "";
+  var m=modeleById(+_murEdit);if(!m||!m.mur)return "";
+  var x=murCalc(m),B=murBande(x.rendement),c=amCfg();
+  var src=function(mes){return mes==null
+    ? '<i class="murSrc">aucune vente mesurée</i>'
+    : '<i class="murSrc">mesuré : '+amNum(mes,2)+'</i>';};
+  return '<div class="adCard murRg">'
+    +'<div class="adH"><div class="adHt">'+esc(m.fr||m.sku||"?")+'</div>'
+      +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")
+      +' — bouge la profondeur ou le rythme de ventes et regarde le rendement suivre.</div>'
+      +'<button class="btn mini" onclick="murReset('+m.id+')">Revenir aux mesures</button>'
+      +'<button class="btn mini" onclick="murRetirer('+m.id+')">Retirer du mur</button></div>'
+    +'<div class="murF">'
+      +'<label>Profondeur<span>paires tenues</span>'
+        +'<input type="number" min="0" step="1" value="'+x.prof+'" '
+        +'onchange="murSet('+m.id+',\'prof\',this.value)">'+src(x.mesProf)+'</label>'
+      +'<label>Ventes par an<span>rythme attendu</span>'
+        +'<input type="number" min="0" step="0.5" value="'+(x.vAn==null?"":x.vAn)+'" '
+        +'onchange="murSet('+m.id+',\'vAn\',this.value)">'+src(x.mesVAn)+'</label>'
+      +'<label>Coût unitaire<span>prix d\'achat HT</span>'
+        +'<input type="number" min="0" step="1" value="'+(x.cout||"")+'" '
+        +'onchange="murSet('+m.id+',\'cout\',this.value)">'
+        +'<i class="murSrc">n\'entre pas dans le rendement</i></label>'
+      +'<div class="murRes '+B.cls+'">'
+        +'<div class="murResV">'+murNum(x.rendement)+'</div>'
+        +'<div class="murResL">'+esc(B.txt)+' · 1 € engagé rapporte '
+        +(x.rendement==null?"—":(murNum(x.rendement)+" € par an"))+'</div>'
+        +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
+        +'<div class="murResD">'
+          +(x.margeCout==null
+            ? 'Marge inconnue : renseigne un prix de vente sur ce modèle.'
+            : ('('+amNum(x.vAn,1)+' ventes ÷ '+x.prof+' paires) × '+amNum(x.margeCout,2)
+               +' de marge par euro = '+murNum(x.rendement)))
+        +'</div>'
+        +'<div class="murResD">Seuils : plancher '+amNum(c.rMin,2)+' · confortable '+amNum(c.rBon,2)+'</div>'
+      +'</div>'
+    +'</div>'
+  +'</div>';
+}
+
+function murPose(){
+  if(!_murSel)return "";
+  return '<div class="adCard murRg">'
+    +'<div class="adH"><div class="adHt">Poser un modèle</div>'
+      +'<div class="adHs">Rangée '+(_murSel.r+1)+', place '+(_murSel.c+1)
+      +' — cherche par SKU, par nom ou par marque.</div>'
+      +'<button class="btn mini" onclick="murFermerPose()">Annuler</button></div>'
+    +'<input id="murQ" class="murQ" autocomplete="off" oninput="murSug()" '
+      +'placeholder="SKU, nom ou marque…">'
+    +'<div id="murSug" class="murSugBox"><div class="murVide">Tape un SKU, un nom ou une marque.</div></div>'
+  +'</div>';
+}
+
+function renderMur(){
+  var body=document.getElementById("murBody");if(!body)return;
+  murStatsInvalider();
+  var f=murFmt();
+  var L=murPoses().map(murCalc);
+  var rangees="";
+  for(var r=0;r<f.rangees;r++){
+    var cases="";
+    for(var c=0;c<f.places;c++)cases+=murCase(r,c);
+    rangees+='<div class="murR">'+cases+'</div>';
   }
-  var vus=_amFiltre?L.filter(function(o){return o.verdict.txt===_amFiltre;}):L;
-  var max=40, liste=vus.slice(0,max);
-  body.innerHTML=amTuiles(L)+amBarres(L)
+  body.innerHTML=murTuiles(L)
+    +murPose()+murReglage()
     +'<div class="adCard">'
-      +'<div class="adH"><div class="adHt">Garder ou couper</div>'
-        +'<div class="adHs">Pour chaque modèle : sur les pièces qui ont eu leurs '+amCfg().jours
-        +' jours pour se vendre, combien sont parties. Le seuil est calculé d\'après la marge '
-        +'du modèle — une référence à grosse marge a le droit d\'être plus lente. '
-        +'Ce qu\'il faut arbitrer est en haut.</div>'
-        +'<button class="btn mini" onclick="amExport()">Exporter</button></div>'
-      +'<div class="amRs">'+liste.map(amLigne).join("")+'</div>'
-      +(vus.length>max?('<div class="adPlus">'+acPl(vus.length-max,"modèle")
-        +' de plus — l\'export les contient tous.</div>'):'')
+      +'<div class="adH"><div class="adHt">Le mur</div>'
+        +'<div class="adHs">Chaque case porte le rendement du modèle : ce qu\'un euro engagé '
+        +'dessus rapporte en marge sur un an. Clique une case vide pour poser une référence, '
+        +'une case pleine pour la régler.</div>'
+        +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
+          +'onchange="murFmtSet(\'rangees\',this.value)"></label>'
+        +'<label class="murFmt">Places<input type="number" min="1" max="20" value="'+f.places+'" '
+          +'onchange="murFmtSet(\'places\',this.value)"></label>'
+        +(L.length?'<button class="btn mini" onclick="murVider()">Vider</button>':'')
+      +'</div>'
+      +'<div class="murG">'+rangees+'</div>'
+      +'<div class="murLg">'
+        +'<span class="murLgI ok">correct et plus</span>'
+        +'<span class="murLgI warn">faible</span>'
+        +'<span class="murLgI bad">perdant</span>'
+        +'<span class="murLgI neu">à estimer</span>'
+      +'</div>'
     +'</div>'
     +amReglages();
 }
