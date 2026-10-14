@@ -386,6 +386,7 @@
         <span class="datefilter"><label>Date entrée en stock</label><span class="dfin"><input type="date" id="fDateFrom"> <span class="muted">-</span> <input type="date" id="fDateTo"></span></span>
       </div>
       <div class="filters" id="chips"></div>
+      <div id="cohBand" style="display:none"></div>
       <div class="tablecard"><div class="tmeta" id="sMeta"></div><div style="overflow-x:auto"><table>
         <thead><tr><th class="ck"><input type="checkbox" id="selAll" title="Tout sélectionner"></th><th>Référence</th><th>Libellé</th><th>SKU</th><th>Taille</th><th>Type</th><th>Statut</th><th>Prix d'achat</th><th>Date d'achat</th><th>TVA</th><th>État</th><th>Tag</th><th>Fournisseur</th><th>Infos</th><th>Dispo&nbsp;Shopify</th><th>Actions</th></tr></thead>
         <tbody id="sRows"></tbody></table></div><div class="pager" id="pager"></div><div id="bulkBar" class="bulkbar hide"></div></div>
@@ -1500,6 +1501,8 @@ async function save(){
   /* Traduction du null en suppression avant toute comparaison : la fusion
      raisonne en clés présentes ou absentes, pas en valeurs sentinelles. */
   try{_nettoyerMarqueursNuls(DB.articles||[]);}catch(_){}
+  // Les factures viennent peut-être de changer : l'index de cohérence est périmé.
+  try{cohInvalider();}catch(_){}
   try{
     for(const t of ARR_TABLES){
       _snap[t]=await _ecrireTable(t,DB[t]||[],_snap[t]||new Map(),true);
@@ -2195,8 +2198,129 @@ function renderChips(){
   if(any)html+=`<button class="btn" id="clearF" style="padding:5px 11px">Effacer les filtres</button>`;
   chips.innerHTML=html;
 }
+/* ============================================================================
+   CONTRÔLE DE COHÉRENCE — une paire facturée ne peut pas être en stock
+   ----------------------------------------------------------------------------
+   Une pièce dont la vente est facturée, et dont la facture n'a pas été avoirée,
+   a quitté le magasin. La retrouver « En Stock » signifie que quelque chose a
+   défait la vente sans défaire la facture — et donc qu'elle est revendable une
+   seconde fois.
+
+   Ce n'est pas théorique : jusqu'au 14/10/2026, un onglet resté ouvert
+   réécrivait la fiche depuis sa photo du chargement et ressuscitait la paire,
+   pendant que la facture, rangée dans une autre table, survivait. 31 paires,
+   5 972 € encaissés sur des paires redevenues vendables, pendant six mois,
+   sans que rien ne le signale.
+
+   La cause est corrigée (voir _fusionServeur), mais le contrôle reste : il ne
+   suppose rien de l'origine du problème. Si une paire facturée réapparaît en
+   stock, pour n'importe quelle raison, le bandeau le dit le jour même.
+   ============================================================================ */
+var _cohMemo=null;
+function cohInvalider(){_cohMemo=null;}
+function cohIndex(){
+  if(_cohMemo)return _cohMemo;
+  // Avoirs rangés par facture d'origine : même règle que factEtatAvoir, mais en
+  // un seul passage. Relire 2 000 factures pour chacune d'elles serait trop lent.
+  var avoirsDe={};
+  (DB.factures||[]).forEach(function(f){
+    if(f&&f.type==="avoir"&&f.avoirOf!=null)(avoirsDe[f.avoirOf]=avoirsDe[f.avoirOf]||[]).push(f);
+  });
+  var idx={};
+  (DB.factures||[]).forEach(function(f){
+    if(!f||f.type==="avoir")return;
+    var rendues={};
+    (avoirsDe[f.id]||[]).forEach(function(av){(av.lines||[]).forEach(function(l){
+      (l.refs||[]).forEach(function(r){rendues[String(r)]=1;});});});
+    (f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(r){
+      var k=String(r);
+      if(rendues[k])return;                       // rendue : la vente est annulée
+      /* Plusieurs factures peuvent citer la même paire au fil de ses reventes.
+         On garde la plus récente : c'est elle qui décrit la vente en cours. */
+      if(!idx[k]||String(f.date||"")>String(idx[k].date||""))
+        idx[k]={num:f.num||"",date:f.date||"",source:f.source||"",ttc:(+l.puTTC||0)};
+    });});
+  });
+  _cohMemo=idx;return idx;
+}
+function cohVenteDe(ref){return cohIndex()[String(ref)]||null;}
+function cohPieces(){
+  var idx=cohIndex();
+  return (DB.articles||[]).filter(function(a){
+    return a&&!a.archived&&inStock(a)&&idx[String(a.ref)];
+  });
+}
+/* Statut que la pièce aurait dû garder, déduit de l'origine de sa facture. */
+function cohStatutCible(src){
+  if(src==="boutique")return "Vendu";
+  if(src==="expedition")return "Livré";
+  return "Facturé";
+}
+function cohPaintBand(){
+  var el=document.getElementById("cohBand");if(!el)return;
+  var l=[];try{l=cohPieces();}catch(e){el.style.display="none";el.innerHTML="";return;}
+  if(!l.length){el.style.display="none";el.innerHTML="";return;}
+  el.style.display="";
+  el.innerHTML='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;'
+    +'padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    +'<b style="color:#b91c1c">⚠️ '+l.length+' paire(s) facturée(s) mais encore en stock</b>'
+    +'<span class="muted" style="font-size:12.5px">Leur vente a été défaite sans que la facture le soit : '
+    +'elles sont revendables une seconde fois.</span>'
+    +'<span class="spacer" style="flex:1"></span>'
+    +'<button class="btn r" id="cohVoir" style="padding:6px 14px;font-size:13px">Voir et corriger</button></div>';
+  var b=document.getElementById("cohVoir");if(b)b.onclick=cohOuvrir;
+}
+function cohOuvrir(){
+  var l=cohPieces();if(!l.length){alert("Plus aucune incohérence.");return;}
+  var idx=cohIndex();
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;"
+    +"justify-content:center;z-index:10002;padding:20px";
+  var lignes=l.map(function(a){
+    var v=idx[String(a.ref)],va=varById(a.varianteId)||{},m=(va.modeleId!=null?modeleById(va.modeleId):null)||{};
+    return '<tr><td style="padding:5px 8px;font-weight:700">'+esc(a.ref)+'</td>'
+      +'<td style="padding:5px 8px">'+esc(m.fr||"")+'</td>'
+      +'<td style="padding:5px 8px">'+esc(a.statut||"")+'</td>'
+      +'<td style="padding:5px 8px">'+esc(v.num)+'</td>'
+      +'<td style="padding:5px 8px">'+esc(v.date)+'</td>'
+      +'<td style="padding:5px 8px;text-align:right">'+eur(v.ttc)+'</td></tr>';
+  }).join("");
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:860px;width:100%;max-height:85vh;'
+    +'overflow:auto;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+    +'<h3 style="margin:0 0 6px">'+l.length+' paire(s) facturée(s) mais encore en stock</h3>'
+    +'<div class="muted" style="font-size:13px;margin-bottom:14px">La correction remet chaque paire dans '
+    +'l\'état que sa facture impose : date et montant repris de la facture, rien n\'est deviné. '
+    +'Les factures et les avoirs ne sont pas touchés.</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:13px">'
+    +'<thead><tr style="text-align:left;border-bottom:1px solid var(--line)">'
+    +'<th style="padding:5px 8px">Référence</th><th style="padding:5px 8px">Modèle</th>'
+    +'<th style="padding:5px 8px">Statut actuel</th><th style="padding:5px 8px">Facture</th>'
+    +'<th style="padding:5px 8px">Date</th><th style="padding:5px 8px;text-align:right">TTC</th>'
+    +'</tr></thead><tbody>'+lignes+'</tbody></table>'
+    +'<div style="margin-top:16px;display:flex;gap:10px">'
+    +'<button class="btn r" id="cohFix">Sortir ces paires du stock</button>'
+    +'<button class="btn" id="cohClose">Fermer</button></div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector("#cohClose").onclick=function(){ov.remove();};
+  ov.querySelector("#cohFix").onclick=async function(){
+    if(!confirm("Sortir "+l.length+" paire(s) du stock ?\n\nChacune reprend la date et le montant de sa facture."))return;
+    var n=0;
+    l.forEach(function(a){
+      var v=idx[String(a.ref)];if(!v)return;
+      a.statut=cohStatutCible(v.source);a.dispo=0;
+      if(a.statut==="Vendu"){a.dateVente=v.date;a.venteTTC=v.ttc;a.canal=a.canal||"Boutique";}
+      a.maj=today();n++;
+    });
+    try{logAct("Maintenance","Cohérence",n+" paire(s) facturée(s) sortie(s) du stock");}catch(e){}
+    await save();ov.remove();
+    try{renderStock();}catch(e){}
+    alert(n+" paire(s) sortie(s) du stock.");
+  };
+}
+
 function renderStock(){
   renderChips();
+  try{cohPaintBand();}catch(e){console.warn("contrôle de cohérence",e);}
   const f=filteredArticles();const pages=Math.max(1,Math.ceil(f.length/PER));if(page>pages)page=pages;const rows=f.slice((page-1)*PER,page*PER);
   sMeta.textContent=(showArchived?"Archives — ":"Total : ")+`${f.length} élément(s)`;
   sRows.innerHTML=rows.length?rows.map(a=>{const v=varById(a.varianteId),m=modeleById(v.modeleId);return `<tr><td class="ck"><input type="checkbox" class="rowchk" data-chk="${a.id}" ${selStock.has(a.id)?"checked":""}></td>
@@ -2220,7 +2344,12 @@ function renderStock(){
 
 const CRUMBS={sourcinghub:"Achat › Sourcing Hub",tods:"Statistiques › TODS — Réassort",vinterne:"Vente › Vente interne",vboutique:"Vente › Vente boutique",dash:"Tableau de bord",modeles:"Catalogue Produits › Modèles de produits",stock:"Catalogue Produits › Stock",articleD:"Catalogue Produits › Stock › Fiche produit",fourn:"Tiers › Fournisseurs",cli:"Tiers › Clients",fournD:"Tiers › Fournisseurs › Fiche",cliD:"Tiers › Clients › Fiche",soc:"Administration › Sociétés",gr:"Outils › Grilles de tailles",tags:"Outils › Tags",statuts:"Outils › Statuts de disponibilité",taxes:"Outils › Taxes",attr:"Outils › Attributs",attrord:"Outils › Attributs › Ordre des valeurs",achats:"Achat › Commandes d'achat",achatNew:"Achat › Commandes d'achat › Ajouter",achatD:"Achat › Commande d'achat — produits",justifs:"Achat › Justificatif d'achat",depots:"Achat › Commande de dépôt",depotNew:"Achat › Commande de dépôt › Ajouter",depotD:"Achat › Commande de dépôt — produits",expeds:"Vente › Expéditions",expedNew:"Vente › Expéditions › Ajouter",shopify:"Vente › Vente Shopify",shopifyD:"Vente › Vente Shopify › Commande",factures:"Vente › Facturation",pays:"Outils › Pays",journal:"Outils › Journal d'activité",stats:"Statistiques",deposants:"Dépôt-vente › Déposants",ventesdep:"Dépôt-vente › Ventes dépôt"};
 function vbArticleByCode(code){code=String(code||"").trim();if(!code)return null;return DB.articles.find(a=>String(a.ref)===code&&!a.archived&&a.statut==="En Stock")||DB.articles.find(a=>String(a.ref)===code&&!a.archived)||null;}
-function vbPrefill(){var a=vbArticleByCode(document.getElementById("vb_code").value);var hint=document.getElementById("vb_hint");var pv=document.getElementById("vb_pv");if(!a){hint.textContent="Aucun article avec ce code.";return;}var v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};hint.textContent="Article : "+(m.fr||a.ref)+(v.taille?(" · T"+v.taille):"")+" · régime "+(a.tva||"?")+" · coût "+(a.prix||0)+" €"+((a.statut&&a.statut!=="En Stock")?(" · ⚠ statut : "+a.statut):"");if(!pv.value)pv.value=a.pv||"";}
+function vbPrefill(){var a=vbArticleByCode(document.getElementById("vb_code").value);var hint=document.getElementById("vb_hint");var pv=document.getElementById("vb_pv");if(!a){hint.textContent="Aucun article avec ce code.";return;}var v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};hint.textContent="Article : "+(m.fr||a.ref)+(v.taille?(" · T"+v.taille):"")+" · régime "+(a.tva||"?")+" · coût "+(a.prix||0)+" €"+((a.statut&&a.statut!=="En Stock")?(" · ⚠ statut : "+a.statut):"");
+  // Prévenir au scan plutôt qu'au moment d'encaisser : le client est devant toi.
+  var _df=(typeof cohVenteDe==="function")?cohVenteDe(a.ref):null;
+  if(_df){hint.textContent="⛔ Paire déjà facturée ("+_df.num+" du "+_df.date+") — vente impossible sans avoir préalable.";hint.style.color="#b91c1c";}
+  else hint.style.color="";
+  if(!pv.value)pv.value=a.pv||"";}
 /* ============================================================================
    CLIENT DE LA FACTURE — vente boutique
    La vente reste anonyme par défaut (« Client boutique »). Si l'acheteur demande
@@ -3008,6 +3137,14 @@ window.vbExportCompta=vbExportCompta;
 
 async function vbSellPiece(a,pv,opts){
   if(!a)throw new Error("pièce introuvable");
+  /* Une paire déjà facturée, et dont la facture n'a pas été avoirée, a quitté le
+     magasin : l'encaisser une seconde fois facturerait deux fois le même
+     exemplaire. C'est exactement ce qui s'est produit jusqu'au 14/10/2026, quand
+     une vente écrasée remettait la paire en rayon. Si elle est réellement
+     revenue, le chemin correct est l'avoir sur la facture d'origine. */
+  var _dejaFact=(typeof cohVenteDe==="function")?cohVenteDe(a.ref):null;
+  if(_dejaFact)throw new Error("Paire déjà facturée : "+_dejaFact.num+" du "+_dejaFact.date
+    +". Si elle est revenue, crée d'abord un avoir sur cette facture.");
   /* Le zéro est autorisé — geste commercial, échange, SAV : la paire sort du
      stock et la facture est émise à 0 €. Seuls le non-numérique et le négatif
      sont refusés ; un remboursement passe par un avoir, pas par un prix négatif.
@@ -3042,7 +3179,13 @@ async function vbSellPiece(a,pv,opts){
 }
 window.vbSellPiece=vbSellPiece;
 
-async function vbRecord(){var code=document.getElementById("vb_code").value.trim();var pv=parseFloat(document.getElementById("vb_pv").value)||0;var a=vbArticleByCode(code);if(!a){alert("Aucun article trouvé avec le code "+code);return;}if(!pv){alert("Renseigne le prix de vente TTC.");return;}var v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};
+async function vbRecord(){var code=document.getElementById("vb_code").value.trim();var pv=parseFloat(document.getElementById("vb_pv").value)||0;var a=vbArticleByCode(code);if(!a){alert("Aucun article trouvé avec le code "+code);return;}if(!pv){alert("Renseigne le prix de vente TTC.");return;}
+  // Même garde-fou que vbSellPiece : on ne facture pas deux fois le même exemplaire.
+  var _df=(typeof cohVenteDe==="function")?cohVenteDe(a.ref):null;
+  if(_df){alert("Cette paire est déjà facturée.\n\nFacture "+_df.num+" du "+_df.date
+    +" — elle a donc déjà quitté le magasin.\n\nSi elle est revenue, crée d'abord un avoir sur cette facture ; "
+    +"elle redeviendra vendable automatiquement.");return;}
+  var v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};
   // Cession : déterminer AVANT de créer la facture, pour l'attribuer à la bonne société.
   var _vc=viCfg();var _isCession=!!(_vc&&a.societeId==_vc.giver);
   if(_isCession){a.viSoldBy=_vc.taker;a.viCededAtSale=viCededCost(a);}
