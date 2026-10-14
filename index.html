@@ -4096,6 +4096,18 @@ function vbRecalcFacture(f){
   f.subtotal=r2(sub);f.totalHT=r2(ht+shipHT);f.totalTTC=r2(sub+ship);
 }
 
+/* Estampille de correction, en clair, pour la fiche et pour le PDF. Une
+   correction silencieuse serait pire que pas de correction du tout : le
+   document doit dire lui-même ce qui a bougé, et quand. */
+function factCorrectionsTxt(f){
+  var c=(f&&f.corrections)||[];
+  if(!c.length)return "";
+  return "Facture corrigée — "+c.map(function(x){
+    return (x.ref?(x.ref+" : "):"")+money(x.avant,f.currency)+" → "+money(x.apres,f.currency)
+      +" le "+(x.date||"")+(x.heure?(" à "+x.heure):"");
+  }).join(" ; ")+".";
+}
+
 function vbEditLine(ref,factId){
   var a=(DB.articles||[]).find(function(x){return x&&x.ref===ref;});
   var f=(DB.factures||[]).find(function(x){return x&&x.id==factId;});
@@ -4108,7 +4120,19 @@ function vbEditLine(ref,factId){
     : false;
   if(avoiree)return alert("Cette paire a déjà été retournée : sa vente est annulée par un avoir.\n\n"
     +"Pour la revendre, passe par Vente boutique.");
-  var prixModifiable=((l.refs||[]).length===1);
+  /* Une facture émise ne se modifie pas : la règle est d'émettre un avoir puis
+     une nouvelle facture. On tolère la correction le JOUR MÊME — la faute de
+     frappe rattrapée avant que le client ne soit parti — et pas au-delà, sinon
+     la facture remise au client et celle des livres finiraient par différer.
+     Le moyen de paiement, lui, ne figure pas sur la facture : il reste
+     corrigeable à tout moment. */
+  var memeJour=(String(f.date||"").slice(0,10)===today());
+  var prixModifiable=((l.refs||[]).length===1)&&memeJour;
+  var motifPrix=!memeJour
+    ? "Cette facture date du "+esc(f.date)+". Une facture émise ne se corrige plus : "
+      +"utilise le retour (↩) puis une nouvelle vente."
+    : (((l.refs||[]).length===1)?"":"Cette ligne porte plusieurs paires : son prix est unitaire "
+      +"et ne peut pas être corrigé ici.");
 
   var ov=document.createElement("div");
   ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;display:flex;"
@@ -4128,8 +4152,7 @@ function vbEditLine(ref,factId){
     +'<label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px">Prix de vente TTC</label>'
     +'<input id="_vbePv" type="number" step="0.01" min="0" value="'+(+l.puTTC||0)+'" '
       +(prixModifiable?'':'disabled ')+'style="'+champ+';width:140px;text-align:right">'
-    +(prixModifiable?'':'<div class="muted" style="font-size:12px;margin-top:5px;color:#b45309">Cette ligne porte plusieurs paires : '
-      +'son prix est unitaire et ne peut pas être corrigé ici.</div>')
+    +(prixModifiable?'':'<div class="muted" style="font-size:12px;margin-top:5px;color:#b45309">'+motifPrix+'</div>')
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
       +'<div><label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px">Règlement</label>'
         +'<select id="_vbeM1" style="'+champ+';width:130px">'+opt(m1)+'</select></div>'
@@ -4158,8 +4181,17 @@ function vbEditLine(ref,factId){
     if(n2&&n2===n1){err.textContent="Les deux moyens de paiement sont identiques.";return;}
 
     var avant=(+l.puTTC||0);
-    l.puTTC=pv;
-    vbRecalcFacture(f);
+    if(prixModifiable&&Math.abs(pv-avant)>0.004){
+      l.puTTC=pv;
+      vbRecalcFacture(f);
+      /* Estampille : une correction silencieuse est pire que pas de correction
+         du tout. Elle s'écrit sur la facture, donc elle suivra le document
+         partout — fiche à l'écran comme PDF. */
+      var _h=new Date();
+      (f.corrections=f.corrections||[]).push({
+        date:today(), heure:String(_h.getHours()).padStart(2,"0")+":"+String(_h.getMinutes()).padStart(2,"0"),
+        ref:ref, avant:r2(avant), apres:pv});
+    }
     if(a){
       a.venteTTC=pv;
       if(n2&&v2>0.004){var o={};o[n2]=r2(v2);var reste=r2(pv-v2);if(reste>0.004)o[n1]=reste;a.regSplit=o;a.regMode=n1;}
@@ -8792,6 +8824,10 @@ function shopInvoicePDF(factId,asCust){
   yt+=8;doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(120,120,120);
   if(f.banque){const bq=doc.splitTextToSize("Coordonnées bancaires : "+f.banque,W-2*M);doc.text(bq,M,yt);yt+=bq.length*4+3;}
   if(isCust){const cn=doc.splitTextToSize("Facture établie dans la devise de règlement du client ("+cur+"), telle qu'encaissée sur la commande "+(f.orderName||f.num)+". Montants issus de Shopify.",W-2*M);doc.setTextColor(120,120,120);doc.text(cn,M,yt);yt+=cn.length*4+3;}
+  // L'estampille passe AVANT les mentions légales et en plus sombre : c'est une
+  // information sur le document lui-même, elle ne doit pas se noyer dans le pied.
+  const _corr=factCorrectionsTxt(f);
+  if(_corr){doc.setTextColor(146,64,14);const cc=doc.splitTextToSize(_corr,W-2*M);doc.text(cc,M,yt);yt+=cc.length*4+3;doc.setTextColor(120,120,120);}
   const _mtext=(f.mentions||"").trim();
   if(_mtext){const mention=doc.splitTextToSize(_mtext,W-2*M);doc.text(mention,M,yt);}
   doc.setFontSize(8);doc.setTextColor(175,175,175);doc.text("Document généré par Wathe ERP",W/2,289,{align:"center"});
@@ -9822,6 +9858,7 @@ function renderFactureD(){
         factureTvaRows(f).map(function(_rr){return '<div class="drow"><span>'+_rr.label+'</span><b>'+money(_rr.amount,f.currency)+'</b></div>';}).join("")+
         '<div class="drow" style="font-size:16px"><span>Total TTC</span><b>'+money(f.totalTTC||0,f.currency)+'</b></div>'+
       '</div>'+
+      (factCorrectionsTxt(f)?'<div style="margin-top:14px;padding:9px 12px;border:1px solid #fde68a;background:#fffbeb;border-radius:9px;font-size:11.5px;color:#92400e">'+esc(factCorrectionsTxt(f))+'</div>':'')+
       ((f.banque||f.mentions)?'<div class="muted" style="font-size:11px;margin-top:16px;line-height:1.6;border-top:1px solid var(--line);padding-top:12px">'+(f.banque?'<b>Coordonnées bancaires :</b> '+esc(f.banque)+'<br>':'')+(f.mentions?esc(f.mentions):'')+'</div>':'')+
       '</div>';
 }
