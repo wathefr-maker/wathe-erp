@@ -1327,7 +1327,8 @@ function amModeles(){
     var jV=vente?amJour(vente.date):null;
 
     // --- la vie de la pièce : entrée, sortie. Sert aux jours sans stock.
-    if(jE!=null)o.vies.push({e:jE,v:(jV!=null&&jV>=jE)?jV:null});
+    // Le coût voyage avec la vie de la pièce : c'est lui qui donne le capital moyen.
+    if(jE!=null)o.vies.push({e:jE,v:(jV!=null&&jV>=jE)?jV:null,c:(+a.prix||0)});
 
     // --- stock d'aujourd'hui
     if(!vente&&inStock(a)){
@@ -1377,7 +1378,25 @@ function amModeles(){
        combien d'euros rapporte un euro engagé, donc elle qui fixe le seuil. */
     o.margeCout=acMediane2(o.ratios);
     if(o.margeCout==null)o.margeCout=acMediane2(o.ratiosTheo);
-    o.rendement=(o.valeur>0&&o.marge>0)?r2(o.marge*parSaison/o.valeur):null;
+    /* CAPITAL MOYEN, et non le stock d'aujourd'hui.
+       Le stock à l'instant T est une photo, et elle ment dans les trois cas qui
+       comptent. Un modèle entièrement écoulé y vaut zéro : le rendement devenait
+       incalculable et la référence disparaissait de l'analyse — alors que ce
+       sont justement les meilleures. Un modèle en fin de vie, acheté à huit et
+       tombé à une paire, divisait sa marge par une seule : son rendement
+       paraissait énorme. Un modèle reçu la semaine dernière comptait ses huit
+       paires comme si elles avaient dormi toute la saison : il était écrasé.
+       On somme donc, pour chaque pièce, son coût multiplié par ses jours de
+       présence DANS la fenêtre, et on ramène à la durée de la fenêtre. C'est
+       l'argent réellement immobilisé, jour après jour. */
+    var duree=Math.max(1,jFin-jDeb+1), capJours=0;
+    o.vies.forEach(function(x){
+      var d=Math.max(x.e,jDeb);
+      var f=(x.v!=null)?Math.min(x.v,jFin):jFin;
+      if(f>=d)capJours+=(f-d+1)*(+x.c||0);
+    });
+    o.capitalMoyen=r2(capJours/duree);
+    o.rendement=(o.capitalMoyen>0&&o.marge>0)?r2(o.marge*parSaison/o.capitalMoyen):null;
 
     /* La rupture se mesure à partir de la PREMIÈRE entrée du modèle, pas du
        début de la fenêtre : avant d'avoir été acheté une première fois, un
