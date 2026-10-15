@@ -364,32 +364,60 @@ body{background:var(--bg,#f8fafc);margin:0}
 .adRs{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-top:2px;line-height:1.35}
 
 /* ---------- LE MUR ----------------------------------------------------------
-   Une case par emplacement d'étagère. Le rendement y est le chiffre principal,
-   et la barre de couleur le rend lisible sans le lire : on balaie le mur du
-   regard et le rouge saute aux yeux. */
-.murG{padding:14px 16px 4px;overflow-x:auto}
-.murR{display:flex;gap:8px;margin-bottom:8px;min-width:max-content}
-.murR:last-child{margin-bottom:12px}
-.murC{flex:0 0 132px;border:1px solid var(--line);border-left-width:4px;border-radius:10px;
-  padding:8px 10px 7px;background:#fff;cursor:pointer;transition:box-shadow .12s,transform .12s}
-.murC:hover{box-shadow:var(--shadow);transform:translateY(-1px)}
+   Un vrai mur d'étagères, pas un tableau. On le lit comme on le regarde en
+   boutique : une rangée, des boîtes posées dessus, et la couleur qui saute aux
+   yeux avant même qu'on lise un chiffre.
+
+   Tout tient dans la largeur, sans défilement horizontal : un mur qu'il faut
+   faire glisser pour voir la fin n'est plus un mur, c'est une liste. Les cases
+   se partagent donc la place (grid 1fr) et la typo se resserre quand les
+   colonnes se multiplient — d'où les variables --mp (nombre de places) et
+   --mz (facteur d'échelle) posées par le rendu. */
+.murG{padding:16px 16px 4px;background:
+    linear-gradient(180deg,#faf9f7 0%,#f4f2ee 100%);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.murR{display:grid;grid-template-columns:repeat(var(--mp,8),minmax(0,1fr));
+  gap:calc(7px * var(--mz,1));align-items:stretch}
+/* La planche. C'est elle qui fait l'étagère : une tranche claire, un liseré
+   sombre dessous, et l'ombre portée des boîtes qui tombe dessus. */
+.murP{height:9px;margin:0 -4px calc(16px * var(--mz,1));border-radius:2px;
+  background:linear-gradient(180deg,#e8e3da 0%,#d8d1c4 55%,#bdb4a4 100%);
+  box-shadow:0 1px 0 rgba(0,0,0,.10), 0 7px 9px -7px rgba(60,50,35,.45)}
+.murP:last-child{margin-bottom:10px}
+
+/* La boîte. Couvercle marqué en haut, posée sur la planche. */
+.murC{position:relative;border:1px solid #e2ded6;border-top-width:3px;border-radius:5px 5px 3px 3px;
+  padding:calc(8px * var(--mz,1)) calc(9px * var(--mz,1)) calc(7px * var(--mz,1));
+  background:linear-gradient(180deg,#fff 0%,#fcfbf9 100%);cursor:grab;
+  box-shadow:0 1px 2px rgba(60,50,35,.08);
+  transition:box-shadow .12s,transform .12s;min-width:0}
+.murC:hover{box-shadow:0 6px 14px -4px rgba(60,50,35,.28);transform:translateY(-2px)}
+.murC:active{cursor:grabbing}
 .murC.on{outline:2px solid var(--violet);outline-offset:1px}
-.murC.ok{border-left-color:#16a34a}
-.murC.warn{border-left-color:#d97706}
-.murC.bad{border-left-color:#dc2626;background:#fffbfb}
-.murC.neu{border-left-color:#cbd5e1}
-.murCn{font-size:11.5px;font-weight:700;line-height:1.25;height:29px;overflow:hidden}
-.murCs{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.murCv{font-size:19px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums;line-height:1}
-.murCv i{font-size:9.5px;font-weight:700;font-style:normal;color:var(--muted);margin-left:4px;
-  vertical-align:2px}
-.murCf{font-size:10px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums;
+.murC.ok{border-top-color:#16a34a}
+.murC.warn{border-top-color:#d97706}
+.murC.bad{border-top-color:#dc2626;background:linear-gradient(180deg,#fffdfd 0%,#fff6f6 100%)}
+.murC.neu{border-top-color:#cbd5e1}
+/* Pendant le glisser : la boîte prise s'efface, la cible s'allume. */
+.murC.drag{opacity:.35}
+.murC.cible,.murVideC.cible{outline:2px dashed var(--violet);outline-offset:2px;background:#f4f7ff}
+.murCn{font-size:calc(11.5px * var(--mz,1));font-weight:700;line-height:1.25;
+  height:calc(29px * var(--mz,1));overflow:hidden}
+.murCs{font-size:calc(10px * var(--mz,1));color:var(--muted);margin-top:1px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.murCv{font-size:calc(19px * var(--mz,1));font-weight:800;margin-top:4px;
+  font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap}
+.murCv i{font-size:calc(9.5px * var(--mz,1));font-weight:700;font-style:normal;color:var(--muted);
+  margin-left:3px;vertical-align:2px}
+.murCf{font-size:calc(10px * var(--mz,1));color:var(--muted);margin-top:4px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Le relevé réel passe avant l'hypothèse : c'est lui qui est vrai. */
 .murCf.fort{color:var(--ink);font-weight:600;margin-top:5px}
 .murCf.fort+.murCf{margin-top:1px}
-.murVideC{flex:0 0 132px;min-height:96px;border:1px dashed #cbd5e1;border-radius:10px;background:#fcfcfd;
-  color:#94a3b8;font-size:19px;font-weight:700;cursor:pointer;font-family:inherit}
+/* L'emplacement libre : un creux dans l'étagère, pas une carte. */
+.murVideC{min-height:calc(104px * var(--mz,1));border:1px dashed #c9c1b4;border-radius:5px;
+  background:rgba(255,255,255,.35);color:#a8a093;font-size:calc(19px * var(--mz,1));
+  font-weight:700;cursor:pointer;font-family:inherit;min-width:0;transition:all .12s}
 .murVideC:hover{border-color:var(--violet);color:var(--violet);background:#f8faff}
 
 /* La barre : même échelle partout, pleine à une fois et demie le seuil confortable. */
@@ -399,6 +427,13 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murC.warn .murB>span,.murRes.warn .murB>span{background:#d97706}
 .murC.bad .murB>span,.murRes.bad .murB>span{background:#dc2626}
 
+.murPos{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 18px;
+  border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+.murPos>i{font-style:normal;font-size:11px;color:#9aa1ad}
+.murFl{display:inline-flex;gap:3px}
+.murFl>button{width:26px;height:24px;border:1px solid var(--line);background:#fff;border-radius:6px;
+  cursor:pointer;font:inherit;font-size:13px;line-height:1;color:var(--ink)}
+.murFl>button:hover{border-color:var(--violet);color:var(--violet)}
 .murLg{display:flex;gap:14px;flex-wrap:wrap;padding:10px 18px 13px;border-top:1px solid var(--line);
   font-size:11.5px;color:var(--muted)}
 .murLgI{display:flex;align-items:center;gap:6px}
@@ -1468,7 +1503,9 @@ function amModeles(){
     o.delaiMedian=acMediane(o.delais);
     /* La marge rapportée au COÛT, et non au prix de vente : c'est elle qui dit
        combien d'euros rapporte un euro engagé, donc elle qui fixe le seuil. */
-    o.caVente=acMediane2(o.caVentes);   // prix de vente HT médian, mesuré
+    /* MOYENNE et non médiane : les ventes remisées comptent. Elles sont une
+       décision commerciale régulière, pas une anomalie à filtrer. */
+    o.caVente=acMoyenne(o.caVentes);   // prix de vente HT moyen, encaissé
     o.margeCout=acMediane2(o.ratios);
     if(o.margeCout==null)o.margeCout=acMediane2(o.ratiosTheo);
     /* CAPITAL MOYEN, et non le stock d'aujourd'hui.
@@ -1551,6 +1588,16 @@ function acMediane2(arr){
   var a=arr.slice().sort(function(x,y){return x-y;});
   var i=Math.floor(a.length/2);
   return a.length%2?a[i]:((a[i-1]+a[i])/2);
+}
+/* La moyenne, là où écarter les valeurs extrêmes reviendrait à écarter un fait.
+   Le prix de vente en est le cas : une paire sur quatre part en remise ici, ce
+   n'est pas du bruit, c'est la politique de prix. La médiane la ferait
+   disparaître et surévaluerait la case. */
+function acMoyenne(arr){
+  if(!arr||!arr.length)return null;
+  var n=0,s=0;
+  arr.forEach(function(v){var x=+v;if(isFinite(x)){s+=x;n++;}});
+  return n?r2(s/n):null;
 }
 
 /* Part des entrées qu'il faut écouler en « jours » pour atteindre le rendement
@@ -1969,6 +2016,70 @@ function murRetirer(id){
   save();renderMur();
 }
 function murEditer(id){_murEdit=(_murEdit===String(id))?null:String(id);_murSel=null;renderMur();}
+
+/* ---------- DÉPLACER UNE BOÎTE ----------------------------------------------
+   Composer un mur, c'est essayer des agencements : mettre les locomotives à
+   hauteur d'yeux, regrouper une marque, pousser les faibles en bas. Il faut
+   donc pouvoir attraper une case et la poser ailleurs.
+
+   Déposer sur une case occupée ÉCHANGE les deux plutôt que de refuser : c'est
+   ce qu'on fait avec de vraies boîtes, et refuser obligerait à vider une place
+   d'abord. Rien de tout cela ne touche au stock, seulement à la disposition. */
+var _murDrag=null;
+
+function murDragStart(ev,id){
+  _murDrag=String(id);
+  try{
+    ev.dataTransfer.effectAllowed="move";
+    ev.dataTransfer.setData("text/plain",String(id)); // Firefox exige une donnée
+  }catch(e){}
+  var el=ev.target&&ev.target.closest?ev.target.closest(".murC"):null;
+  if(el)setTimeout(function(){el.classList.add("drag");},0);
+}
+function murDragEnd(){
+  _murDrag=null;
+  [].slice.call(document.querySelectorAll(".murC.drag,.cible"))
+    .forEach(function(e){e.classList.remove("drag");e.classList.remove("cible");});
+}
+function murDragOver(ev,el){
+  if(!_murDrag)return;
+  ev.preventDefault();                       // sans ça, le navigateur refuse le dépôt
+  try{ev.dataTransfer.dropEffect="move";}catch(e){}
+  if(el&&!el.classList.contains("drag"))el.classList.add("cible");
+}
+function murDragLeave(el){if(el)el.classList.remove("cible");}
+
+function murDeposer(ev,r,c){
+  if(ev&&ev.preventDefault)ev.preventDefault();
+  var id=_murDrag;
+  if(!id){try{id=ev.dataTransfer.getData("text/plain");}catch(e){}}
+  murDragEnd();
+  if(!id)return;
+  var m=modeleById(+id); if(!m||!m.mur)return;
+  if(+m.mur.r===+r&&+m.mur.c===+c)return;    // reposée au même endroit
+  var autre=murAt(r,c);
+  if(autre&&autre.id!==m.id){                // échange
+    autre.mur.r=+m.mur.r; autre.mur.c=+m.mur.c;
+  }
+  m.mur.r=+r; m.mur.c=+c;
+  try{logAct("Mur","Déplacement",(m.fr||m.sku||"")+" → rangée "+(+r+1)+", place "+(+c+1));}catch(e){}
+  save();renderMur();
+}
+
+/* Les mêmes déplacements au clavier et au doigt : le glisser-déposer HTML5
+   n'existe pas sur tablette, et le mur se regarde souvent sur place. */
+function murBouger(id,dr,dc){
+  var m=modeleById(+id); if(!m||!m.mur)return;
+  var f=murFmt();
+  var r=Math.min(f.rangees-1,Math.max(0,(+m.mur.r||0)+dr));
+  var c=Math.min(f.places-1,Math.max(0,(+m.mur.c||0)+dc));
+  if(r===+m.mur.r&&c===+m.mur.c)return;      // déjà au bord
+  var autre=murAt(r,c);
+  if(autre&&autre.id!==m.id){autre.mur.r=+m.mur.r;autre.mur.c=+m.mur.c;}
+  m.mur.r=r;m.mur.c=c;
+  try{logAct("Mur","Déplacement",(m.fr||m.sku||"")+" → rangée "+(r+1)+", place "+(c+1));}catch(e){}
+  save();renderMur();
+}
 function murSet(id,cle,val){
   var m=modeleById(id);if(!m||!m.mur)return;
   var v=parseFloat(String(val).replace(",","."));
@@ -2041,7 +2152,9 @@ function murTuiles(L){
 function murCase(r,c){
   var m=murAt(r,c);
   if(!m)return '<button class="murVideC" onclick="murOuvrirPose('+r+','+c+')" '
-    +'title="Poser un modèle ici">+</button>';
+    +'ondragover="murDragOver(event,this)" ondragleave="murDragLeave(this)" '
+    +'ondrop="murDeposer(event,'+r+','+c+')" '
+    +'title="Poser un modèle ici — ou y faire glisser une boîte">+</button>';
   var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune);
   var ouvert=(_murEdit===String(m.id));
   var marque=x.jeune?'<i>jeune</i>':(x.estime?'<i>est.</i>':'');
@@ -2062,7 +2175,10 @@ function murCase(r,c){
         +amNum(x.ventesMois,1)+" ventes par mois × "+amEur(x.margeVente)+" de marge")):"")
     +(x.margeSai!=null?("\nsoit "+amEur(x.margeSai)+" sur une saison de "+SAISON+" jours"):"")
     +"\ncliquer pour régler";
-  return '<div class="murC eur '+B.cls+(ouvert?" on":"")+'" '
+  return '<div class="murC eur '+B.cls+(ouvert?" on":"")+'" draggable="true" '
+    +'ondragstart="murDragStart(event,'+m.id+')" ondragend="murDragEnd()" '
+    +'ondragover="murDragOver(event,this)" ondragleave="murDragLeave(this)" '
+    +'ondrop="murDeposer(event,'+r+','+c+')" '
     +'onclick="murEditer('+m.id+')" title="'+esc(bulle)+'">'
     +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCs">'+esc(m.sku||"")+'</div>'
@@ -2096,6 +2212,16 @@ function murReglage(){
       +'rapporte par mois.</div>'
       +'<button class="btn mini" onclick="murReset('+m.id+')">Revenir aux mesures</button>'
       +'<button class="btn mini" onclick="murRetirer('+m.id+')">Retirer du mur</button></div>'
+    /* Place et déplacement. Le glisser-déposer suffit à la souris ; ces flèches
+       sont là pour la tablette, où il n'existe pas. */
+    +'<div class="murPos">Rangée '+((+m.mur.r||0)+1)+', place '+((+m.mur.c||0)+1)
+      +'<span class="murFl">'
+      +'<button onclick="murBouger('+m.id+',-1,0)" title="Monter d\'une rangée">↑</button>'
+      +'<button onclick="murBouger('+m.id+',1,0)" title="Descendre d\'une rangée">↓</button>'
+      +'<button onclick="murBouger('+m.id+',0,-1)" title="Vers la gauche">←</button>'
+      +'<button onclick="murBouger('+m.id+',0,1)" title="Vers la droite">→</button>'
+      +'</span>'
+      +'<i>une case occupée échange sa place</i></div>'
     +'<div class="murF">'
       +'<label>Profondeur<span>paires tenues en moyenne</span>'
         +'<input type="number" min="0" step="0.5" value="'+x.prof+'" '
@@ -2184,11 +2310,17 @@ function renderMur(){
   var f=murFmt();
   var L=murPoses().map(murCalc);
   murMjEchelle(L);             // le repère et l'échelle avant de dessiner les cases
+  /* Tout doit tenir dans la largeur. Au-delà de huit places, les cases
+     rétrécissent et la typo doit suivre, sinon les noms de modèles débordent et
+     les montants passent à la ligne. En dessous, on ne grossit pas : une case
+     de 200 px pour afficher « 80 €/mois » ferait vide. */
+  var mz=Math.min(1,Math.max(0.74,8/Math.max(1,f.places)));
   var rangees="";
   for(var r=0;r<f.rangees;r++){
     var cases="";
     for(var c=0;c<f.places;c++)cases+=murCase(r,c);
-    rangees+='<div class="murR">'+cases+'</div>';
+    // La planche vient APRÈS les boîtes : elles sont posées dessus.
+    rangees+='<div class="murR">'+cases+'</div><div class="murP"></div>';
   }
   body.innerHTML=murTuiles(L)
     +murPose()+murReglage()
@@ -2209,7 +2341,7 @@ function renderMur(){
           +'onchange="murFmtSet(\'places\',this.value)"></label>'
         +(L.length?'<button class="btn mini" onclick="murVider()">Vider</button>':'')
       +'</div>'
-      +'<div class="murG">'+rangees+'</div>'
+      +'<div class="murG" style="--mp:'+f.places+';--mz:'+mz+'">'+rangees+'</div>'
       +'<div class="murLg">'
         +'<span class="murLgT">Repère : '+(murMjRef()
           ? (amEur(murMjRef())+'/mois'+(((+amCfg().mjCible)||0)>0?' (ton objectif)':' (médiane du mur)'))
