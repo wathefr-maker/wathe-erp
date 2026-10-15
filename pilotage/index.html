@@ -350,6 +350,8 @@ body{background:var(--bg,#f8fafc);margin:0}
 .adT.ok{border-color:#bbf7d0;background:#fbfffc}
 .adTl{font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
 .adTv{font-size:25px;font-weight:800;margin-top:5px;line-height:1.15;font-variant-numeric:tabular-nums}
+/* L'unité fait partie du chiffre, mais ne doit pas peser autant que lui. */
+.adTu{font-size:13px;font-weight:700;color:var(--muted);margin-left:3px}
 .adTs{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45}
 
 /* Valeur d'une colonne, et sa légende en dessous. */
@@ -427,6 +429,7 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murRes.bad{border-left-color:#dc2626;background:#fffbfb}
 .murRes.neu{border-left-color:#cbd5e1}
 .murResV{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.murResU{font-size:14px;font-weight:700;color:var(--muted);margin-left:3px}
 .murResL{font-size:12.5px;color:var(--muted);margin-top:4px}
 .murResD{font-size:11.5px;color:var(--muted);margin-top:7px;font-variant-numeric:tabular-nums}
 /* Le relevé est du mesuré au milieu de l'estimé : on le détache. */
@@ -460,17 +463,11 @@ body{background:var(--bg,#f8fafc);margin:0}
 .adNote{font-size:12px;color:var(--muted)}
 .adSg{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:15px 18px 17px}
 .adSg label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.adSgI{font-style:normal;font-size:11px;color:#9aa1ad}
 .adSg input[type=number]{width:74px;padding:4px 7px;border:1px solid var(--line);border-radius:7px;
   font-size:13px;font-weight:700;text-align:center;font-family:inherit}
 .btn.mini{padding:4px 11px;font-size:12px}
 .btn.mini.danger{color:#b91c1c}
-/* Bascule du mur : deux lectures du même mur, jamais deux murs. L'état actif
-   doit être évident, sinon on lit des euros en croyant lire un ratio. */
-.murVueB{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
-.murVueB>button{border:0;background:#fff;color:var(--muted);font:inherit;font-size:12px;font-weight:600;
-  padding:5px 12px;cursor:pointer}
-.murVueB>button+button{border-left:1px solid var(--line)}
-.murVueB>button.on{background:var(--violet);color:#fff}
 
 /* ---- Modèles : garder ou couper ---- */
 .amFs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
@@ -1203,7 +1200,12 @@ var AM_DEFAUT={
   rMin:0.5,          // rendement visé sur UNE saison : plancher
   rBon:0.75,         // rendement visé sur UNE saison : confortable
   minPieces:3,       // en dessous, pas assez d'historique pour juger
-  ruptureMax:0.30    // part de jours sans stock au-delà de laquelle on suspend
+  ruptureMax:0.30,   // part de jours sans stock au-delà de laquelle on suspend
+  /* Objectif de marge par case et par mois. À 0, le mur se juge à sa propre
+     médiane : aucun chiffre venu d'ailleurs n'a de sens ici, 60 €/mois étant
+     excellent pour une boutique et dérisoire pour une autre. Se règle dès
+     qu'on sait ce qu'on veut : marge annuelle visée ÷ 12 ÷ nombre de cases. */
+  mjCible:0
 };
 var AM=null;
 function amCfg(){
@@ -1535,6 +1537,12 @@ function amReglages(){
       +'tu veux en tirer, et la durée de l\'épreuve.</div>'
       +'<button class="btn mini" onclick="amToggleReglages()">Fermer</button></div>'
     +'<div class="adSg">'
+      /* Le seul repère du mur. Laissé à 0, il se déduit du mur lui-même ; rempli,
+         il devient l'objectif par case, qui est la façon honnête de le fixer :
+         marge annuelle visée ÷ 12 ÷ nombre de cases. */
+      +'<label>Objectif par case <input type="number" min="0" step="5" value="'+(c.mjCible||0)
+        +'" onchange="amCfgSet(\'mjCible\',Math.max(0,+this.value||0))"> €/mois '
+        +'<i class="adSgI">0 = la médiane du mur</i></label>'
       +'<label>Durée de l\'épreuve <input type="number" min="30" max="365" value="'+c.jours
         +'" onchange="amCfgSet(\'jours\',Math.max(30,Math.min(365,+this.value||90)))"> j</label>'
       +'<label>Rendement plancher, par saison <input type="number" min="0.05" step="0.05" value="'+c.rMin
@@ -1713,11 +1721,35 @@ function murCalc(m){
      y était annuelle, on la ramène à une saison plutôt que de la jeter. */
   if(m.mur.vAn!=null&&m.mur.vSai==null){m.mur.vSai=r2((+m.mur.vAn||0)/2);delete m.mur.vAn;}
   var vSai=(m.mur.vSai!=null)?(+m.mur.vSai||0):(mesVSai!=null?mesVSai:null);
-  var cout=(m.mur.cout!=null)?(+m.mur.cout||0):murCout(m);
+  var coutMes=murCout(m);
+  var cout=(m.mur.cout!=null)?(+m.mur.cout||0):coutMes;
 
-  var rend=(prof>0&&vSai!=null&&mc!=null)?r2((vSai/prof)*mc):null;
+  /* Ce qui est stable quand on simule un autre prix d'achat, c'est le PRIX DE
+     VENTE, pas la marge. On reconstitue donc le chiffre d'affaires HT par vente
+     à partir des mesures, et la marge s'en déduit : acheter moins cher la fait
+     monter. Avant, le coût ne touchait à rien, et baisser le prix d'achat
+     faisait baisser la marge affichée — l'inverse de la réalité. */
+  var caVente=(coutMes>0&&mc!=null)?(coutMes*(1+mc)):null;
+  var margeVente=(caVente!=null)?r2(caVente-cout)
+                 :((mc!=null)?r2(mc*cout):null);   // secours : aucun coût mesuré
+  /* La marge par euro de coût se recalcule sur le coût retenu, sinon elle
+     contredirait la marge affichée juste à côté. */
+  var mcAff=(margeVente!=null&&cout>0)?r2(margeVente/cout):mc;
+
+  var rend=(prof>0&&vSai!=null&&mcAff!=null)?r2((vSai/prof)*mcAff):null;
   var capital=r2(prof*cout);
-  var margeSai=(vSai!=null&&mc!=null)?r2(vSai*mc*cout):null;
+  var margeSai=(vSai!=null&&margeVente!=null)?r2(vSai*margeVente):null;
+
+  /* L'INDICE DU MUR : les euros de marge rapportés au temps de présence.
+     vSai est déjà un rythme — les ventes ramenées aux jours où le modèle était
+     réellement en rayon — donc margeSai divisé par la durée d'une saison donne
+     bien des euros par jour de présence, et ×30 des euros par mois. C'est le
+     seul chiffre qui réunit les deux leviers :
+         marge par mois = ventes par mois × marge par vente
+     Le prix d'achat n'y entre pas : deux modèles qui sortent 60 €/mois se
+     valent, que l'un coûte 40 € la paire et l'autre 120 €. */
+  var ventesMois=(vSai!=null)?r2(vSai*30/SAISON):null;
+  var margeMois=(margeSai!=null)?r2(margeSai*30/SAISON):null;
 
   /* Quatre ventes en quatre jours donnent un rythme spectaculaire et ne prouvent
      rien : c'est peut-être la nouveauté, un client qui a pris trois tailles, ou
@@ -1726,7 +1758,8 @@ function murCalc(m){
      pas encore eu le temps de parler. */
   var jeune=(m.mur.vSai==null)&&(jours==null||jours<MUR_JOURS_MINI);
 
-  return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mc,
+  return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mcAff,
+    margeVente:margeVente, ventesMois:ventesMois, margeMois:margeMois,
     rendement:rend,capital:capital,margeSai:margeSai,
     jours:jours, jeune:jeune, rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
     passees:(o?o.passees:null),
@@ -1772,51 +1805,51 @@ function murRemplissage(rend){
   return Math.max(3,Math.min(100,Math.round(rend/haut*100)));
 }
 
-/* ---------- LES DEUX LECTURES DU MUR ----------------------------------------
-   Le GMROI répond « où mettre le prochain euro » : il divise par le capital,
-   donc il récompense ce qui immobilise peu. La marge répond « quoi mettre sur
-   la prochaine case » : elle compte les euros gagnés, point.
+/* ---------- L'INDICE DU MUR : € DE MARGE PAR MOIS DE PRÉSENCE ---------------
+   Un ratio sans dimension — le GMROI — répond « où mettre le prochain euro ».
+   Ce n'est pas la question posée ici. La question est « quelle référence me
+   rapporte le plus pour le temps qu'elle occupe la boutique », et la réponse
+   se mesure en euros par unité de temps, pas en multiples de capital.
 
-   Ce ne sont pas deux avis sur la même question, ce sont deux questions. Un
-   modèle qui dégage 150 € de marge sur 100 € de capital bat au GMROI celui qui
-   en dégage 330 € sur 455 € — et pourtant il rapporte 180 € de moins. Quand la
-   ressource rare est la place en rayon et non la trésorerie, c'est la marge
-   qu'il faut classer. On laisse donc choisir, plutôt que d'imposer un camp.
+   On ne peut pas lui donner de seuil absolu venu de l'extérieur : 60 €/mois
+   est excellent pour une petite boutique et dérisoire pour une grande. Le
+   repère est donc le MUR LUI-MÊME — sa médiane — à moins que l'utilisateur
+   n'ait fixé son objectif par case dans les réglages. Un repère qu'on se donne
+   vaut mieux qu'un repère qu'on invente pour lui. */
+var _murMjRef=0, _murMjMax=0;
 
-   En vue « marge », la BARRE se remplit par rapport au meilleur du mur (aucun
-   seuil absolu n'a de sens en euros), mais la COULEUR du bord reste celle du
-   GMROI. Une grande barre à bord rouge se lit alors d'un coup d'œil : ça
-   rapporte beaucoup, et ça coûte cher à porter. */
-var _murVue=null, _murMargeMax=0;
-
-function murVue(){
-  if(_murVue)return _murVue;
-  _murVue="gmroi";
-  try{var b=localStorage.getItem("wathe.mur.vue");if(b==="marge")_murVue="marge";}catch(e){}
-  return _murVue;
+/* Médiane plutôt que moyenne : une seule référence énorme ne doit pas faire
+   passer tout le reste pour médiocre. Les modèles trop récents sont exclus du
+   repère comme ils le sont du total — deux ventes en onze jours projettent un
+   chiffre qui n'engage personne. */
+function murMjEchelle(L){
+  var J=(L||[]).filter(function(x){return !x.jeune&&x.margeMois!=null;});
+  var vals=J.map(function(x){return +x.margeMois||0;});
+  _murMjMax=vals.reduce(function(n,v){return Math.max(n,v);},0);
+  var cible=+((amCfg().mjCible)||0);
+  _murMjRef=(cible>0)?cible:(acMediane2(vals)||0);
+  return _murMjRef;
 }
-function murVueSet(v){
-  _murVue=(v==="marge")?"marge":"gmroi";
-  try{localStorage.setItem("wathe.mur.vue",_murVue);}catch(e){}
-  renderMur();
+function murMjRef(){return _murMjRef;}
+/* La barre se remplit par rapport au meilleur du mur : c'est une comparaison
+   entre cases, pas une note. */
+function murRemplissageMj(mj){
+  if(mj==null||mj<=0||!_murMjMax)return 0;
+  return Math.max(3,Math.min(100,Math.round(mj/_murMjMax*100)));
 }
-/* Échelle relative : le meilleur contributeur du mur fait le plein. Recalculée
-   à chaque rendu, sinon retirer une case laisserait l'échelle de l'ancienne.
-
-   Les modèles trop récents en sont exclus, pour la même raison qu'ils sont
-   exclus du total : deux ventes en onze jours projettent 1 100 € sur la saison
-   et écrasent à 40 % de barre un modèle qui, lui, a vraiment rapporté 500 €.
-   Leur barre déborde alors et se cale à 100 %, mais leur bord reste gris : la
-   couleur dit déjà de ne pas s'y fier. */
-function murMargeEchelle(L){
-  var J=(L||[]).filter(function(x){return !x.jeune;});
-  if(!J.length)J=(L||[]);
-  _murMargeMax=J.reduce(function(n,x){return Math.max(n,+x.margeSai||0);},0);
-  return _murMargeMax;
-}
-function murRemplissageMarge(mg){
-  if(mg==null||mg<=0||!_murMargeMax)return 0;
-  return Math.max(3,Math.min(100,Math.round(mg/_murMargeMax*100)));
+/* Au repère ou au-dessus : vert. Entre la moitié et le repère : ambre. En
+   dessous de la moitié : rouge. Une case qui perd de l'argent est toujours
+   rouge, quel que soit le mur. */
+function murBandeMj(mj,jeune){
+  if(mj==null)return {cls:"neu",txt:"à estimer"};
+  if(jeune)return {cls:"neu",txt:"trop tôt"};
+  if(mj<=0)return {cls:"bad",txt:"ne rapporte rien"};
+  var ref=_murMjRef;
+  if(!ref)return {cls:"neu",txt:"sans repère"};
+  if(mj>=ref*1.5)return {cls:"ok",txt:"locomotive"};
+  if(mj>=ref)return {cls:"ok",txt:"au-dessus du mur"};
+  if(mj>=ref/2)return {cls:"warn",txt:"sous la médiane"};
+  return {cls:"bad",txt:"occupe la place pour rien"};
 }
 
 /* ---------- Poser, retirer, régler ---------- */
@@ -1891,38 +1924,41 @@ function murTuiles(L){
      référence reçue il y a quatre jours projette un rythme énorme : la laisser
      entrer dans la moyenne faisait afficher un rendement de 11 pour un mur qui
      en vaut 1,2, et un chiffre pareil ne se discute pas, il se jette. */
-  var J=L.filter(function(x){return !x.jeune&&x.rendement!=null;});
+  var J=L.filter(function(x){return !x.jeune&&x.margeMois!=null;});
   var capJ=J.reduce(function(n,x){return n+x.capital;},0);
+  var mj=J.reduce(function(n,x){return n+(x.margeMois||0);},0);
   var mg=J.reduce(function(n,x){return n+(x.margeSai||0);},0);
   var rend=(capJ>0&&mg>0)?r2(mg/capJ):null;
-  var B=murBande(rend);
   var ecartes=L.length-J.length;
-  var sans=L.filter(function(x){return x.rendement==null;}).length;
-  var jeunes=L.filter(function(x){return x.jeune&&x.rendement!=null;}).length;
-  // Un modèle trop récent n'est pas « sous le seuil » : il n'a pas encore couru.
-  var faibles=L.filter(function(x){return x.rendement!=null&&!x.jeune&&x.rendement<amCfg().rMin;});
+  var sans=L.filter(function(x){return x.margeMois==null;}).length;
+  var jeunes=L.filter(function(x){return x.jeune&&x.margeMois!=null;}).length;
+  var ref=murMjRef();
+  // Un modèle trop récent n'est pas « sous le repère » : il n'a pas encore couru.
+  var faibles=J.filter(function(x){return ref>0&&x.margeMois<ref/2;});
   var capF=faibles.reduce(function(n,x){return n+x.capital;},0);
   return '<div class="adKpi">'
+    +'<div class="adT"><div class="adTl">Le mur rapporte</div>'
+      +'<div class="adTv">'+amEur(mj)+'<span class="adTu">/mois</span></div>'
+      +'<div class="adTs">'+(mj>0
+        ? (amEur(mg)+" sur une saison de "+SAISON+" jours"
+           +(ecartes?(" · sur "+acPl(J.length,"modèle")+" jugeable"+(J.length>1?"s":"")):""))
+        : "aucun modèle jugeable pour l'instant")+'</div></div>'
+    +'<div class="adT"><div class="adTl">Par case occupée</div>'
+      +'<div class="adTv">'+(J.length?amEur(mj/J.length):"—")+'<span class="adTu">/mois</span></div>'
+      +'<div class="adTs">'+(ref>0
+        ? ("médiane "+amEur(ref)+"/mois"
+           +(((+amCfg().mjCible)||0)>0?" — ton objectif":" — la moitié du mur fait mieux"))
+        : "pas encore de repère")+'</div></div>'
     +'<div class="adT"><div class="adTl">Capital engagé</div>'
       +'<div class="adTv">'+amEur(cap)+'</div>'
       +'<div class="adTs">'+acPl(L.length,"modèle")+' · '
-      +amNum(L.reduce(function(n,x){return n+x.prof;},0),1)+' paires'+'</div></div>'
-    +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">GMROI de saison</div>'
-      +'<div class="adTv">'+murNum(rend)+'</div>'
-      +'<div class="adTs">'+(rend==null
-        ? "aucun modèle jugeable pour l'instant"
-        : ("1 € engagé rapporte "+murNum(rend)+" € de marge sur la saison · "
-           +murNum(murAnnuel(rend))+" en équivalent annuel"
-           +(ecartes?(" · sur "+acPl(J.length,"modèle")+" jugeable"+(J.length>1?"s":"")):"")))
-      +'</div></div>'
-    +'<div class="adT"><div class="adTl">Marge de saison</div>'
-      +'<div class="adTv">'+amEur(mg)+'</div>'
-      +'<div class="adTs">sur une saison de '+SAISON+' jours'+(ecartes
-        ? (" · "+acPl(ecartes,"modèle")+" mis de côté, trop récent"+(ecartes>1?"s":"")+" ou à estimer")
-        : ", au rythme retenu")+'</div></div>'
-    +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">Sous le seuil</div>'
+      +amNum(L.reduce(function(n,x){return n+x.prof;},0),1)+' paires'
+      +(rend!=null?(' · GMROI '+murNum(rend)):'')+'</div></div>'
+    +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">Sous la moitié du repère</div>'
       +'<div class="adTv">'+faibles.length+'</div>'
-      +'<div class="adTs">'+amEur(capF)+' engagés sous '+murNum(amCfg().rMin)
+      +'<div class="adTs">'+acPl(faibles.length,"case")+' qui occupe'+(faibles.length>1?"nt":"")
+      +' la place pour '+amEur(faibles.reduce(function(n,x){return n+(x.margeMois||0);},0))+'/mois'
+      +(capF?(' · '+amEur(capF)+' immobilisés'):'')
       +(sans?(' · '+sans+' à estimer'):'')
       +(jeunes?(' · '+jeunes+' trop récent'+(jeunes>1?"s":"")):'')+'</div></div>'
   +'</div>';
@@ -1932,14 +1968,14 @@ function murCase(r,c){
   var m=murAt(r,c);
   if(!m)return '<button class="murVideC" onclick="murOuvrirPose('+r+','+c+')" '
     +'title="Poser un modèle ici">+</button>';
-  var x=murCalc(m),B=murBande(x.rendement,x.jeune);
+  var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune);
   var ouvert=(_murEdit===String(m.id));
   var marque=x.jeune?'<i>jeune</i>':(x.estime?'<i>est.</i>':'');
-  /* Le GMROI est un ratio, et un ratio ne dit pas d'où il sort. On pose donc
-     sous la barre les deux faits bruts qui l'ont produit : combien de paires
-     ont tenu le rayon cette saison, et combien sont parties. Sans eux, une
-     case à 2,05 obtenue sur deux paires se lit comme une case à 2,05 obtenue
-     sur douze, alors que l'une est une anecdote et l'autre une tendance. */
+  /* Un rythme ne dit pas sur quoi il a été observé. On pose donc sous la barre
+     les deux faits bruts : combien de paires ont tenu le rayon cette saison, et
+     combien sont parties. Sans eux, 60 €/mois obtenus sur deux paires se lisent
+     comme 60 €/mois obtenus sur douze — l'un est une anecdote, l'autre une
+     tendance sur laquelle on peut réassortir. */
   var reel=(x.passees)
     ? (x.vendues+' vendue'+(x.vendues>1?'s':'')+' sur '+x.passees)
     : '';
@@ -1947,36 +1983,31 @@ function murCase(r,c){
     +(x.passees?("\n"+x.passees+" paire"+(x.passees>1?"s":"")+" passée"+(x.passees>1?"s":"")
       +" en rayon sur la saison, "+x.vendues+" vendue"+(x.vendues>1?"s":"")
       +((x.o&&x.o.stock!=null)?(", "+x.o.stock+" encore en stock"):"")):"")
-    +"\nGMROI "+murNum(x.rendement)
-    +(x.margeSai!=null?(" · "+amEur(x.margeSai)+" de marge sur la saison"
-      +(x.jeune?" (projection sur très peu de recul)":" au rythme retenu")):"")
+    +(x.margeMois!=null?("\n"+amEur(x.margeMois)+" de marge par mois de présence"
+      +(x.jeune?" (projection sur très peu de recul)":" : "
+        +amNum(x.ventesMois,1)+" ventes par mois × "+amEur(x.margeVente)+" de marge")):"")
+    +(x.margeSai!=null?("\nsoit "+amEur(x.margeSai)+" sur une saison de "+SAISON+" jours"):"")
     +"\ncliquer pour régler";
-  /* Le chiffre principal suit la vue ; l'autre descend en pied de case, pour
-     qu'aucune des deux lectures ne disparaisse jamais complètement. */
-  var marge=(murVue()==="marge");
-  var tete=marge
-    ? ((x.margeSai==null)?"—":amEur(x.margeSai))
-    : murNum(x.rendement);
-  var barre=marge?murRemplissageMarge(x.margeSai):murRemplissage(x.rendement);
-  var pied=marge
-    ? ('GMROI '+murNum(x.rendement)+' · '+amEur(x.capital))
-    : (amNum(x.prof,1)+' p · '+amEur(x.capital));
-  return '<div class="murC '+B.cls+(ouvert?" on":"")+(marge?" eur":"")+'" '
+  return '<div class="murC eur '+B.cls+(ouvert?" on":"")+'" '
     +'onclick="murEditer('+m.id+')" title="'+esc(bulle)+'">'
     +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCs">'+esc(m.sku||"")+'</div>'
-    +'<div class="murCv">'+tete+marque+'</div>'
-    +'<div class="murB"><span style="width:'+barre+'%"></span></div>'
+    +'<div class="murCv">'+((x.margeMois==null)?"—":amEur(x.margeMois))
+      +'<i>/mois</i>'+marque+'</div>'
+    +'<div class="murB"><span style="width:'+murRemplissageMj(x.margeMois)+'%"></span></div>'
     +(reel?('<div class="murCf fort">'+reel+'</div>'):'')
-    +'<div class="murCf">'+pied
-    +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
+    /* Le pied porte les deux facteurs du chiffre de tête : la vitesse et la
+       marge unitaire. C'est là qu'on voit lequel des deux fait défaut. */
+    +'<div class="murCf">'+(x.ventesMois==null?"—":amNum(x.ventesMois,1))+'/mois × '
+      +(x.margeVente==null?"—":amEur(x.margeVente))
+      +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
   +'</div>';
 }
 
 function murReglage(){
   if(!_murEdit)return "";
   var m=modeleById(+_murEdit);if(!m||!m.mur)return "";
-  var x=murCalc(m),B=murBande(x.rendement,x.jeune),c=amCfg();
+  var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune),c=amCfg();
   var src=function(mes){return mes==null
     ? '<i class="murSrc">aucune vente mesurée</i>'
     : '<i class="murSrc">mesuré : '+amNum(mes,2)+'</i>';};
@@ -1987,7 +2018,8 @@ function murReglage(){
   return '<div class="adCard murRg">'
     +'<div class="adH"><div class="adHt">'+esc(m.fr||m.sku||"?")+'</div>'
       +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")
-      +' — bouge la profondeur ou le rythme de ventes et regarde le rendement suivre.</div>'
+      +' — bouge le rythme de ventes ou le prix d\'achat et regarde ce que la case '
+      +'rapporte par mois.</div>'
       +'<button class="btn mini" onclick="murReset('+m.id+')">Revenir aux mesures</button>'
       +'<button class="btn mini" onclick="murRetirer('+m.id+')">Retirer du mur</button></div>'
     +'<div class="murF">'
@@ -2000,18 +2032,29 @@ function murReglage(){
       +'<label>Coût unitaire<span>prix d\'achat HT</span>'
         +'<input type="number" min="0" step="1" value="'+(x.cout||"")+'" '
         +'onchange="murSet('+m.id+',\'cout\',this.value)">'
-        +'<i class="murSrc">n\'entre pas dans le rendement</i></label>'
+        /* Le prix de vente mesuré reste fixe quand on simule un autre prix
+           d'achat : c'est la marge qui bouge, comme à la négociation. */
+        +'<i class="murSrc">'+(x.margeVente!=null
+          ? ('marge par vente : '+amEur(x.margeVente))
+          : 'aucune marge mesurée')+'</i></label>'
       +'<div class="murRes '+B.cls+'">'
-        +'<div class="murResV">'+murNum(x.rendement)+'</div>'
-        +'<div class="murResL">'+esc(B.txt)+' · 1 € engagé rapporte '
-        +(x.rendement==null?"—":(murNum(x.rendement)+" € de marge sur la saison"))
-        +(x.rendement==null?"":(' · <b>GMROI annuel '+murNum(murAnnuel(x.rendement))+'</b>'))+'</div>'
-        +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
+        +'<div class="murResV">'+((x.margeMois==null)?"—":amEur(x.margeMois))
+          +'<span class="murResU">/mois</span></div>'
+        +'<div class="murResL">'+esc(B.txt)
+        +(x.margeSai!=null?(' · soit <b>'+amEur(x.margeSai)+'</b> sur la saison'):'')
+        +(murMjRef()>0?(' · repère du mur '+amEur(murMjRef())+'/mois'):'')+'</div>'
+        +'<div class="murB"><span style="width:'+murRemplissageMj(x.margeMois)+'%"></span></div>'
+        /* La décomposition est l'intérêt même de l'indice : il tombe toujours
+           par la vitesse ou par la marge, jamais par les deux, et on ne les
+           corrige pas de la même façon. */
         +'<div class="murResD">'
-          +(x.margeCout==null
+          +(x.margeMois==null
             ? 'Marge inconnue : renseigne un prix de vente sur ce modèle.'
-            : ('rotation '+amNum(x.vSai/Math.max(1,x.prof),2)+' × marge par euro '+amNum(x.margeCout,2)
-               +' = '+murNum(x.rendement)+'   ('+amNum(x.vSai,1)+' ventes ÷ '+amNum(x.prof,1)+' paires)'))
+            /* Avec un « = » écrit noir sur blanc, les arrondis doivent tomber
+               juste : on donne les centimes des facteurs, sinon 1,6 × 55 fait
+               88 sous les yeux du lecteur alors que la case affiche 86. */
+            : (amNum(x.ventesMois,2)+' ventes par mois × '+amNum(x.margeVente,2)+' € de marge par vente'
+               +' = <b>'+amEur(x.margeMois)+'/mois</b>'))
         +'</div>'
         /* Le relevé brut, sous le ratio. Les trois champs au-dessus se saisissent
            et peuvent donc mentir ; ces chiffres-là viennent du stock et ne se
@@ -2023,7 +2066,14 @@ function murReglage(){
              +((x.o&&x.o.stock!=null)?x.o.stock:0)+' encore en stock · écoulement '
              +Math.round(100*x.vendues/x.passees)+' %</div>')
           : '')
-        +'<div class="murResD">Seuils : plancher '+murNum(c.rMin)+' · confortable '+murNum(c.rBon)+'</div>'
+        /* Le GMROI n'est plus l'indice du mur, mais il reste la bonne réponse le
+           jour où c'est la trésorerie qui bloque et non la place. On le garde
+           en petit, sans en faire le juge. */
+        +(x.rendement!=null
+          ? ('<div class="murResD">Si c\'est la trésorerie qui manque : GMROI '
+             +murNum(x.rendement)+' par saison ('+murNum(murAnnuel(x.rendement))+' en annuel) '
+             +'sur '+amEur(x.capital)+' immobilisés</div>')
+          : '')
         /* Deux faits que le rendement seul ne dit pas, et qui renversent souvent
            la lecture : depuis quand on observe, et combien de temps le modèle a
            été introuvable en rayon. */
@@ -2059,8 +2109,7 @@ function renderMur(){
   murStatsInvalider();
   var f=murFmt();
   var L=murPoses().map(murCalc);
-  murMargeEchelle(L);          // l'échelle des barres avant de dessiner les cases
-  var vMarge=(murVue()==="marge");
+  murMjEchelle(L);             // le repère et l'échelle avant de dessiner les cases
   var rangees="";
   for(var r=0;r<f.rangees;r++){
     var cases="";
@@ -2071,20 +2120,10 @@ function renderMur(){
     +murPose()+murReglage()
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
-        +'<div class="adHs">'+(vMarge
-          ? 'Chaque case porte les euros de marge que le modèle rapporte sur une saison : '
-            +'le classement de la place en rayon. La barre se mesure par rapport au meilleur '
-            +'du mur, et la couleur du bord reste celle du GMROI — une grande barre à bord '
-            +'rouge rapporte beaucoup mais immobilise cher.'
-          : 'Chaque case porte le GMROI du modèle : ce qu\'un euro engagé dessus rapporte en '
-            +'marge sur une saison. C\'est le classement de la trésorerie.')
-        +' Clique une case vide pour poser une référence, une case pleine pour la régler.</div>'
-        +'<div class="murVueB">'
-          +'<button class="'+(vMarge?"":"on")+'" onclick="murVueSet(\'gmroi\')" '
-            +'title="Où mettre le prochain euro">GMROI</button>'
-          +'<button class="'+(vMarge?"on":"")+'" onclick="murVueSet(\'marge\')" '
-            +'title="Quoi mettre sur la prochaine case">Marge €</button>'
-        +'</div>'
+        +'<div class="adHs">Chaque case porte les euros de marge que la référence sort '
+        +'<b>par mois de présence</b> : ventes par mois × marge par vente. Le prix d\'achat '
+        +'n\'y entre pas. La barre compare au meilleur du mur. '
+        +'Clique une case vide pour poser une référence, une case pleine pour la régler.</div>'
         +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
           +'onchange="murFmtSet(\'rangees\',this.value)"></label>'
         +'<label class="murFmt">Places<input type="number" min="1" max="20" value="'+f.places+'" '
@@ -2093,10 +2132,12 @@ function renderMur(){
       +'</div>'
       +'<div class="murG">'+rangees+'</div>'
       +'<div class="murLg">'
-        +(vMarge?'<span class="murLgT">Couleur du bord = GMROI</span>':'')
-        +'<span class="murLgI ok">correct et plus</span>'
-        +'<span class="murLgI warn">faible</span>'
-        +'<span class="murLgI bad">perdant</span>'
+        +'<span class="murLgT">Repère : '+(murMjRef()
+          ? (amEur(murMjRef())+'/mois'+(((+amCfg().mjCible)||0)>0?' (ton objectif)':' (médiane du mur)'))
+          : 'pas encore de mur à comparer')+'</span>'
+        +'<span class="murLgI ok">au repère et au-dessus</span>'
+        +'<span class="murLgI warn">entre la moitié et le repère</span>'
+        +'<span class="murLgI bad">moins de la moitié</span>'
         +'<span class="murLgI neu">trop tôt ou à estimer</span>'
       +'</div>'
     +'</div>'
