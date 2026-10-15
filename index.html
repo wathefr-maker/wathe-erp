@@ -5951,6 +5951,38 @@ function fillAchSizes(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.
    ========================================================================== */
 var PV_SECURITE=999;
 
+/* ----------------------------------------------------------------------------
+   LE PRIX AUTOMATIQUE — pour les achats dont on connaît le coût mais pas encore
+   le prix de vente : FlowStock et Sourcing Hub.
+
+   Coefficient sur le prix d'achat, puis arrondi AU-DESSUS sur la grille de prix
+   de la boutique : ...94,90 · 99,90 · 104,90 · 109,90... Un palier tous les
+   5 €, toujours en X4,90 ou X9,90.
+
+   Pourquoi arrondir au-dessus et jamais en dessous : un prix calculé trop bas
+   part en ligne et se vend avant qu'on l'ait relu. Trop haut, il ne se vend pas
+   et on le corrige. L'erreur coûteuse n'est pas symétrique.
+
+   Mieux que PV_SECURITE pour ces deux sources : la paire devient vendable
+   immédiatement au lieu d'être bloquée, et le prix reste cohérent avec le
+   reste de la boutique. PV_SECURITE ne sert plus que quand le prix d'achat
+   lui-même est inconnu — là, aucun calcul n'est possible.
+   -------------------------------------------------------------------------- */
+var PV_COEF=1.8;
+
+/* Tout en centimes : 0,1 + 0,2 ne fait pas 0,3 en virgule flottante, et un
+   arrondi de prix qui tombe à 109,89 est un arrondi raté. */
+function pvArrondi(x){
+  var c=Math.round((+x||0)*100);
+  if(c<=0)return 0;
+  var k=Math.ceil((c+10)/500);        // paliers de 5 €, décalés de 10 centimes
+  return (k*500-10)/100;
+}
+function pvAutomatique(pa,coef){
+  pa=+pa||0; if(pa<=0)return 0;
+  return pvArrondi(pa*((+coef>0)?+coef:PV_COEF));
+}
+
 /* Les lignes fautives, nommées : un refus qui dit seulement « prix manquant »
    oblige à rouvrir la commande ligne par ligne pour trouver laquelle. */
 function prixManquants(lignes){
@@ -9697,12 +9729,17 @@ function flowstockImport(txt,silent){
       let v=null;if(m)v=varsOf(m.id).find(x=>{const eu=String(shopSizeEU(x)||"").replace(/[^0-9]/g,"");const t=String(x.taille||"").replace(/[^0-9]/g,"");const usD=String(fsEuToUs(it.size,m.grille)||"").replace(/[^0-9]/g,"");return sizeD&&(eu===sizeD||t===sizeD||(usD&&t===usD));})||null;
       if(m&&!v){const cs=fsCleanSize(it.size);const vid=fsVarianteId(m.id,cs);v={id:vid,modeleId:m.id,taille:cs,eu:cs,barcode:""};DB.variantes.push(v);}
       const qte=Math.max(1,+it.quantity||1);
-      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:(+it.unit_price||((p.price||{}).amount)||0),pv:PV_SECURITE,tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};
-      /* FlowStock ne nous donne aucun prix de vente : on ne le connaît qu'une
-         fois la paire en main. Elle partait donc en caisse à 0 € — scannée au
-         comptoir, elle sonnait à zéro. PV_SECURITE la rend visible et
-         invendable par accident : 999 € arrête le vendeur au lieu de passer.
-         dispo reste à 0, donc rien ne part sur Shopify à ce prix. */
+      const _paFs=(+it.unit_price||((p.price||{}).amount)||0);
+      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:_paFs,pv:(pvAutomatique(_paFs)||PV_SECURITE),tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};
+      /* FlowStock et Sourcing Hub (même chemin d'import) ne donnent aucun prix
+         de vente : on ne le connaît qu'une fois la paire en main. Elles
+         partaient donc en caisse à 0 € et sonnaient à zéro au comptoir.
+         On applique le coefficient maison sur le prix d'achat, arrondi au
+         palier du dessus : la paire est vendable tout de suite, à un prix
+         cohérent, et reste corrigeable à la main.
+         Prix d'achat inconnu (0) : aucun calcul possible, on retombe sur
+         PV_SECURITE, qui bloque la vente plutôt que de la brader.
+         dispo reste à 0 : rien ne part sur Shopify sans décision humaine. */
       a.lignes.push(line);
       if(!cancelled&&v){for(let k=0;k<qte;k++){makePiece(a,line);const piece=DB.articles[0];
         /* Clé naturelle de la pièce : achat FlowStock + ligne + n° d'exemplaire.
