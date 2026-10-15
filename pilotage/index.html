@@ -436,6 +436,18 @@ body{background:var(--bg,#f8fafc);margin:0}
    verdict porté par le couvercle de la boîte. */
 /* Le bilan de la saison : pas une alerte, un constat. Pas de fond coloré,
    seuls les chiffres portent la couleur du manque. */
+/* La tendance : six barres et un mot. */
+.murTd{display:flex;align-items:flex-end;gap:6px;margin-top:6px}
+.murSp{display:flex;align-items:flex-end;gap:2px;height:calc(18px * var(--mz,1));flex:0 0 auto}
+.murSp>i{width:calc(7px * var(--mz,1));background:#cbd5e1;border-radius:1px;display:block}
+.murSp>i.der{background:#64748b}
+.murSp>i.part{background:repeating-linear-gradient(135deg,#94a3b8 0 2px,#e2e8f0 2px 4px)}
+.murTd>em{font-style:normal;font-size:calc(9.5px * var(--mz,1));font-weight:700;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.murTd>em.ok{color:#166534}
+.murTd>em.warn{color:#b45309}
+.murTd>em.bad{color:#b91c1c}
+.murTd>em.neu{color:var(--muted)}
 .murCt{margin-top:4px;font-size:calc(9.5px * var(--mz,1));color:var(--muted);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .murCt>b{font-weight:800;color:#b45309}
@@ -1304,6 +1316,17 @@ function amCfgReset(){
 /* ---------- Outils ---------- */
 function amJour(s){var t=new Date(String(s).slice(0,10)+"T00:00:00");
   return isNaN(t.getTime())?null:Math.round(t.getTime()/86400000);}
+/* Du numéro de jour vers le mois civil, et les bornes d'un mois. On raisonne
+   en mois CIVILS et non en tranches de trente jours : « septembre » se
+   compare à « août » dans la tête du commerçant, « les jours 30 à 60 » non. */
+function amMoisDe(j){var d=new Date(j*86400000);
+  return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0");}
+function amMoisBornes(an,mo){
+  return {deb:Math.round(Date.UTC(an,mo,1)/86400000),
+          fin:Math.round(Date.UTC(an,mo+1,0)/86400000)};
+}
+var AM_MOIS=["janv.","févr.","mars","avril","mai","juin",
+             "juil.","août","sept.","oct.","nov.","déc."];
 function amMoins(n){var d=new Date();d.setDate(d.getDate()-n);return isoD(d);}
 function amPct(x){return (x==null)?"—":(Math.round(x*1000)/10).toString().replace(".",",")+" %";}
 function amNum(x,d){return (x==null)?"—":(Math.round(x*Math.pow(10,d||0))/Math.pow(10,d||0)).toString().replace(".",",");}
@@ -1460,7 +1483,7 @@ function amModeles(){
       segment:acFamille(m)+" · ",
       stock:0, valeur:0, ageMax:null, stockParT:{},
       cohorte:0, cohorteOk:0, delais:[],
-      vendues:0, marge:0, ratios:[], ratiosTheo:[], caVentes:[],
+      vendues:0, marge:0, ratios:[], ratiosTheo:[], caVentes:[], vts:[],
       vies:[], aUnePiece:false});
   };
 
@@ -1533,6 +1556,8 @@ function amModeles(){
          chiffre faux dès que les pièces n'avaient pas toutes coûté pareil :
          deux médianes prises sur des pièces différentes ne se recollent pas. */
       if(vente.ht!=null&&vente.ht>0)o.caVentes.push(vente.ht);
+      // La date et la marge de chaque vente : de quoi reconstruire une courbe.
+      o.vts.push({j:jV, mg:(vente.marge!=null?vente.marge:0)});
     }
   });
 
@@ -1700,6 +1725,53 @@ function amModeles(){
        régulière, une rupture en pleine sortie coûte plus qu'en creux d'été. */
     o.ventesPerdues=(o.jtDispo>0&&o.vendues>0)
       ? r2(o.vendues*jtManque/o.jtDispo) : 0;
+
+    /* ------------------------------------------------------------------
+       LA TENDANCE, MOIS PAR MOIS.
+
+       Une fenêtre unique dit où en est un produit, jamais s'il monte ou s'il
+       s'éteint. Or les deux appellent des décisions opposées : une référence
+       à 40 €/mois qui double chaque mois se réassortit, la même qui a fait
+       120, 80 puis 40 s'arrête.
+
+       Chaque mois est ramené à une valeur PLEINE : marge du mois ÷ jours au
+       catalogue dans ce mois × 30. Sans cela le mois en cours, toujours
+       incomplet, afficherait une chute tous les mois du calendrier. Et les
+       mois antérieurs à la première entrée n'existent pas — ils ne valent pas
+       zéro, ils ne sont pas des points.
+       ------------------------------------------------------------------ */
+    var mois=[], dRef=new Date(jFin*86400000);
+    for(var im=5;im>=0;im--){
+      var dm=new Date(Date.UTC(dRef.getUTCFullYear(),dRef.getUTCMonth()-im,1));
+      var bn=amMoisBornes(dm.getUTCFullYear(),dm.getUTCMonth());
+      var d0=Math.max(bn.deb,jD), d1=Math.min(bn.fin,jFin);
+      var nj=d1-d0+1;
+      /* Un mois où le modèle n'a existé que quelques jours ne fait pas un
+         point : ramener la marge d'une seule journée à trente la multiplie par
+         trente, et une barre née d'une vente isolée écraserait toute la
+         courbe. On préfère un point de moins qu'un point faux. */
+      if(nj<7)continue;
+      var mg=0,nv=0;
+      o.vts.forEach(function(x){
+        if(x.j>=d0&&x.j<=d1){mg+=x.mg;nv++;}
+      });
+      mois.push({cle:dm.getUTCFullYear()+"-"+String(dm.getUTCMonth()+1).padStart(2,"0"),
+                 label:AM_MOIS[dm.getUTCMonth()], jours:nj,
+                 ventes:nv, marge:r2(mg),
+                 /* la valeur comparable : ce que le mois aurait donné en entier */
+                 parMois:r2(mg*30/nj), partiel:(nj<28)});
+    }
+    o.mois=mois;
+    /* La tendance : moitié récente contre moitié ancienne. En deçà de quatre
+       mois de recul on ne conclut pas — deux points font une droite, pas une
+       tendance. */
+    if(mois.length>=4){
+      var h=Math.floor(mois.length/2);
+      var moy=function(t){return t.length?t.reduce(function(n,x){return n+x.parMois;},0)/t.length:0;};
+      var av=moy(mois.slice(0,h)), ap=moy(mois.slice(mois.length-h));
+      o.tendance=(av>0)?r2((ap-av)/av):(ap>0?1:0);
+      o.tendanceAvant=r2(av); o.tendanceApres=r2(ap);
+    }else{o.tendance=null;}
 
     /* LE DERNIER RÉASSORT, mesuré sur ce qu'il est devenu et non modélisé.
        « 6 paires entrées le 9 octobre, 2 parties en 6 jours » se vérifie en
@@ -2082,6 +2154,8 @@ function murCalc(m){
     courbe:(o?o.courbe:null), cibleTotale:(o?o.cibleTotale:null),
     ventesPerdues:ventesPerdues, margePerdue:margePerdue,
     reassort:(o?o.reassort:null),
+    mois:(o?o.mois:null), tendance:(o?o.tendance:null),
+    tendanceAvant:(o?o.tendanceAvant:null), tendanceApres:(o?o.tendanceApres:null),
     /* « estimé » quand aucune vente n'a été mesurée : le chiffre vient alors
        des prix affichés, pas de ce qui s'est passé en caisse. */
     estime:(mesVSai==null),
@@ -2169,6 +2243,34 @@ function murBandeMj(mj,jeune){
   if(mj>=ref)return {cls:"ok",txt:"au-dessus du mur"};
   if(mj>=ref/2)return {cls:"warn",txt:"sous la médiane"};
   return {cls:"bad",txt:"occupe la place pour rien"};
+}
+
+/* Six barres, une par mois, hautes comme la marge de leur mois rapportée au
+   meilleur. Pas d'axe, pas de chiffre : on ne lit pas une sparkline, on voit
+   une pente. Le mois en cours est hachuré — il est ramené à un mois plein,
+   donc comparable, mais il reste une projection sur quelques jours. */
+function murCourbe(mois){
+  if(!mois||mois.length<2)return "";
+  var max=mois.reduce(function(n,x){return Math.max(n,x.parMois||0);},0);
+  if(max<=0)return "";
+  return '<div class="murSp">'+mois.map(function(x,i){
+    var h=Math.max(2,Math.round((x.parMois||0)/max*100));
+    var der=(i===mois.length-1);
+    return '<i class="'+(der?"der":"")+(x.partiel?" part":"")+'" style="height:'+h+'%" '
+      +'title="'+esc(x.label+" : "+amEur(x.parMois)+"/mois"
+        +(x.ventes?(" · "+x.ventes+" vente"+(x.ventes>1?"s":"")):" · aucune vente")
+        +(x.partiel?" · mois incomplet, ramené à 30 jours":""))+'"></i>';
+  }).join("")+'</div>';
+}
+/* Le mot qui accompagne la pente. Les seuils sont larges à dessein : sur trois
+   mois et quelques ventes, un écart de 15 % n'est que du bruit. */
+function murTendance(t){
+  if(t==null)return null;
+  if(t>=0.5)return {cls:"ok",txt:"en forte hausse"};
+  if(t>=0.15)return {cls:"ok",txt:"en hausse"};
+  if(t<=-0.5)return {cls:"bad",txt:"s'éteint"};
+  if(t<=-0.15)return {cls:"warn",txt:"en baisse"};
+  return {cls:"neu",txt:"stable"};
 }
 
 /* ---------- Poser, retirer, régler ---------- */
@@ -2396,6 +2498,13 @@ function murCase(r,c){
        référence à l'autre bien mieux qu'un rythme. La vitesse vient ensuite,
        puis le relevé. Un indice tombe toujours par l'un ou par l'autre, et on
        ne corrige pas les deux de la même façon. */
+    +(function(){
+      var T=murTendance(x.jeune?null:x.tendance);
+      var sp=murCourbe(x.mois);
+      if(!sp)return '';
+      return '<div class="murTd">'+sp
+        +(T?('<em class="'+T.cls+'">'+T.txt+'</em>'):'')+'</div>';
+    })()
     +'<div class="murCm">'+(x.margeVente==null?"—":amNum(x.margeVente,2)+' €')
       +'<i>de marge la paire</i></div>'
     +'<div class="murCf fort">'+(x.ventesMois==null?"—":amNum(x.ventesMois,1))
@@ -2498,6 +2607,21 @@ function murReglage(){
                   (x.o?x.o.stock:0)+" paires en stock pour "
                   +acPl(x.cibleTotale,"paire")+" visée"+(x.cibleTotale>1?"s":"")
                   +" dans TODS")
+          : "")
+        +(x.mois&&x.mois.length>=2
+          ? ligne("Tendance",
+                  (function(){var T=murTendance(x.jeune?null:x.tendance);
+                    return T?T.txt:"pas assez de recul";})()
+                  +((x.tendance!=null&&!x.jeune)
+                    ? (" · "+(x.tendance>0?"+":"")+Math.round(x.tendance*100)+" %") : ""),
+                  /* Les mois écrits en clair sous la courbe : une sparkline se
+                     regarde, elle ne se cite pas. Si l'utilisateur doute de la
+                     pente, il doit pouvoir lire les chiffres. */
+                  x.mois.map(function(z){
+                    return esc(z.label)+" "+amEur(z.parMois)
+                      +(z.partiel?"*":"");
+                  }).join(" · ")
+                  +(x.mois[x.mois.length-1].partiel?"   (* mois en cours, ramené à 30 j)":""))
           : "")
         +(x.margePerdue>0
           ? ligne("Coût de la rupture", amEur(x.margePerdue)+" de marge",
