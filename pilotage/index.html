@@ -404,6 +404,23 @@ body{background:var(--bg,#f8fafc);margin:0}
    supérieur redevient une simple arête de boîte. */
 .murC.ok,.murC.warn,.murC.bad,.murC.neu{border-top-color:#ddd5c7}
 .murC.drag{opacity:.35}
+/* LE PODIUM. Trois boîtes du mur portent une étiquette de rang : c'est la
+   réponse directe à « laquelle je recommande ». Elle se pose dans le coin,
+   comme une gommette sur un carton, et ne vole pas de place au contenu. */
+.murRg{float:right;margin:0 0 0 6px;
+  min-width:calc(16px * var(--mz,1));height:calc(16px * var(--mz,1));padding:0 3px;
+  display:flex;align-items:center;justify-content:center;border-radius:3px;
+  font-size:calc(10px * var(--mz,1));font-weight:800;line-height:1;
+  background:#15803d;color:#fff;letter-spacing:.2px}
+.murRg.r2{background:#4b7a58}
+.murRg.r3{background:#6f8a77}
+/* Le podium au-dessus du mur : trois noms, lus de gauche à droite. */
+.murPd{display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;
+  padding:0 18px 12px;font-size:12.5px;color:var(--muted)}
+.murPdT{font-weight:700;color:var(--ink)}
+.murPdI{display:flex;align-items:baseline;gap:5px}
+.murPdI b{font-weight:700;color:var(--ink)}
+.murPdI i{font-style:normal;font-weight:800;color:#15803d}
 .murC.cible,.murVideC.cible{outline:2px dashed var(--violet);outline-offset:2px;background:#f4f7ff}
 
 .murCn{font-size:calc(12px * var(--mz,1));font-weight:700;line-height:1.3;
@@ -1310,10 +1327,12 @@ var AM_DEFAUT={
   rBon:0.75,         // rendement visé sur UNE saison : confortable
   minPieces:3,       // en dessous, pas assez d'historique pour juger
   ruptureMax:0.30,   // part de jours sans stock au-delà de laquelle on suspend
-  /* Objectif de marge par case et par mois. À 0, le mur se juge à sa propre
-     médiane : aucun chiffre venu d'ailleurs n'a de sens ici, 60 €/mois étant
-     excellent pour une boutique et dérisoire pour une autre. Se règle dès
-     qu'on sait ce qu'on veut : marge annuelle visée ÷ 12 ÷ nombre de cases. */
+  /* Objectif de marge par case et par mois. À 0, le mur se juge contre
+     lui-même, découpé en trois tiers : aucun chiffre venu d'ailleurs n'a de
+     sens ici, 60 €/mois étant excellent pour une boutique et dérisoire pour
+     une autre. Rempli, le jugement redevient absolu — le mur peut alors être
+     tout vert ou tout rouge. Se règle dès qu'on sait ce qu'on veut : marge
+     annuelle visée ÷ 12 ÷ nombre de cases. */
   mjCible:0
 };
 var AM=null;
@@ -1940,7 +1959,7 @@ function amReglages(){
          marge annuelle visée ÷ 12 ÷ nombre de cases. */
       +'<label>Objectif par case <input type="number" min="0" step="5" value="'+(c.mjCible||0)
         +'" onchange="amCfgSet(\'mjCible\',Math.max(0,+this.value||0))"> €/mois '
-        +'<i class="adSgI">0 = la médiane du mur</i></label>'
+        +'<i class="adSgI">0 = le mur se coupe en trois tiers</i></label>'
       +'<label>Durée de l\'épreuve <input type="number" min="30" max="365" value="'+c.jours
         +'" onchange="amCfgSet(\'jours\',Math.max(30,Math.min(365,+this.value||90)))"> j</label>'
       +'<label>Rendement plancher, par saison <input type="number" min="0.05" step="0.05" value="'+c.rMin
@@ -2250,43 +2269,66 @@ function murRemplissage(rend){
 
    On ne peut pas lui donner de seuil absolu venu de l'extérieur : 60 €/mois
    est excellent pour une petite boutique et dérisoire pour une grande. Le
-   repère est donc le MUR LUI-MÊME — sa médiane — à moins que l'utilisateur
-   n'ait fixé son objectif par case dans les réglages. Un repère qu'on se donne
-   vaut mieux qu'un repère qu'on invente pour lui. */
-var _murMjRef=0, _murMjMax=0;
+   repère est donc le MUR LUI-MÊME, découpé en trois tiers, à moins que
+   l'utilisateur n'ait fixé son objectif par case dans les réglages. Un repère
+   qu'on se donne vaut mieux qu'un repère qu'on invente pour lui. */
+var _murMjRef=0, _murMjMax=0, _murT1=null, _murT2=null, _murTop=[];
 
-/* Médiane plutôt que moyenne : une seule référence énorme ne doit pas faire
-   passer tout le reste pour médiocre. Les modèles trop récents sont exclus du
-   repère comme ils le sont du total — deux ventes en onze jours projettent un
-   chiffre qui n'engage personne. */
+/* LES TIERS. Le mur se juge contre lui-même, découpé en trois : le tiers qui
+   porte, celui qui suit, celui qui occupe la place. C'est un classement et non
+   une note — un mur entièrement bon aura quand même son tiers faible, et c'est
+   voulu : la question posée est « laquelle des neuf cases je remplace », pas
+   « est-ce que celle-ci est bonne dans l'absolu ».
+
+   Un objectif saisi dans les réglages reprend la main : là, le jugement
+   redevient absolu et le mur peut être tout vert ou tout rouge.
+
+   En dessous de trois références jugeables, aucun découpage : trois tiers
+   dans deux valeurs ne veulent rien dire. */
 function murMjEchelle(L){
   var J=(L||[]).filter(function(x){return !x.jeune&&x.margeMois!=null;});
   var vals=J.map(function(x){return +x.margeMois||0;});
   _murMjMax=vals.reduce(function(n,v){return Math.max(n,v);},0);
   var cible=+((amCfg().mjCible)||0);
-  _murMjRef=(cible>0)?cible:(acMediane2(vals)||0);
+  var tri=vals.slice().sort(function(a,b){return a-b;});
+  if(cible>0){
+    /* Objectif absolu : les deux bornes en découlent, la moitié de l'objectif
+       marquant le décrochage. */
+    _murMjRef=cible; _murT1=cible/2; _murT2=cible;
+  }else if(tri.length>=3){
+    _murT1=tri[Math.floor(tri.length/3)];
+    _murT2=tri[Math.floor(2*tri.length/3)];
+    _murMjRef=acMediane2(vals)||0;
+  }else{_murT1=null;_murT2=null;_murMjRef=acMediane2(vals)||0;}
+
+  /* Le podium : les trois meilleures du mur, hors références trop récentes
+     dont le chiffre n'est qu'une projection, et hors cases qui ne rapportent
+     rien — première d'un mur à zéro n'est pas une distinction. */
+  _murTop=J.filter(function(x){return (+x.margeMois||0)>0;})
+    .sort(function(a,b){return (b.margeMois||0)-(a.margeMois||0);})
+    .slice(0,3).map(function(x){return x.m?String(x.m.id):"";});
   return _murMjRef;
 }
 function murMjRef(){return _murMjRef;}
+function murTiers(){return {bas:_murT1,haut:_murT2,cible:(+((amCfg().mjCible)||0))};}
+function murRang(id){var i=_murTop.indexOf(String(id));return (i<0)?0:(i+1);}
+
 /* La barre se remplit par rapport au meilleur du mur : c'est une comparaison
    entre cases, pas une note. */
 function murRemplissageMj(mj){
   if(mj==null||mj<=0||!_murMjMax)return 0;
   return Math.max(3,Math.min(100,Math.round(mj/_murMjMax*100)));
 }
-/* Au repère ou au-dessus : vert. Entre la moitié et le repère : ambre. En
-   dessous de la moitié : rouge. Une case qui perd de l'argent est toujours
-   rouge, quel que soit le mur. */
+/* Le tiers d'une case. Une case qui ne rapporte rien est rouge quel que soit
+   le mur : il n'y a pas de tiers faible honorable à zéro euro. */
 function murBandeMj(mj,jeune){
   if(mj==null)return {cls:"neu",txt:"à estimer"};
   if(jeune)return {cls:"neu",txt:"trop tôt"};
   if(mj<=0)return {cls:"bad",txt:"ne rapporte rien"};
-  var ref=_murMjRef;
-  if(!ref)return {cls:"neu",txt:"sans repère"};
-  if(mj>=ref*1.5)return {cls:"ok",txt:"locomotive"};
-  if(mj>=ref)return {cls:"ok",txt:"au-dessus du mur"};
-  if(mj>=ref/2)return {cls:"warn",txt:"sous la médiane"};
-  return {cls:"bad",txt:"occupe la place pour rien"};
+  if(_murT1==null||_murT2==null)return {cls:"neu",txt:"trop peu de références pour classer"};
+  if(mj>=_murT2)return {cls:"ok",txt:"tiers fort"};
+  if(mj>=_murT1)return {cls:"warn",txt:"tiers moyen"};
+  return {cls:"bad",txt:"tiers faible"};
 }
 
 /* LA COURBE DES SIX MOIS, tracée comme une aire et non en barreaux.
@@ -2483,6 +2525,39 @@ function murVider(){
 
 /* ---------- Rendu ---------- */
 
+/* LA LÉGENDE. Elle dit où tombent les deux bornes, parce qu'un découpage en
+   tiers sans ses valeurs n'est qu'une couleur de plus. */
+function murLegende(){
+  var T=murTiers(), e=function(v){return (v!=null&&v>0)?(" — "+amEur(v)+"/mois et plus"):"";};
+  var bas=(T.bas!=null&&T.bas>0)?(" — moins de "+amEur(T.bas)+"/mois"):"";
+  var mid=(T.bas!=null&&T.haut!=null&&T.haut>0)
+    ? (" — de "+amEur(T.bas)+" à "+amEur(T.haut)+"/mois"):"";
+  return '<div class="murLg">'
+    +'<span class="murLgT">'+(T.cible>0
+      ? ('Ton objectif : '+amEur(T.cible)+'/mois')
+      : ((T.haut!=null)?'Le mur découpé en trois tiers':'Pas encore assez de références pour classer'))+'</span>'
+    +'<span class="murLgI ok">tiers fort'+e(T.haut)+'</span>'
+    +'<span class="murLgI warn">tiers moyen'+mid+'</span>'
+    +'<span class="murLgI bad">tiers faible'+bas+'</span>'
+    +'<span class="murLgI neu">trop tôt ou à estimer</span>'
+  +'</div>';
+}
+
+/* LE PODIUM. La question posée au mur n'est pas seulement « laquelle je
+   sors » mais aussi « laquelle je recommande » : les trois meilleures, nommées
+   et chiffrées, répondent à la seconde en une ligne. */
+function murPodium(L){
+  var J=(L||[]).filter(function(x){return !x.jeune&&x.margeMois!=null&&x.margeMois>0;})
+    .sort(function(a,b){return b.margeMois-a.margeMois;}).slice(0,3);
+  if(J.length<2)return "";
+  return '<div class="murPd"><span class="murPdT">Les meilleures</span>'
+    +J.map(function(x,i){
+      return '<span class="murPdI"><i>'+(i+1)+'</i> <b>'+esc(x.m.fr||x.m.sku||"?")+'</b> '
+        +amEur(x.margeMois)+'/mois</span>';
+    }).join("")
+  +'</div>';
+}
+
 function murTuiles(L){
   var cap=L.reduce(function(n,x){return n+x.capital;},0);
   /* Le rendement du mur ne se calcule QUE sur les modèles jugeables. Une
@@ -2499,7 +2574,12 @@ function murTuiles(L){
   var jeunes=L.filter(function(x){return x.jeune&&x.margeMois!=null;}).length;
   var ref=murMjRef();
   // Un modèle trop récent n'est pas « sous le repère » : il n'a pas encore couru.
-  var faibles=J.filter(function(x){return ref>0&&x.margeMois<ref/2;});
+  /* Le tiers faible, au sens du découpage affiché sur le mur : ce sont
+     exactement les cases rouges, pour que la tuile et les couleurs disent la
+     même chose. Un objectif saisi ramène au seuil absolu. */
+  var T1=murTiers().bas;
+  var faibles=J.filter(function(x){
+    return (x.margeMois<=0)||(T1!=null&&x.margeMois<T1);});
   var capF=faibles.reduce(function(n,x){return n+x.capital;},0);
   return '<div class="adKpi">'
     +'<div class="adT"><div class="adTl">Le mur rapporte</div>'
@@ -2510,10 +2590,13 @@ function murTuiles(L){
         : "aucun modèle jugeable pour l'instant")+'</div></div>'
     +'<div class="adT"><div class="adTl">Par case occupée</div>'
       +'<div class="adTv">'+(J.length?amEur(mj/J.length):"—")+'<span class="adTu">/mois</span></div>'
-      +'<div class="adTs">'+(ref>0
-        ? ("médiane "+amEur(ref)+"/mois"
-           +(((+amCfg().mjCible)||0)>0?" — ton objectif":" — la moitié du mur fait mieux"))
-        : "pas encore de repère")+'</div></div>'
+      +'<div class="adTs">'+(function(){
+        var T=murTiers();
+        if(T.cible>0)return "ton objectif est à "+amEur(T.cible)+"/mois par case";
+        if(T.haut!=null)return "le tiers fort démarre à "+amEur(T.haut)
+          +"/mois, le tiers faible finit à "+amEur(T.bas);
+        return (ref>0?("médiane "+amEur(ref)+"/mois"):"pas encore de repère");
+      })()+'</div></div>'
     +'<div class="adT"><div class="adTl">Marge de la saison</div>'
       +'<div class="adTv">'+amEur(mg)+'</div>'
       +'<div class="adTs">'+(mg>0
@@ -2525,7 +2608,8 @@ function murTuiles(L){
       +'<div class="adTs">'+acPl(L.length,"modèle")+' · '
       +amNum(L.reduce(function(n,x){return n+x.prof;},0),1)+' paires tenues'
       +(rend!=null?(' · GMROI '+murNum(rend)):'')+'</div></div>'
-    +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">Sous la moitié du repère</div>'
+    +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">'
+      +((murTiers().cible>0)?"Sous la moitié de l'objectif":"Le tiers faible")+'</div>'
       +'<div class="adTv">'+faibles.length+'</div>'
       +'<div class="adTs">'+acPl(faibles.length,"case")+' qui occupe'+(faibles.length>1?"nt":"")
       +' la place pour '+amEur(faibles.reduce(function(n,x){return n+(x.margeMois||0);},0))+'/mois'
@@ -2542,6 +2626,7 @@ function murCase(r,c){
     +'ondrop="murDeposer(event,'+r+','+c+')" '
     +'title="Poser un modèle ici — ou y faire glisser une boîte">+</button>';
   var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune);
+  var rang=murRang(m.id);          // 1, 2 ou 3 pour le podium du mur, 0 sinon
   var ouvert=(_murEdit===String(m.id));
   var marque=x.jeune?'<i>jeune</i>':(x.estime?'<i>est.</i>':'');
   /* Un rythme ne dit pas sur quoi il a été observé. On pose donc sous la barre
@@ -2577,7 +2662,10 @@ function murCase(r,c){
     +'ondragover="murDragOver(event,this)" ondragleave="murDragLeave(this)" '
     +'ondrop="murDeposer(event,'+r+','+c+')" '
     +'onclick="murEditer('+m.id+')" title="'+esc(bulle)+'">'
-    +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
+    +'<div class="murCn">'
+      +(rang?('<span class="murRg r'+rang+'" title="'+rang
+        +(rang===1?'re':'e')+' meilleure référence du mur">'+rang+'</span>'):'')
+      +esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCv">'+((x.margeMois==null)?"—":amEur(x.margeMois))
       +'<span>par mois</span>'+marque+'</div>'
     /* Les deux facteurs du montant, sur une seule ligne grise : la marge par
@@ -2646,7 +2734,16 @@ function murReglage(){
       +'<span>par mois</span></div>'
     +'<div class="pnVerdict">'+esc(B.txt)
       +(x.margeSai!=null?(', soit '+amEur(x.margeSai)+' sur la saison'):'')
-      +(murMjRef()>0?('. Le repère du mur est à '+amEur(murMjRef())+' par mois.'):'')+'</div>'
+      /* Le rang vient après le montant : « tiers fort, soit 500 € sur la
+         saison » est une phrase, « tiers fort · 1re meilleure, soit… » n'en
+         est pas une. */
+      +(murRang(m.id)?('. '+murRang(m.id)+(murRang(m.id)===1?'re':'e')
+        +' meilleure du mur'):'')
+      +(function(){var T=murTiers();
+        if(T.cible>0)return '. Ton objectif est à '+amEur(T.cible)+' par mois.';
+        if(T.bas==null)return '';
+        return '. Le mur se coupe en trois à '+amEur(T.bas)+' et '+amEur(T.haut)
+          +' par mois.';})()+'</div>'
     +'</div>';
   var equation=(x.margeMois==null)
     ? '<p class="pnVide">Renseigne un prix de vente sur ce modèle pour calculer sa marge.</p>'
@@ -2784,15 +2881,8 @@ function renderMur(){
         +(L.length?'<button class="btn mini" onclick="murVider()">Vider</button>':'')
       +'</div>'
       +'<div class="murG" style="--mp:'+f.places+';--mz:'+mz+'">'+rangees+'</div>'
-      +'<div class="murLg">'
-        +'<span class="murLgT">Repère : '+(murMjRef()
-          ? (amEur(murMjRef())+'/mois'+(((+amCfg().mjCible)||0)>0?' (ton objectif)':' (médiane du mur)'))
-          : 'pas encore de mur à comparer')+'</span>'
-        +'<span class="murLgI ok">au repère et au-dessus</span>'
-        +'<span class="murLgI warn">entre la moitié et le repère</span>'
-        +'<span class="murLgI bad">moins de la moitié</span>'
-        +'<span class="murLgI neu">trop tôt ou à estimer</span>'
-      +'</div>'
+      +murPodium(L)
+      +murLegende()
     +'</div>'
     +amReglages();
 }
