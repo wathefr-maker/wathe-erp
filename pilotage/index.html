@@ -241,6 +241,11 @@ body{background:var(--bg,#f8fafc);margin:0}
 .topbar .lg{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--violet),var(--violet-2));
   color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
 .page{max-width:1240px;margin:0 auto;padding:22px 20px 70px}
+/* Le mur prend toute la largeur de l'écran. Une colonne de texte se lit mal
+   au-delà de 1240 px, mais un mur d'étagères n'est pas du texte : plus il est
+   large, plus les boîtes sont grandes et moins la typo a besoin de se
+   resserrer. Les paragraphes gardent leur propre limite (adHs). */
+.page.mur{max-width:none}
 #loginOverlay{display:none}
 
 /* ---- Réassort en lignes ---- */
@@ -426,6 +431,10 @@ body{background:var(--bg,#f8fafc);margin:0}
   color:#92400e;background:#fef3c7;border-radius:4px;padding:2px 5px;display:inline-block;
   max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .murTx.bas{color:#991b1b;background:#fee2e2}
+/* Le remplissage et le coût ne sont pas des alertes : ils informent. On les
+   sort de la palette vert/orange/rouge pour qu'on ne les confonde pas avec le
+   verdict porté par le couvercle de la boîte. */
+.murTx.neutre{color:#475569;background:#eef2f7}
 /* L'emplacement libre : un creux dans l'étagère, pas une carte. */
 .murVideC{min-height:calc(104px * var(--mz,1));border:1px dashed #c9c1b4;border-radius:5px;
   background:rgba(255,255,255,.35);color:#a8a093;font-size:calc(19px * var(--mz,1));
@@ -1156,6 +1165,8 @@ function setVue(v){
   document.getElementById("vue-mur").style.display=(v==="mur")?"":"none";
   document.getElementById("navRe").className=(v==="reassort")?"on":"";
   document.getElementById("navAd").className=(v==="mur")?"on":"";
+  var app=document.getElementById("app");
+  if(app)app.classList.toggle("mur",v==="mur");
   if(v==="mur")renderMur();
 }
 /* ---------- Couche de données (commune aux deux écrans) ---------------- */
@@ -1443,7 +1454,7 @@ function amModeles(){
     return parM[mid]||(parM[mid]={id:mid,m:m,
       titre:(m.fr||m.sku||"?"), sku:(m.sku||""), marque:(m.marque||"Sans marque"),
       segment:acFamille(m)+" · ",
-      stock:0, valeur:0, ageMax:null,
+      stock:0, valeur:0, ageMax:null, stockParT:{},
       cohorte:0, cohorteOk:0, delais:[],
       vendues:0, marge:0, ratios:[], ratiosTheo:[], caVentes:[],
       vies:[], aUnePiece:false});
@@ -1478,6 +1489,10 @@ function amModeles(){
     // --- stock d'aujourd'hui
     if(!vente&&inStock(a)){
       o.stock++; o.valeur+=(+a.prix||0);
+      /* Le stock du jour ventilé par taille : c'est lui qui dira quelles
+         pointures manquent CE MATIN, par opposition à la moyenne de saison. */
+      var _kt=String(v.taille||v.id);
+      o.stockParT[_kt]=(o.stockParT[_kt]||0)+1;
       var age=acDelai(a,today());
       if(age!=null&&(o.ageMax==null||age>o.ageMax))o.ageMax=age;
       // Marge théorique, en secours quand le modèle n'a encore rien vendu.
@@ -1637,6 +1652,32 @@ function amModeles(){
       jtManque+=manque;
       if(manque>0)trous.push({t:(libT[t]||t),j:manque});
     });
+    /* DEUX LECTURES DE LA COURBE, et elles ne disent pas la même chose.
+       « Aujourd'hui » répond à « qu'est-ce que je commande ce matin ». « Sur
+       la saison » répond à « combien ce trou m'a coûté ». Une taille partie
+       hier donne 75 % aujourd'hui et 99 % sur la saison ; une taille absente
+       depuis quatre mois donne les mêmes 75 % aujourd'hui mais 75 % aussi sur
+       la saison. L'une se rattrape, l'autre est déjà payée. */
+    var stockT={};
+    Object.keys(o.stockParT).forEach(function(k){
+      var kc=canon(k);
+      stockT[kc]=(stockT[kc]||0)+o.stockParT[k];
+    });
+    var presentes=tailles.filter(function(t){return (stockT[t]||0)>0;}).length;
+    o.dispoT=tailles.length?(presentes/tailles.length):null;
+    o.taillesPresentes=presentes;
+    o.taillesVides=tailles.filter(function(t){return !(stockT[t]||0);})
+                          .map(function(t){return libT[t]||t;});
+    /* LE REMPLISSAGE DE LA COURBE, en paires et non en tailles : tenir une
+       seule paire en 42 quand on en vise trois n'est pas la même chose que
+       d'en tenir trois. N'a de sens que face à une cible choisie. */
+    if(cibles){
+      var vise=0;
+      Object.keys(cibles).forEach(function(t){vise+=(+cibles[t]||0);});
+      o.cibleTotale=vise;
+      o.courbe=(vise>0)?(o.stock/vise):null;
+    }else{o.cibleTotale=null;o.courbe=null;}
+
     o.tailles=tailles.length;
     o.jtTotal=tailles.length*o.jourSuivis;
     o.jtManque=jtManque;
@@ -2032,6 +2073,9 @@ function murCalc(m){
     /* La rupture à la maille taille, et ce qu'elle a coûté. */
     tailles:(o?o.tailles:null), jtManque:(o?o.jtManque:null), jtTotal:(o?o.jtTotal:null),
     couvertureT:(o?o.couvertureT:null), ciblees:(o?o.ciblees:false), trous:(o?o.trous:null),
+    dispoT:(o?o.dispoT:null), taillesPresentes:(o?o.taillesPresentes:null),
+    taillesVides:(o?o.taillesVides:null),
+    courbe:(o?o.courbe:null), cibleTotale:(o?o.cibleTotale:null),
     ventesPerdues:ventesPerdues, margePerdue:margePerdue,
     reassort:(o?o.reassort:null),
     /* « estimé » quand aucune vente n'a été mesurée : le chiffre vient alors
@@ -2354,14 +2398,25 @@ function murCase(r,c){
       +' vente'+((x.ventesMois||0)>1?'s':'')+' par mois'
       +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
     +(reel?('<div class="murCf">'+reel+'</div>'):'')
-    /* LA COURBE DE TAILLES, seulement quand elle est trouée. Afficher
-       « 100 % » sur les trois quarts du mur n'apprendrait rien et volerait la
-       place ; c'est le manque qui mérite d'être vu, parce qu'il explique un
-       rythme faible sans qu'on ait à ouvrir la case. */
-    +((x.couvertureT!=null&&x.couvertureT<0.98)
-      ? ('<div class="murTx'+(x.couvertureT<0.7?' bas':'')+'">tailles '
-         +Math.round(x.couvertureT*100)+' %'
-         +(x.trous&&x.trous.length?(' · manque '+esc(x.trous[0].t)):'')+'</div>')
+    /* LA COURBE DE TAILLES. Deux chiffres qui ne répondent pas à la même
+       question : le premier est l'état de ce matin — ce qu'on commande — le
+       second la part du temps où les tailles ont été là sur la saison — ce que
+       le trou a déjà coûté. Rien ne s'affiche quand tout est tenu : « 100 % »
+       répété sur les trois quarts du mur n'apprendrait rien. */
+    +((x.dispoT!=null&&(x.dispoT<1||(x.couvertureT!=null&&x.couvertureT<0.98)))
+      ? ('<div class="murTx'+(x.dispoT<0.7?' bas':'')+'">tailles '
+         +Math.round(x.dispoT*100)+' %'
+         +((x.couvertureT!=null&&x.couvertureT<0.98)
+            ? (' · '+Math.round(x.couvertureT*100)+' % saison') : '')
+         +'</div>')
+      : '')
+    /* Le remplissage de la courbe visée, en paires, et ce que la rupture a
+       coûté. Deux faits que seul le réassort peut corriger. */
+    +((x.courbe!=null||x.margePerdue>0)
+      ? ('<div class="murTx neutre">'
+         +(x.courbe!=null?('courbe '+Math.round(x.courbe*100)+' %'):'')
+         +((x.courbe!=null&&x.margePerdue>0)?' · ':'')
+         +(x.margePerdue>0?('rupture '+amEur(x.margePerdue)):'')+'</div>')
       : '')
   +'</div>';
 }
@@ -2409,14 +2464,33 @@ function murReglage(){
                "moyenne des paires en stock")
         /* La courbe de tailles : le seul endroit où l'on dit POURQUOI un
            rythme est bas sans supposer que le produit est mauvais. */
+        +(x.dispoT!=null
+          ? ligne("Tailles aujourd'hui", Math.round(x.dispoT*100)+" % disponibles",
+                  x.taillesPresentes+" sur "+acPl(x.tailles,"taille")
+                  +(x.ciblees?" visée":" tenue")+(x.tailles>1?"s":"")
+                  +((x.taillesVides&&x.taillesVides.length)
+                    ? (" · manque "+x.taillesVides.slice(0,5).map(esc).join(", "))
+                    : " · rien ne manque"))
+          : "")
         +(x.couvertureT!=null
-          ? ligne("Courbe de tailles", Math.round(x.couvertureT*100)+" % tenue",
-                  acPl(x.tailles,"taille")+(x.ciblees?" visée":" tenue")
-                  +(x.tailles>1?"s":"")+" · "+x.jtManque+" jours-taille manquants"
+          ? ligne("Sur la saison", Math.round(x.couvertureT*100)+" % du temps",
+                  x.jtManque+" jours-taille manquants"
                   +(x.trous&&x.trous.length
                     ? (" · surtout "+x.trous.slice(0,3).map(function(z){
                         return esc(z.t)+" ("+z.j+" j)";}).join(", "))
                     : ""))
+          : "")
+        +(x.courbe!=null
+          ? ligne("Remplissage", Math.round(x.courbe*100)+" % de la cible",
+                  (x.o?x.o.stock:0)+" paires en stock pour "
+                  +acPl(x.cibleTotale,"paire")+" visée"+(x.cibleTotale>1?"s":"")
+                  +" dans TODS")
+          : "")
+        +(x.margePerdue>0
+          ? ligne("Coût de la rupture", amEur(x.margePerdue)+" de marge",
+                  amNum(x.ventesPerdues,1)+" vente"+(x.ventesPerdues>1?"s":"")
+                  +" non faites, au rythme des jours où la taille était là — "
+                  +"c'est un plafond, pas une perte constatée")
           : "")
         +(x.joursDispo!=null&&x.jours!=null&&x.joursDispo<x.jours
           ? ligne("Rupture totale", (x.jours-x.joursDispo)+" jours",
