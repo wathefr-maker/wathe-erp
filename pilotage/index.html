@@ -400,10 +400,9 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murC:hover{box-shadow:0 6px 14px -4px rgba(60,50,35,.28);transform:translateY(-2px)}
 .murC:active{cursor:grabbing}
 .murC.on{outline:2px solid var(--violet);outline-offset:1px}
-.murC.ok{border-top-color:#1f7a3d}
-.murC.warn{border-top-color:#b45309}
-.murC.bad{border-top-color:#b3261e}
-.murC.neu{border-top-color:#cbd5e1}
+/* Plus de liseré de verdict : c'est la courbe du bas qui le porte. Le bord
+   supérieur redevient une simple arête de boîte. */
+.murC.ok,.murC.warn,.murC.bad,.murC.neu{border-top-color:#ddd5c7}
 .murC.drag{opacity:.35}
 .murC.cible,.murVideC.cible{outline:2px dashed var(--violet);outline-offset:2px;background:#f4f7ff}
 
@@ -437,16 +436,23 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murPn{margin-top:auto;padding-top:calc(10px * var(--mz,1));text-align:right;
   font-size:calc(10px * var(--mz,1));font-weight:700;color:var(--muted);
   white-space:nowrap;overflow:hidden;line-height:1.2;min-height:calc(13px * var(--mz,1))}
-.murPn.ok{color:#1f7a3d}
-.murPn.warn{color:#b45309}
-.murPn.bad{color:#b3261e}
-.murSp{display:flex;align-items:flex-end;gap:2px;height:calc(26px * var(--mz,1));
-  margin:calc(5px * var(--mz,1)) calc(-12px * var(--mz,1)) calc(-11px * var(--mz,1));
-  padding:0 calc(3px * var(--mz,1));border-top:1px solid #f0ebe2}
-.murSp>i{flex:1;background:#ddd5c7;border-radius:1px 1px 0 0;display:block;min-height:3px}
-.murSp>i.der{background:#211d1a}
-.murSp>i.part{background:repeating-linear-gradient(135deg,#9a9186 0 2px,#e4ded3 2px 4px)}
-.murSp>i.nul{background:transparent;border-bottom:1px solid #e8e2d8;min-height:0;height:0}
+/* La courbe et son axe, posés sur l'arête basse et d'un bord à l'autre. */
+.murSp{margin:calc(6px * var(--mz,1)) calc(-12px * var(--mz,1)) calc(-11px * var(--mz,1))}
+.murSvg{display:block;width:100%;height:calc(34px * var(--mz,1))}
+.murMo{display:flex;border-top:1px solid #f0ebe2}
+.murMo>span{flex:1;text-align:center;font-size:calc(8.5px * var(--mz,1));font-weight:700;
+  color:#a8a29e;padding:calc(2px * var(--mz,1)) 0 calc(3px * var(--mz,1));
+  letter-spacing:.02em;cursor:default}
+.murMo>span.hors{color:#ddd5c7;font-weight:500}
+.murMo>span.der{color:#44403c}
+/* Pas assez de recul pour une courbe : un filet, au même endroit. */
+.murSp.vide{height:calc(4px * var(--mz,1));background:#e8e2d8}
+.murSp.vide.ok{background:#15803d} .murSp.vide.warn{background:#b45309}
+.murSp.vide.bad{background:#b3261e}
+/* En grand, dans le panneau. */
+.murSp.grand{margin:0}
+.murSp.grand .murSvg{height:60px}
+.murSp.grand .murMo{display:none}
 /* L'emplacement libre : un creux dans l'étagère, pas une carte. */
 .murVideC{min-height:calc(150px * var(--mz,1));border:1px dashed #c9c1b4;border-radius:3px;
   background:rgba(255,255,255,.35);color:#a8a093;font-size:calc(19px * var(--mz,1));
@@ -489,6 +495,8 @@ body{background:var(--bg,#f8fafc);margin:0}
 .pnMois{display:flex;gap:5px;margin-top:7px}
 .pnMois>span{flex:1;font-size:10.5px;color:var(--muted);text-align:center;line-height:1.3}
 .pnMois b{display:block;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.pnMois>span.hors{color:#c9c2b8}
+.pnMois>span.hors b{color:#c9c2b8;font-weight:500}
 .pnMois i{display:block;font-style:normal;font-size:9.5px;color:#a8a093}
 
 /* La courbe de tailles : une cellule par pointure, hachurée si elle manque. */
@@ -1775,29 +1783,33 @@ function amModeles(){
       var bn=amMoisBornes(dm.getUTCFullYear(),dm.getUTCMonth());
       var d0=Math.max(bn.deb,jD), d1=Math.min(bn.fin,jFin);
       var nj=d1-d0+1;
-      /* Un mois où le modèle n'a existé que quelques jours ne fait pas un
-         point : ramener la marge d'une seule journée à trente la multiplie par
-         trente, et une barre née d'une vente isolée écraserait toute la
-         courbe. On préfère un point de moins qu'un point faux. */
-      if(nj<7)continue;
+      /* Les six mois gardent TOUS leur place, pour que l'axe du graphique soit
+         toujours le même et qu'une référence de deux mois ne paraisse pas en
+         avoir six. Ceux où le modèle n'était pas encore au catalogue sont
+         marqués « hors » : ils ne valent pas zéro, ils n'existent pas.
+         Un mois de moins de sept jours au catalogue en fait partie — ramener
+         la marge d'une seule journée à trente la multiplie par trente, et un
+         point né d'une vente isolée écraserait toute la courbe. */
+      var hors=(nj<7);
       var mg=0,nv=0;
-      o.vts.forEach(function(x){
+      if(!hors)o.vts.forEach(function(x){
         if(x.j>=d0&&x.j<=d1){mg+=x.mg;nv++;}
       });
       mois.push({cle:dm.getUTCFullYear()+"-"+String(dm.getUTCMonth()+1).padStart(2,"0"),
-                 label:AM_MOIS[dm.getUTCMonth()], jours:nj,
+                 label:AM_MOIS[dm.getUTCMonth()], jours:Math.max(0,nj), hors:hors,
                  ventes:nv, marge:r2(mg),
                  /* la valeur comparable : ce que le mois aurait donné en entier */
-                 parMois:r2(mg*30/nj), partiel:(nj<28)});
+                 parMois:hors?null:r2(mg*30/nj), partiel:(!hors&&nj<28)});
     }
     o.mois=mois;
-    /* La tendance : moitié récente contre moitié ancienne. En deçà de quatre
-       mois de recul on ne conclut pas — deux points font une droite, pas une
-       tendance. */
-    if(mois.length>=4){
-      var h=Math.floor(mois.length/2);
+    /* La tendance : moitié récente contre moitié ancienne, sur les seuls mois
+       réellement observés. En deçà de quatre mois de recul on ne conclut pas —
+       deux points font une droite, pas une tendance. */
+    var mv=mois.filter(function(z){return !z.hors;});
+    if(mv.length>=4){
+      var h=Math.floor(mv.length/2);
       var moy=function(t){return t.length?t.reduce(function(n,x){return n+x.parMois;},0)/t.length:0;};
-      var av=moy(mois.slice(0,h)), ap=moy(mois.slice(mois.length-h));
+      var av=moy(mv.slice(0,h)), ap=moy(mv.slice(mv.length-h));
       o.tendance=(av>0)?r2((ap-av)/av):(ap>0?1:0);
       o.tendanceAvant=r2(av); o.tendanceApres=r2(ap);
     }else{o.tendance=null;}
@@ -2274,30 +2286,57 @@ function murBandeMj(mj,jeune){
   return {cls:"bad",txt:"occupe la place pour rien"};
 }
 
-/* Six barres, une par mois, hautes comme la marge de leur mois rapportée au
-   meilleur. Pas d'axe, pas de chiffre : on ne lit pas une sparkline, on voit
-   une pente. Le mois en cours est hachuré — il est ramené à un mois plein,
-   donc comparable, mais il reste une projection sur quelques jours. */
-function murCourbe(mois,classe){
-  if(!mois||mois.length<2)return "";
-  var max=mois.reduce(function(n,x){return Math.max(n,x.parMois||0);},0);
+/* LA COURBE DES SIX MOIS, tracée comme une aire et non en barreaux.
+   Elle porte la couleur du verdict : la tendance et l'état d'une case sont la
+   même chose vue de deux façons, les séparer en un liseré en haut et des
+   barres en bas obligeait l'œil à recoller deux objets.
+
+   L'axe des mois est toujours complet — six initiales sous la courbe, les
+   mois d'avant l'arrivée du modèle en gris pâle. Sans repère de temps, une
+   pente ne dit pas sur quoi elle porte.
+
+   Le tracé s'étire en largeur (preserveAspectRatio="none") pour occuper toute
+   la vignette quelle que soit sa taille ; vector-effect garde le trait d'une
+   épaisseur constante malgré cet étirement. */
+var MUR_COUL={ok:"#15803d",warn:"#b45309",bad:"#b3261e",neu:"#8b8278"};
+
+function murCourbe(mois,cls,grand){
+  if(!mois||!mois.length)return "";
+  var vus=mois.filter(function(z){return !z.hors&&z.parMois!=null;});
+  if(vus.length<2)return "";
+  var max=vus.reduce(function(n,z){return Math.max(n,z.parMois||0);},0);
   if(max<=0)return "";
-  /* SIX EMPLACEMENTS, toujours. Étirer deux mois sur toute la largeur ferait
-     croire à six mois d'historique sur une référence qui vient d'arriver : les
-     mois absents gardent leur place, vides. */
-  var vides=Math.max(0,6-mois.length);
-  var h='';
-  for(var k=0;k<vides;k++)h+='<i class="nul" title="pas encore au catalogue"></i>';
-  h+=mois.map(function(x,i){
-    var ht=Math.max(3,Math.round((x.parMois||0)/max*100));
-    var der=(i===mois.length-1);
-    return '<i class="'+(der?"der":"")+(x.partiel?" part":"")+'" style="height:'+ht+'%" '
-      +'title="'+esc(x.label+" : "+amEur(x.parMois)+" par mois"
-        +(x.ventes?(", "+x.ventes+" vente"+(x.ventes>1?"s":"")):", aucune vente")
-        +(x.partiel?" — mois en cours, ramené à 30 jours":""))+'"></i>';
-  }).join("");
-  return '<div class="murSp'+(classe?(' '+classe):'')+'">'+h+'</div>';
+  var C=MUR_COUL[cls||"neu"]||MUR_COUL.neu;
+  var H=grand?60:34, L=100, n=mois.length, pas=L/(n-1);
+  /* Un mois « hors » n'a pas de valeur : la courbe part du premier mois
+     observé au lieu de plonger à zéro avant lui. */
+  var pts=[];
+  mois.forEach(function(z,i){
+    if(z.hors||z.parMois==null)return;
+    pts.push([i*pas, H-1.5-((z.parMois||0)/max)*(H-4)]);
+  });
+  var d=pts.map(function(pt,i){return (i?"L":"M")+pt[0].toFixed(2)+" "+pt[1].toFixed(2);}).join(" ");
+  var x0=pts[0][0].toFixed(2), x1=pts[pts.length-1][0].toFixed(2);
+  var svg='<svg class="murSvg" viewBox="0 0 '+L+' '+H+'" preserveAspectRatio="none" '
+    +'aria-hidden="true">'
+    +'<path d="'+d+' L'+x1+' '+H+' L'+x0+' '+H+' Z" fill="'+C+'" opacity=".13"/>'
+    +'<path d="'+d+'" fill="none" stroke="'+C+'" stroke-width="'+(grand?2:1.6)+'" '
+    +'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+    +'</svg>';
+  /* Les initiales : l'ordre des mois lève l'ambiguïté entre « mai » et
+     « mars », et le mois en cours est marqué. Le détail complet reste dans
+     l'infobulle de chaque mois, et en toutes lettres dans le panneau. */
+  var axe='<div class="murMo">'+mois.map(function(z){
+    var t=z.hors?"mois précédant la mise en rayon"
+      :(z.label+" : "+amEur(z.parMois)+" par mois"
+        +(z.ventes?(", "+z.ventes+" vente"+(z.ventes>1?"s":"")):", aucune vente")
+        +(z.partiel?" — mois en cours, ramené à 30 jours":""));
+    return '<span class="'+(z.hors?"hors":"")+(z.partiel?" der":"")+'" title="'+esc(t)+'">'
+      +esc(String(z.label).charAt(0).toUpperCase())+'</span>';
+  }).join("")+'</div>';
+  return '<div class="murSp'+(grand?" grand":"")+'">'+svg+axe+'</div>';
 }
+
 /* Le mot qui accompagne la pente. Les seuils sont larges à dessein : sur trois
    mois et quelques ventes, un écart de 15 % n'est que du bruit. */
 function murTendance(t){
@@ -2529,7 +2568,7 @@ function murCase(r,c){
   var manq=(x.tailles!=null&&x.taillesPresentes!=null)?(x.tailles-x.taillesPresentes):0;
   var aCourt=(x.couvertureT!=null)?(1-x.couvertureT):0;
   var T=murTendance(x.jeune?null:x.tendance);
-  var sp=murCourbe(x.mois);
+  var sp=murCourbe(x.mois,B.cls);
   return '<div class="murC '+B.cls+(ouvert?" on":"")+'" draggable="true" '
     +'ondragstart="murDragStart(event,'+m.id+')" ondragend="murDragEnd()" '
     +'ondragover="murDragOver(event,this)" ondragleave="murDragLeave(this)" '
@@ -2559,9 +2598,14 @@ function murCase(r,c){
        l'autre : une sparkline rognée à 70 % de la largeur se compare mal d'une
        case à l'autre, et le mot de tendance lui volait la place. Il passe donc
        au-dessus, discret et aligné à droite. */
-    +(sp
-      ? ((T?('<div class="murPn '+T.cls+'">'+T.txt+'</div>'):'<div class="murPn"></div>')+sp)
-      : '')
+    /* Le mot reste gris : la couleur de la case dit le niveau, la forme de la
+       courbe dit la pente. Colorer « en hausse » avec la teinte du verdict
+       ferait lire un mot de direction avec un code de niveau. */
+    +((T?('<div class="murPn">'+T.txt+'</div>'):'<div class="murPn"></div>')
+      /* Sans courbe — trop peu de recul — on pose quand même un filet de la
+         couleur du verdict au même endroit : les cases gardent la même hauteur
+         et la rangée reste alignée. */
+      +(sp||'<div class="murSp vide '+B.cls+'"></div>'))
   +'</div>';
 }
 
@@ -2616,10 +2660,12 @@ function murReglage(){
       +'prix d\'achat moyen '+amNum(x.cout,2)+' €.</p>';
 
   /* --- 2. Les six mois, avec leurs valeurs écrites. -------------------- */
-  var histo=(x.mois&&x.mois.length>=2)
-    ? (murCourbe(x.mois,"grand")
+  var moisVus=(x.mois||[]).filter(function(z){return !z.hors;});
+  var histo=(moisVus.length>=2)
+    ? (murCourbe(x.mois,B.cls,true)
        +'<div class="pnMois">'+x.mois.map(function(z){
-          return '<span><b>'+amEur(z.parMois)+'</b>'+esc(z.label)
+          return '<span'+(z.hors?' class="hors"':'')+'><b>'
+            +(z.hors?"—":amEur(z.parMois))+'</b>'+esc(z.label)
             +(z.partiel?'<i>en cours</i>':'')+'</span>';
          }).join("")+'</div>'
        +'<p class="pnNote">'+(T?esc(T.txt):"pas assez de recul pour conclure")
