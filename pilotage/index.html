@@ -431,40 +431,78 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murCt{margin-top:calc(3px * var(--mz,1));font-size:calc(9.5px * var(--mz,1));
   color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .murCt>b{font-weight:800;color:#b45309}
-/* L'évolution ferme la case, collée au bas quelle que soit la hauteur. */
-.murTd{display:flex;align-items:flex-end;gap:7px;margin-top:auto;
-  padding-top:calc(11px * var(--mz,1))}
-.murSp{display:flex;align-items:flex-end;gap:3px;height:calc(21px * var(--mz,1));flex:1 1 auto}
-.murSp>i{flex:1;background:#ddd5c7;border-radius:1px;display:block;min-height:2px}
+/* L'évolution ferme la case. Le mot d'abord, à droite ; puis la bande des six
+   mois, d'un bord à l'autre et posée sur l'arête basse — c'est ce qui permet
+   de comparer les pentes en balayant la rangée du regard. */
+.murPn{margin-top:auto;padding-top:calc(10px * var(--mz,1));text-align:right;
+  font-size:calc(10px * var(--mz,1));font-weight:700;color:var(--muted);
+  white-space:nowrap;overflow:hidden;line-height:1.2;min-height:calc(13px * var(--mz,1))}
+.murPn.ok{color:#1f7a3d}
+.murPn.warn{color:#b45309}
+.murPn.bad{color:#b3261e}
+.murSp{display:flex;align-items:flex-end;gap:2px;height:calc(26px * var(--mz,1));
+  margin:calc(5px * var(--mz,1)) calc(-12px * var(--mz,1)) calc(-11px * var(--mz,1));
+  padding:0 calc(3px * var(--mz,1));border-top:1px solid #f0ebe2}
+.murSp>i{flex:1;background:#ddd5c7;border-radius:1px 1px 0 0;display:block;min-height:3px}
 .murSp>i.der{background:#211d1a}
 .murSp>i.part{background:repeating-linear-gradient(135deg,#9a9186 0 2px,#e4ded3 2px 4px)}
-.murTd>em{font-style:normal;font-size:calc(10px * var(--mz,1));font-weight:700;
-  white-space:nowrap;flex:0 0 auto}
-.murTd>em.ok{color:#1f7a3d}
-.murTd>em.warn{color:#b45309}
-.murTd>em.bad{color:#b3261e}
-.murTd>em.neu{color:var(--muted)}
+.murSp>i.nul{background:transparent;border-bottom:1px solid #e8e2d8;min-height:0;height:0}
 /* L'emplacement libre : un creux dans l'étagère, pas une carte. */
 .murVideC{min-height:calc(150px * var(--mz,1));border:1px dashed #c9c1b4;border-radius:3px;
   background:rgba(255,255,255,.35);color:#a8a093;font-size:calc(19px * var(--mz,1));
   font-weight:700;cursor:pointer;font-family:inherit;min-width:0;transition:all .12s}
 .murVideC:hover{border-color:var(--violet);color:var(--violet);background:#f8faff}
 
-/* La barre : même échelle partout, pleine à une fois et demie le seuil confortable. */
-.murB{height:5px;border-radius:3px;background:#eef1f5;margin-top:6px;overflow:hidden}
-.murB>span{display:block;height:100%;border-radius:3px;background:#cbd5e1}
-.murC.ok .murB>span,.murRes.ok .murB>span{background:#16a34a}
-.murC.warn .murB>span,.murRes.warn .murB>span{background:#d97706}
-.murC.bad .murB>span,.murRes.bad .murB>span{background:#dc2626}
+/* ---------- LE PANNEAU D'UNE CASE ------------------------------------------
+   Des sections titrées plutôt qu'une liste de lignes : on cherche une réponse
+   précise en ouvrant une case, pas un tableau de bord. */
+.pnCorps{padding:4px 18px 18px}
+.pnS{padding-top:16px;margin-top:16px;border-top:1px solid var(--line)}
+.pnS>h4{margin:0 0 10px;font-size:12px;font-weight:700;color:var(--muted)}
+.pnNote{margin:9px 0 0;font-size:11.5px;line-height:1.55;color:var(--muted);max-width:74ch}
+.pnVide{margin:0;font-size:12.5px;color:var(--muted)}
+.pnFait{margin:0 0 5px;font-size:13px;line-height:1.5}
+.pnFait b{font-weight:700}
 
-/* Le relevé du panneau : quatre faits alignés, rien de cliquable. Libellé à
-   gauche, valeur à droite, et la précision sous la valeur — jamais au fil du
-   texte, sinon elle se coupe n'importe où quand le panneau rétrécit. */
-.murLns{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:11px 26px}
-.murLn{display:grid;grid-template-columns:132px 1fr;gap:2px 10px;align-items:baseline}
-.murLn>span{font-size:12px;color:var(--muted)}
-.murLn>b{font-size:14px;font-variant-numeric:tabular-nums}
-.murLn>i{grid-column:2;font-style:normal;font-size:11px;color:#9aa1ad;line-height:1.35}
+/* Le résultat, en tête. */
+.pnTete{padding:16px 0 2px;border-left:4px solid #cbd5e1;padding-left:14px;margin-top:12px}
+.pnTete.ok{border-left-color:#1f7a3d}
+.pnTete.warn{border-left-color:#b45309}
+.pnTete.bad{border-left-color:#b3261e}
+.pnEur{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1;
+  font-variant-numeric:tabular-nums}
+.pnEur>span{font-size:13px;font-weight:600;color:var(--muted);margin-left:6px;letter-spacing:0}
+.pnVerdict{font-size:13px;color:var(--muted);margin-top:7px;max-width:70ch}
+
+/* L'équation : trois termes et deux signes, lus comme une opération. */
+.pnEq{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.pnEq>div{min-width:0}
+.pnEq b{display:block;font-size:19px;font-weight:800;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.pnEq span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.pnEq em{font-style:normal;font-size:16px;color:#b9b2a6;font-weight:700}
+.pnEq .res b{color:#1f7a3d}
+
+/* Les six mois, en grand, avec leurs valeurs sous les barres. */
+.murSp.grand{height:62px;margin:0;padding:0;border-top:0;gap:5px}
+.murSp.grand>i{border-radius:2px 2px 0 0}
+.pnMois{display:flex;gap:5px;margin-top:7px}
+.pnMois>span{flex:1;font-size:10.5px;color:var(--muted);text-align:center;line-height:1.3}
+.pnMois b{display:block;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.pnMois i{display:block;font-style:normal;font-size:9.5px;color:#a8a093}
+
+/* La courbe de tailles : une cellule par pointure, hachurée si elle manque. */
+.pnT{display:flex;gap:4px;flex-wrap:wrap}
+.pnT>i{flex:0 0 auto;min-width:46px;border:1px solid #cdc6b8;border-radius:3px;
+  background:#fff;padding:5px 6px 4px;text-align:center;font-style:normal}
+.pnT>i>b{display:block;font-size:11.5px;font-weight:700}
+.pnT>i>u{display:block;text-decoration:none;font-size:10.5px;color:var(--muted);margin-top:1px;
+  font-variant-numeric:tabular-nums}
+.pnT>i.v{background:repeating-linear-gradient(135deg,#fae3e1 0 4px,#fdf1f0 4px 8px);
+  border-color:#e0ada7}
+.pnT>i.v>b{color:#b3261e}
+.pnT>i.v>u{color:#b3261e}
+
 .murPos{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 18px;
   border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
 .murPos>i{font-style:normal;font-size:11px;color:#9aa1ad}
@@ -489,26 +527,8 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murFmt input{width:56px;padding:5px 7px;border:1px solid var(--line);border-radius:8px;font-size:13px;
   font-family:inherit;text-align:right}
 
-/* Panneau de réglage d'un emplacement. */
+/* Panneau d'une case. */
 .murRg{border-color:#bfdbfe}
-.murF{display:grid;gap:14px;padding:15px 18px 17px;align-items:start}
-.murSrc{font-size:10.5px;font-style:normal;font-weight:500;color:var(--muted);margin-top:3px}
-.murRes{grid-column:1/-1;border:1px solid var(--line);border-left-width:4px;border-radius:11px;padding:12px 14px;
-  background:#fcfcfd}
-.murRes.ok{border-left-color:#16a34a}
-.murRes.warn{border-left-color:#d97706}
-.murRes.bad{border-left-color:#dc2626;background:#fffbfb}
-.murRes.neu{border-left-color:#cbd5e1}
-.murResV{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-.murResU{font-size:14px;font-weight:700;color:var(--muted);margin-left:3px}
-.murResL{font-size:12.5px;color:var(--muted);margin-top:4px}
-.murResD{font-size:11.5px;color:var(--muted);margin-top:7px;font-variant-numeric:tabular-nums}
-/* Le relevé est du mesuré au milieu de l'estimé : on le détache. */
-.murResD.rel{color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:8px;
-  padding:7px 9px;margin-top:8px}
-/* Avertissement attaché au résultat : ce que le seul rendement ne dit pas. */
-.murAvis{font-size:11.5px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fde68a;
-  border-radius:8px;padding:7px 10px;margin-top:9px}
 
 /* Recherche d'un modèle à poser. */
 .murQ{width:calc(100% - 36px);margin:15px 18px 0;padding:9px 12px;border:1px solid var(--line);
@@ -1708,6 +1728,22 @@ function amModeles(){
     o.ciblees=!!cibles;
     trous.sort(function(a,b){return b.j-a.j;});
     o.trous=trous.slice(0,6);
+    /* La courbe, pointure par pointure et dans l'ordre du rayon : c'est sous
+       cette forme que l'utilisateur la connaît, et la seule qui permette de
+       voir OÙ est le trou plutôt que combien il y en a. Les tailles se trient
+       sur leur valeur et non sur leur texte, sinon « 41 1/3 » tombe avant
+       « 9 » et la rangée devient illisible. */
+    var manqueParT={};
+    trous.forEach(function(z){manqueParT[z.t]=z.j;});
+    var valT=function(t){
+      var m=String(t).match(/(\d+)(?:\s+(\d+)\s*\/\s*(\d+))?/);
+      if(!m)return 1e9;
+      return (+m[1])+(m[2]?((+m[2])/(+m[3])):0);
+    };
+    o.taillesDetail=tailles.map(function(t){
+      var lib=libT[t]||t;
+      return {t:lib, stock:(stockT[t]||0), manque:(manqueParT[lib]||0)};
+    }).sort(function(a,b){return valT(a.t)-valT(b.t);});
 
     /* VENTES PERDUES — un PLAFOND, jamais une perte constatée.
        On suppose que chaque jour-taille disponible vend au même rythme, et
@@ -2143,7 +2179,7 @@ function murCalc(m){
     tailles:(o?o.tailles:null), jtManque:(o?o.jtManque:null), jtTotal:(o?o.jtTotal:null),
     couvertureT:(o?o.couvertureT:null), ciblees:(o?o.ciblees:false), trous:(o?o.trous:null),
     dispoT:(o?o.dispoT:null), taillesPresentes:(o?o.taillesPresentes:null),
-    taillesVides:(o?o.taillesVides:null),
+    taillesVides:(o?o.taillesVides:null), taillesDetail:(o?o.taillesDetail:null),
     courbe:(o?o.courbe:null), cibleTotale:(o?o.cibleTotale:null),
     ventesPerdues:ventesPerdues, margePerdue:margePerdue,
     reassort:(o?o.reassort:null),
@@ -2242,18 +2278,25 @@ function murBandeMj(mj,jeune){
    meilleur. Pas d'axe, pas de chiffre : on ne lit pas une sparkline, on voit
    une pente. Le mois en cours est hachuré — il est ramené à un mois plein,
    donc comparable, mais il reste une projection sur quelques jours. */
-function murCourbe(mois){
+function murCourbe(mois,classe){
   if(!mois||mois.length<2)return "";
   var max=mois.reduce(function(n,x){return Math.max(n,x.parMois||0);},0);
   if(max<=0)return "";
-  return '<div class="murSp">'+mois.map(function(x,i){
-    var h=Math.max(2,Math.round((x.parMois||0)/max*100));
+  /* SIX EMPLACEMENTS, toujours. Étirer deux mois sur toute la largeur ferait
+     croire à six mois d'historique sur une référence qui vient d'arriver : les
+     mois absents gardent leur place, vides. */
+  var vides=Math.max(0,6-mois.length);
+  var h='';
+  for(var k=0;k<vides;k++)h+='<i class="nul" title="pas encore au catalogue"></i>';
+  h+=mois.map(function(x,i){
+    var ht=Math.max(3,Math.round((x.parMois||0)/max*100));
     var der=(i===mois.length-1);
-    return '<i class="'+(der?"der":"")+(x.partiel?" part":"")+'" style="height:'+h+'%" '
-      +'title="'+esc(x.label+" : "+amEur(x.parMois)+"/mois"
-        +(x.ventes?(" · "+x.ventes+" vente"+(x.ventes>1?"s":"")):" · aucune vente")
-        +(x.partiel?" · mois incomplet, ramené à 30 jours":""))+'"></i>';
-  }).join("")+'</div>';
+    return '<i class="'+(der?"der":"")+(x.partiel?" part":"")+'" style="height:'+ht+'%" '
+      +'title="'+esc(x.label+" : "+amEur(x.parMois)+" par mois"
+        +(x.ventes?(", "+x.ventes+" vente"+(x.ventes>1?"s":"")):", aucune vente")
+        +(x.partiel?" — mois en cours, ramené à 30 jours":""))+'"></i>';
+  }).join("");
+  return '<div class="murSp'+(classe?(' '+classe):'')+'">'+h+'</div>';
 }
 /* Le mot qui accompagne la pente. Les seuils sont larges à dessein : sur trois
    mois et quelques ventes, un écart de 15 % n'est que du bruit. */
@@ -2512,31 +2555,137 @@ function murCase(r,c){
            +(x.margePerdue>0?(' · <b>'+amEur(x.margePerdue)+'</b> perdus'):'')+'</div>')
         : '')
     +'</div>'
-    /* L'évolution ferme la case : c'est la dernière chose qu'on regarde, et
-       celle qui dit s'il faut s'en occuper maintenant ou pas. */
-    +(sp?('<div class="murTd">'+sp
-          +(T?('<em class="'+T.cls+'">'+T.txt+'</em>'):'')+'</div>'):'')
+    /* L'évolution ferme la case, et la bande des six mois court d'un bord à
+       l'autre : une sparkline rognée à 70 % de la largeur se compare mal d'une
+       case à l'autre, et le mot de tendance lui volait la place. Il passe donc
+       au-dessus, discret et aligné à droite. */
+    +(sp
+      ? ((T?('<div class="murPn '+T.cls+'">'+T.txt+'</div>'):'<div class="murPn"></div>')+sp)
+      : '')
   +'</div>';
 }
 
+/* ============================================================================
+   LE PANNEAU D'UNE CASE.
+
+   C'était une liste de neuf lignes « libellé — valeur — précision », toutes
+   de même poids : on y cherchait l'information au lieu de la trouver. Il est
+   maintenant découpé selon les questions qu'on se pose dans cet ordre :
+
+     combien ça rapporte, et pourquoi ce montant → l'équation, en grand
+     est-ce que ça monte ou ça descend       → les six mois, lisibles
+     qu'est-ce qu'il manque en rayon          → la courbe, pointure par pointure
+     que s'est-il passé cette saison          → le relevé et le réassort
+     et si c'est l'argent qui bloque          → le GMROI, en dernier
+
+   Chaque bloc porte son titre : un écran sans intertitres oblige à tout lire
+   pour trouver une ligne.
+   ========================================================================== */
 function murReglage(){
   if(!_murEdit)return "";
   var m=modeleById(+_murEdit);if(!m||!m.mur)return "";
   var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune),c=amCfg();
-  /* Une fiche de lecture, pas un simulateur. Les trois champs qui se
-     saisissaient ici — profondeur, rythme, coût — ont été retirés : le mur sert
-     à voir ce que les produits rapportent, et un chiffre tapé à la main se
-     démode en silence. Un coût de mai laissé sur une référence rachetée en
-     octobre faussait la case de 30 % sans que rien ne le signale. */
-  var ligne=function(l,v,n){return '<div class="murLn"><span>'+l+'</span><b>'+v+'</b>'
-    +(n?('<i>'+n+'</i>'):'')+'</div>';};
+  var T=murTendance(x.jeune?null:x.tendance);
+  var manq=(x.tailles!=null&&x.taillesPresentes!=null)?(x.tailles-x.taillesPresentes):0;
+  var stock=(x.o&&x.o.stock!=null)?x.o.stock:0;
+
+  var bloc=function(titre,corps){
+    return '<section class="pnS"><h4>'+titre+'</h4>'+corps+'</section>';
+  };
+
+  /* --- 1. Le résultat, et l'équation qui le produit. ------------------- */
+  var tete='<div class="pnTete '+B.cls+'">'
+    +'<div class="pnEur">'+((x.margeMois==null)?"—":amEur(x.margeMois))
+      +'<span>par mois</span></div>'
+    +'<div class="pnVerdict">'+esc(B.txt)
+      +(x.margeSai!=null?(', soit '+amEur(x.margeSai)+' sur la saison'):'')
+      +(murMjRef()>0?('. Le repère du mur est à '+amEur(murMjRef())+' par mois.'):'')+'</div>'
+    +'</div>';
+  var equation=(x.margeMois==null)
+    ? '<p class="pnVide">Renseigne un prix de vente sur ce modèle pour calculer sa marge.</p>'
+    : '<div class="pnEq">'
+      +'<div><b>'+amNum(x.ventesMois,2)+'</b><span>ventes par mois</span></div>'
+      +'<em>×</em>'
+      +'<div><b>'+amNum(x.margeVente,2)+' €</b><span>de marge par vente</span></div>'
+      +'<em>=</em>'
+      +'<div class="res"><b>'+amEur(x.margeMois)+'</b><span>par mois</span></div>'
+      +'</div>'
+      +'<p class="pnNote">'+amNum(x.vSai,1)+' ventes attendues sur la saison, mesurées sur '
+      +acPl(x.vendues||0,"vente")+' en '+acPl(x.jours||0,"jour")+' au catalogue, '
+      +'rupture comprise. Prix de vente moyen encaissé '+amNum(x.caVente,2)+' € HT, '
+      +'prix d\'achat moyen '+amNum(x.cout,2)+' €.</p>';
+
+  /* --- 2. Les six mois, avec leurs valeurs écrites. -------------------- */
+  var histo=(x.mois&&x.mois.length>=2)
+    ? (murCourbe(x.mois,"grand")
+       +'<div class="pnMois">'+x.mois.map(function(z){
+          return '<span><b>'+amEur(z.parMois)+'</b>'+esc(z.label)
+            +(z.partiel?'<i>en cours</i>':'')+'</span>';
+         }).join("")+'</div>'
+       +'<p class="pnNote">'+(T?esc(T.txt):"pas assez de recul pour conclure")
+         +((x.tendance!=null&&!x.jeune)
+            ? (' — la moitié récente fait '+(x.tendance>0?"+":"")
+               +Math.round(x.tendance*100)+' % par rapport à la précédente.')
+            : '.')
+         +' Chaque mois est ramené à trente jours pour être comparable.</p>')
+    : '<p class="pnVide">Moins de deux mois au catalogue : il n\'y a pas encore de pente à lire.</p>';
+
+  /* --- 3. La courbe de tailles, pointure par pointure. ----------------- */
+  var tailles=(x.taillesDetail&&x.taillesDetail.length)
+    ? ('<div class="pnT">'+x.taillesDetail.map(function(z){
+        return '<i class="'+(z.stock>0?"p":"v")+'" title="'
+          +esc(z.t+(z.stock>0?(" : "+z.stock+" paire"+(z.stock>1?"s":"")+" en stock")
+                             :" : rien en stock")
+               +(z.manque?(", absente "+z.manque+" jours sur la saison"):""))+'">'
+          +'<b>'+esc(z.t)+'</b><u>'+(z.stock>0?z.stock:"—")+'</u></i>';
+       }).join("")+'</div>'
+       +'<p class="pnNote">'
+       +(manq>0 ? ('Il manque '+manq+' pointure'+(manq>1?"s":"")+' sur '+x.tailles
+                   +(x.ciblees?' visées dans TODS':' que tu tiens habituellement')+'. ')
+                : 'La courbe est complète ce matin. ')
+       +'Sur la saison, tu as été à court '+Math.round((1-(x.couvertureT||0))*100)+' % du temps'
+       +(x.margePerdue>0
+          ? (', ce qui représente au plus '+amEur(x.margePerdue)+' de marge non faite — '
+             +'un client qui ne trouve pas sa pointure repart souvent avec une autre paire.')
+          : '.')
+       +(x.courbe!=null?(' Tu tiens '+stock+' paires pour '+acPl(x.cibleTotale,"paire")
+          +' visée'+(x.cibleTotale>1?"s":"")+', soit '+Math.round(x.courbe*100)+' % de la cible.'):'')
+       +'</p>')
+    : '<p class="pnVide">Aucune taille suivie sur ce modèle.</p>';
+
+  /* --- 4. Ce qui s'est passé. ------------------------------------------ */
+  var releve='<p class="pnFait">'
+    +(x.passees
+      ? ('<b>'+acPl(x.passees,"paire")+'</b> ont tenu le rayon cette saison, <b>'
+         +x.vendues+' vendue'+(x.vendues>1?"s":"")+'</b>, '+stock+' encore en stock — '
+         +'écoulement '+Math.round(100*x.vendues/x.passees)+' %.')
+      : 'Aucune paire sur la saison.')
+    +'</p>'
+    +(x.reassort
+      ? ('<p class="pnFait">Dernier réassort il y a '+acPl(x.reassort.jours,"jour")+' : <b>'
+         +acPl(x.reassort.paires,"paire")+'</b>, dont '+x.reassort.vendues+' déjà vendue'
+         +(x.reassort.vendues>1?"s":"")+' ('+Math.round(100*x.reassort.vendues/x.reassort.paires)
+         +' % écoulé).</p>')
+      : '<p class="pnFait">Aucun réassort depuis la mise en place.</p>')
+    +'<p class="pnNote">Profondeur moyenne tenue '+amNum(x.prof,1)+' paires'
+    +(x.joursDispo!=null&&x.jours!=null&&x.joursDispo<x.jours
+      ? (', et plus une seule paire pendant '+(x.jours-x.joursDispo)+' jours.')
+      : '.')+'</p>';
+
+  /* --- 5. Le GMROI, pour le jour où c'est la trésorerie qui bloque. ---- */
+  var argent=(x.rendement!=null)
+    ? ('<p class="pnFait">GMROI <b>'+murNum(x.rendement)+'</b> par saison, '
+       +murNum(murAnnuel(x.rendement))+' en équivalent annuel, sur '
+       +amEur(x.capital)+' immobilisés en moyenne.</p>'
+       +'<p class="pnNote">À lire quand tu dois choisir entre deux achats sans pouvoir '
+       +'payer les deux. Tant que c\'est la place en rayon qui manque et non l\'argent, '
+       +'c\'est le montant par mois qui décide.</p>')
+    : '';
+
   return '<div class="adCard murRg">'
     +'<div class="adH"><div class="adHt">'+esc(m.fr||m.sku||"?")+'</div>'
-      +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")
-      +' — tout ce que cette case a réellement fait sur la saison.</div>'
+      +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")+'</div>'
       +'<button class="btn mini" onclick="murRetirer('+m.id+')">Retirer du mur</button></div>'
-    /* Place et déplacement. Le glisser-déposer suffit à la souris ; ces flèches
-       sont là pour la tablette, où il n'existe pas. */
     +'<div class="murPos">Rangée '+((+m.mur.r||0)+1)+', place '+((+m.mur.c||0)+1)
       +'<span class="murFl">'
       +'<button onclick="murBouger('+m.id+',-1,0)" title="Monter d\'une rangée">↑</button>'
@@ -2545,142 +2694,13 @@ function murReglage(){
       +'<button onclick="murBouger('+m.id+',0,1)" title="Vers la droite">→</button>'
       +'</span>'
       +'<i>une case occupée échange sa place</i></div>'
-    +'<div class="murF">'
-      +'<div class="murLns">'
-        +ligne("Profondeur", amNum(x.prof,1)+" paires",
-               "tenues en moyenne sur la période observée")
-        +ligne("Rythme de ventes", amNum(x.vSai,1)+" par saison",
-               (x.jours!=null&&x.vendues!=null)
-                 ? (acPl(x.vendues,"vente")+" en "+acPl(x.jours,"jour")
-                    +" au catalogue, rupture comprise")
-                 : "aucune vente mesurée")
-        /* Avec les centimes : ces deux lignes se soustraient trois lignes plus
-           bas, et « 90 − 59 = 30,75 » ferait douter de tout le reste. */
-        +ligne("Prix de vente", (x.caVente!=null?(amNum(x.caVente,2)+" € HT"):"—"),
-               "moyenne encaissée, remises comprises")
-        +ligne("Prix d'achat", amNum(x.cout,2)+" €",
-               "moyenne des paires en stock")
-        /* La courbe de tailles : le seul endroit où l'on dit POURQUOI un
-           rythme est bas sans supposer que le produit est mauvais. */
-        +(x.dispoT!=null
-          ? ligne("Tailles aujourd'hui",
-                  ((x.tailles-x.taillesPresentes)>0
-                    ? ("il manque "+(x.tailles-x.taillesPresentes)+" taille"
-                       +((x.tailles-x.taillesPresentes)>1?"s":"")+" sur "+x.tailles)
-                    : "la courbe est complète"),
-                  x.taillesPresentes+" sur "+acPl(x.tailles,"taille")
-                  +(x.ciblees?" visée":" tenue")+(x.tailles>1?"s":"")
-                  +((x.taillesVides&&x.taillesVides.length)
-                    ? (" · manque "+x.taillesVides.slice(0,5).map(esc).join(", "))
-                    : " · rien ne manque"))
-          : "")
-        +(x.couvertureT!=null
-          ? ligne("Sur la saison", "à court "+Math.round((1-x.couvertureT)*100)+" % du temps",
-                  x.jtManque+" jours-taille manquants"
-                  +(x.trous&&x.trous.length
-                    ? (" · surtout "+x.trous.slice(0,3).map(function(z){
-                        return esc(z.t)+" ("+z.j+" j)";}).join(", "))
-                    : ""))
-          : "")
-        +(x.courbe!=null
-          ? ligne("Remplissage", Math.round(x.courbe*100)+" % de la cible",
-                  (x.o?x.o.stock:0)+" paires en stock pour "
-                  +acPl(x.cibleTotale,"paire")+" visée"+(x.cibleTotale>1?"s":"")
-                  +" dans TODS")
-          : "")
-        +(x.mois&&x.mois.length>=2
-          ? ligne("Tendance",
-                  (function(){var T=murTendance(x.jeune?null:x.tendance);
-                    return T?T.txt:"pas assez de recul";})()
-                  +((x.tendance!=null&&!x.jeune)
-                    ? (" · "+(x.tendance>0?"+":"")+Math.round(x.tendance*100)+" %") : ""),
-                  /* Les mois écrits en clair sous la courbe : une sparkline se
-                     regarde, elle ne se cite pas. Si l'utilisateur doute de la
-                     pente, il doit pouvoir lire les chiffres. */
-                  x.mois.map(function(z){
-                    return esc(z.label)+" "+amEur(z.parMois)
-                      +(z.partiel?"*":"");
-                  }).join(" · ")
-                  +(x.mois[x.mois.length-1].partiel?"   (* mois en cours, ramené à 30 j)":""))
-          : "")
-        +(x.margePerdue>0
-          ? ligne("Coût de la rupture", amEur(x.margePerdue)+" de marge",
-                  amNum(x.ventesPerdues,1)+" vente"+(x.ventesPerdues>1?"s":"")
-                  +" non faites, au rythme des jours où la taille était là — "
-                  +"c'est un plafond, pas une perte constatée")
-          : "")
-        +(x.joursDispo!=null&&x.jours!=null&&x.joursDispo<x.jours
-          ? ligne("Rupture totale", (x.jours-x.joursDispo)+" jours",
-                  "sans une seule paire, sur "+x.jours+" jours au catalogue")
-          : "")
-        +(x.reassort
-          ? ligne("Dernier réassort",
-                  acPl(x.reassort.paires,"paire")+" il y a "+acPl(x.reassort.jours,"jour"),
-                  x.reassort.vendues+" déjà vendue"+(x.reassort.vendues>1?"s":"")
-                  +" · "+Math.round(100*x.reassort.vendues/x.reassort.paires)+" % écoulé")
-          : "")
-      +'</div>'
-      +'<div class="murRes '+B.cls+'">'
-        +'<div class="murResV">'+((x.margeMois==null)?"—":amEur(x.margeMois))
-          +'<span class="murResU">/mois</span></div>'
-        +'<div class="murResL">'+esc(B.txt)
-        +(x.margeSai!=null?(' · soit <b>'+amEur(x.margeSai)+'</b> sur la saison'):'')
-        +(murMjRef()>0?(' · repère du mur '+amEur(murMjRef())+'/mois'):'')+'</div>'
-        +'<div class="murB"><span style="width:'+murRemplissageMj(x.margeMois)+'%"></span></div>'
-        /* La décomposition est l'intérêt même de l'indice : il tombe toujours
-           par la vitesse ou par la marge, jamais par les deux, et on ne les
-           corrige pas de la même façon. */
-        +'<div class="murResD">'
-          +(x.margeMois==null
-            ? 'Marge inconnue : renseigne un prix de vente sur ce modèle.'
-            /* Avec un « = » écrit noir sur blanc, les arrondis doivent tomber
-               juste : on donne les centimes des facteurs, sinon 1,6 × 55 fait
-               88 sous les yeux du lecteur alors que la case affiche 86. */
-            : (amNum(x.ventesMois,2)+' ventes par mois × '+amNum(x.margeVente,2)+' € de marge par vente'
-               +' = <b>'+amEur(x.margeMois)+'/mois</b>'))
-        +'</div>'
-        /* Le relevé brut : les paires, pas les moyennes. C'est à lui qu'on
-           revient quand un chiffre surprend. */
-        +(x.passees
-          ? ('<div class="murResD rel"><b>Relevé de la saison</b> — '
-             +acPl(x.passees,"paire")+' passée'+(x.passees>1?'s':'')+' en rayon, '
-             +x.vendues+' vendue'+(x.vendues>1?'s':'')+', '
-             +((x.o&&x.o.stock!=null)?x.o.stock:0)+' encore en stock · écoulement '
-             +Math.round(100*x.vendues/x.passees)+' %</div>')
-          : '')
-        /* Le GMROI n'est plus l'indice du mur, mais il reste la bonne réponse le
-           jour où c'est la trésorerie qui bloque et non la place. On le garde
-           en petit, sans en faire le juge. */
-        +(x.rendement!=null
-          ? ('<div class="murResD">Si c\'est la trésorerie qui manque : GMROI '
-             +murNum(x.rendement)+' par saison ('+murNum(murAnnuel(x.rendement))+' en annuel) '
-             +'sur '+amEur(x.capital)+' immobilisés</div>')
-          : '')
-        /* Deux faits que le rendement seul ne dit pas, et qui renversent souvent
-           la lecture : depuis quand on observe, et combien de temps le modèle a
-           été introuvable en rayon. */
-        +(x.jeune
-          ? ('<div class="murAvis">Observé sur '+(x.jours==null?"très peu de temps":acPl(x.jours,"jour"))
-             +' seulement : le rythme est une projection, pas un verdict. '
-             +'Reviens-y après '+MUR_JOURS_MINI+' jours de présence.</div>')
-          : '')
-        /* Le manque à gagner. Présenté comme un PLAFOND, et accompagné de la
-           raison pour laquelle c'en est un : sans cette phrase, le chiffre
-           sera lu comme de l'argent perdu et servira à justifier des achats. */
-        +((x.ventesPerdues>0.5&&x.margePerdue>0)
-          ? ('<div class="murAvis">Courbe trouée '+x.jtManque+' jours-taille : '
-             +'au rythme des jours où la taille était là, cela représente '
-             +'<b>'+amNum(x.ventesPerdues,1)+' vente'+(x.ventesPerdues>1?'s':'')+'</b> '
-             +'et <b>'+amEur(x.margePerdue)+'</b> de marge. C\'est un plafond : '
-             +'un client qui ne trouve pas sa pointure repart souvent avec une autre '
-             +'paire, et la vente n\'est alors perdue que pour cette référence.</div>')
-          : '')
-        +((x.rupture!=null&&x.rupture>c.ruptureMax)
-          ? ('<div class="murAvis">Plus une seule paire '+amPct(x.rupture)+' du temps. '
-             +'Le rythme affiché tient compte de ces jours-là — il dit ce que la place '
-             +'a réellement rapporté, pas ce que le produit vaut.</div>')
-          : '')
-      +'</div>'
+    +'<div class="pnCorps">'
+      +tete
+      +bloc("Ce que la case rapporte",equation)
+      +bloc("Les six derniers mois",histo)
+      +bloc("La courbe de tailles",tailles)
+      +bloc("Ce qui s'est passé",releve)
+      +(argent?bloc("Si c'est la trésorerie qui bloque",argent):"")
     +'</div>'
   +'</div>';
 }
