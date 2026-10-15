@@ -378,7 +378,11 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murCv{font-size:19px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums;line-height:1}
 .murCv i{font-size:9.5px;font-weight:700;font-style:normal;color:var(--muted);margin-left:4px;
   vertical-align:2px}
-.murCf{font-size:10px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}
+.murCf{font-size:10px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Le relevé réel passe avant l'hypothèse : c'est lui qui est vrai. */
+.murCf.fort{color:var(--ink);font-weight:600;margin-top:5px}
+.murCf.fort+.murCf{margin-top:1px}
 .murVideC{flex:0 0 132px;min-height:96px;border:1px dashed #cbd5e1;border-radius:10px;background:#fcfcfd;
   color:#94a3b8;font-size:19px;font-weight:700;cursor:pointer;font-family:inherit}
 .murVideC:hover{border-color:var(--violet);color:var(--violet);background:#f8faff}
@@ -421,6 +425,9 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murResV{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .murResL{font-size:12.5px;color:var(--muted);margin-top:4px}
 .murResD{font-size:11.5px;color:var(--muted);margin-top:7px;font-variant-numeric:tabular-nums}
+/* Le relevé est du mesuré au milieu de l'estimé : on le détache. */
+.murResD.rel{color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:8px;
+  padding:7px 9px;margin-top:8px}
 /* Avertissement attaché au résultat : ce que le seul rendement ne dit pas. */
 .murAvis{font-size:11.5px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fde68a;
   border-radius:8px;padding:7px 10px;margin-top:9px}
@@ -1389,13 +1396,18 @@ function amModeles(){
        On somme donc, pour chaque pièce, son coût multiplié par ses jours de
        présence DANS la fenêtre, et on ramène à la durée de la fenêtre. C'est
        l'argent réellement immobilisé, jour après jour. */
-    var duree=Math.max(1,jFin-jDeb+1), capJours=0;
+    var duree=Math.max(1,jFin-jDeb+1), capJours=0, passees=0, pJours=0;
     o.vies.forEach(function(x){
       var d=Math.max(x.e,jDeb);
       var f=(x.v!=null)?Math.min(x.v,jFin):jFin;
-      if(f>=d)capJours+=(f-d+1)*(+x.c||0);
+      if(f>=d){capJours+=(f-d+1)*(+x.c||0);pJours+=(f-d+1);passees++;}
     });
     o.capitalMoyen=r2(capJours/duree);
+    /* Combien de paires ont RÉELLEMENT tenu le rayon pendant la saison — pas le
+       stock d'aujourd'hui, pas le total acheté depuis toujours. C'est le seul
+       dénominateur qui va avec « vendues » : 9 ventes sur 12 paires présentes
+       se lit, 9 ventes sur les 3 qui restent ne veut rien dire. */
+    o.passees=passees;
     o.rendement=(o.capitalMoyen>0&&o.marge>0)?r2(o.marge*parSaison/o.capitalMoyen):null;
 
     /* La rupture se mesure à partir de la PREMIÈRE entrée du modèle, pas du
@@ -1420,6 +1432,13 @@ function amModeles(){
        arrivée il y a 4 jours la fait passer pour un échec alors qu'elle part
        plus vite que tout le reste du mur. */
     o.joursEnVente=Math.max(0,o.jourSuivis-jours);
+    /* PROFONDEUR MOYENNE : combien de paires ce modèle a tenues en moyenne
+       depuis sa première entrée. C'est le pendant de joursEnVente côté stock —
+       les deux se rapportent à la même période. Le stock d'aujourd'hui ne peut
+       pas servir ici : un modèle acheté à douze et tombé à trois divisait ses
+       ventes par trois et sortait un GMROI flatteur au moment précis où il
+       s'épuise. */
+    o.profMoyenne=r2(pJours/Math.max(1,o.jourSuivis));
 
     o.sMin=amSeuilEcoul(o.margeCout,c.rMin,c.jours);
     o.sBon=amSeuilEcoul(o.margeCout,c.rBon,c.jours);
@@ -1672,7 +1691,10 @@ function murCalc(m){
      mort. */
   var jours=(o&&o.joursEnVente!=null)?o.joursEnVente:null;
   var mesVSai=(o&&o.vendues&&jours>0)?r2(o.vendues*SAISON/jours):null;
-  var mesProf=(o&&o.stock)?o.stock:null;
+  /* La profondeur mesurée est la MOYENNE tenue sur la période observée, pas le
+     stock du jour : c'est elle qui a produit les ventes qu'on lui rapporte.
+     Le stock du jour reste disponible (o.stock) pour le relevé. */
+  var mesProf=(o&&o.profMoyenne>0)?o.profMoyenne:((o&&o.stock)?o.stock:null);
   var mc=murMargeCout(m,o);
 
   var prof=(m.mur.prof!=null)?(+m.mur.prof||0):(mesProf||1);
@@ -1696,6 +1718,7 @@ function murCalc(m){
   return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mc,
     rendement:rend,capital:capital,margeSai:margeSai,
     jours:jours, jeune:jeune, rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
+    passees:(o?o.passees:null),
     /* « estimé » dès qu'un chiffre vient de l'utilisateur ou qu'aucune vente
        n'a été mesurée : on ne présente pas une hypothèse comme un relevé. */
     estime:(m.mur.vSai!=null||mesVSai==null||m.mur.prof!=null),
@@ -1825,7 +1848,7 @@ function murTuiles(L){
     +'<div class="adT"><div class="adTl">Capital engagé</div>'
       +'<div class="adTv">'+amEur(cap)+'</div>'
       +'<div class="adTs">'+acPl(L.length,"modèle")+' · '
-      +acPl(L.reduce(function(n,x){return n+x.prof;},0),"paire")+'</div></div>'
+      +amNum(L.reduce(function(n,x){return n+x.prof;},0),1)+' paires'+'</div></div>'
     +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">GMROI de saison</div>'
       +'<div class="adTv">'+murNum(rend)+'</div>'
       +'<div class="adTs">'+(rend==null
@@ -1854,13 +1877,27 @@ function murCase(r,c){
   var x=murCalc(m),B=murBande(x.rendement,x.jeune);
   var ouvert=(_murEdit===String(m.id));
   var marque=x.jeune?'<i>jeune</i>':(x.estime?'<i>est.</i>':'');
+  /* Le GMROI est un ratio, et un ratio ne dit pas d'où il sort. On pose donc
+     sous la barre les deux faits bruts qui l'ont produit : combien de paires
+     ont tenu le rayon cette saison, et combien sont parties. Sans eux, une
+     case à 2,05 obtenue sur deux paires se lit comme une case à 2,05 obtenue
+     sur douze, alors que l'une est une anecdote et l'autre une tendance. */
+  var reel=(x.passees)
+    ? (x.vendues+' vendue'+(x.vendues>1?'s':'')+' sur '+x.passees)
+    : '';
+  var bulle=(m.fr||m.sku||"")
+    +(x.passees?("\n"+x.passees+" paire"+(x.passees>1?"s":"")+" passée"+(x.passees>1?"s":"")
+      +" en rayon sur la saison, "+x.vendues+" vendue"+(x.vendues>1?"s":"")
+      +(x.mesProf!=null?(", "+x.mesProf+" encore en stock"):"")):"")
+    +"\ncliquer pour régler";
   return '<div class="murC '+B.cls+(ouvert?" on":"")+'" onclick="murEditer('+m.id+')" '
-    +'title="'+esc((m.fr||m.sku||"")+" — cliquer pour régler")+'">'
+    +'title="'+esc(bulle)+'">'
     +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCs">'+esc(m.sku||"")+'</div>'
     +'<div class="murCv">'+murNum(x.rendement)+marque+'</div>'
     +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
-    +'<div class="murCf">'+x.prof+' p · '+amEur(x.capital)
+    +(reel?('<div class="murCf fort">'+reel+'</div>'):'')
+    +'<div class="murCf">'+amNum(x.prof,1)+' p · '+amEur(x.capital)
     +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
   +'</div>';
 }
@@ -1883,8 +1920,8 @@ function murReglage(){
       +'<button class="btn mini" onclick="murReset('+m.id+')">Revenir aux mesures</button>'
       +'<button class="btn mini" onclick="murRetirer('+m.id+')">Retirer du mur</button></div>'
     +'<div class="murF">'
-      +'<label>Profondeur<span>paires tenues</span>'
-        +'<input type="number" min="0" step="1" value="'+x.prof+'" '
+      +'<label>Profondeur<span>paires tenues en moyenne</span>'
+        +'<input type="number" min="0" step="0.5" value="'+x.prof+'" '
         +'onchange="murSet('+m.id+',\'prof\',this.value)">'+src(x.mesProf)+'</label>'
       +'<label>Ventes par saison<span>rythme sur '+SAISON+' jours</span>'
         +'<input type="number" min="0" step="0.5" value="'+(x.vSai==null?"":x.vSai)+'" '
@@ -1903,8 +1940,18 @@ function murReglage(){
           +(x.margeCout==null
             ? 'Marge inconnue : renseigne un prix de vente sur ce modèle.'
             : ('rotation '+amNum(x.vSai/Math.max(1,x.prof),2)+' × marge par euro '+amNum(x.margeCout,2)
-               +' = '+murNum(x.rendement)+'   ('+amNum(x.vSai,1)+' ventes ÷ '+x.prof+' paires)'))
+               +' = '+murNum(x.rendement)+'   ('+amNum(x.vSai,1)+' ventes ÷ '+amNum(x.prof,1)+' paires)'))
         +'</div>'
+        /* Le relevé brut, sous le ratio. Les trois champs au-dessus se saisissent
+           et peuvent donc mentir ; ces chiffres-là viennent du stock et ne se
+           règlent pas. C'est à eux qu'on revient quand le GMROI surprend. */
+        +(x.passees
+          ? ('<div class="murResD rel"><b>Relevé de la saison</b> — '
+             +acPl(x.passees,"paire")+' passée'+(x.passees>1?'s':'')+' en rayon, '
+             +x.vendues+' vendue'+(x.vendues>1?'s':'')+', '
+             +((x.o&&x.o.stock!=null)?x.o.stock:0)+' encore en stock · écoulement '
+             +Math.round(100*x.vendues/x.passees)+' %</div>')
+          : '')
         +'<div class="murResD">Seuils : plancher '+murNum(c.rMin)+' · confortable '+murNum(c.rBon)+'</div>'
         /* Deux faits que le rendement seul ne dit pas, et qui renversent souvent
            la lecture : depuis quand on observe, et combien de temps le modèle a
