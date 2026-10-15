@@ -7043,6 +7043,34 @@ function varsSorted(m){
   });
 }
 
+/* ============================================================================
+   LE PRIX DE LA VITRINE, TAILLE PAR TAILLE
+
+   Deux valeurs ne sont PAS des prix de vente et ne doivent jamais s'afficher
+   sur la boutique :
+     · le zéro      — prix cible jamais saisi ;
+     · PV_SECURITE  — prix posé exprès pour arrêter la vente au comptoir le
+                      temps qu'on fixe le vrai prix.
+   Le zéro était déjà écarté. PV_SECURITE ne l'était pas : depuis qu'il
+   remplace le zéro sur les imports FlowStock, une taille dont toutes les
+   paires sortent de FlowStock afficherait 999 € en ligne.
+
+   L'ordre de préférence :
+     1. le plus bas des VRAIS prix cibles des paires en ligne de cette taille ;
+     2. à défaut, le dernier prix que la boutique affichait déjà — c'est lui
+        que le module de retour met à jour quand une paire revient ;
+     3. à défaut, rien : la taille n'est pas publiée. Mieux vaut une taille
+        absente du site qu'une taille à 999 € ou, pire, à 0 €.
+   ========================================================================== */
+function shopPrixVitrine(arts, v){
+  var vrais = (arts || []).map(function(a){ return +a.pv || 0; })
+    .filter(function(x){ return x > 0 && x !== PV_SECURITE; });
+  if(vrais.length) return Math.min.apply(null, vrais);
+  var ancien = +((v && v.shopifyPrice) || 0);
+  if(ancien > 0 && ancien !== PV_SECURITE) return ancien;
+  return null;                       // aucun prix publiable
+}
+
 function shopModelSyncPayload(modeleId){
   const m=modeleById(modeleId);if(!m)return null;
   const vars=varsSorted(m);
@@ -7054,10 +7082,24 @@ function shopModelSyncPayload(modeleId){
     const arts=DB.articles.filter(a=>a.varianteId===v.id&&!a.archived&&inStock(a)&&a.dispo&&!shopIsSbtPiece(a));
     const published=!!v.shopifyVariantId;
     if(!arts.length&&!published)return;                 // taille jamais publiée et sans stock → ignorée
-    let price;
-    if(arts.length){/* Le prix vitrine = le prix cible le plus bas parmi les paires en ligne. Une paire SANS prix cible (0) ne doit PAS écraser le prix à 0 : on l'ignore. */var _pvs=arts.map(a=>+a.pv||0).filter(x=>x>0);price=_pvs.length?Math.min.apply(null,_pvs):0;if(!isFinite(price))price=0;if(!price&&v.shopifyPrice!=null)price=v.shopifyPrice;   /* aucune paire n'a de prix cible : on garde l'ancien */v.shopifyPrice=price;}
+    let price, qty=arts.length;
+    if(arts.length){
+      const _p=shopPrixVitrine(arts,v);
+      if(_p==null){
+        /* Aucun prix publiable. Taille jamais mise en ligne : on ne la crée pas
+           du tout. Déjà en ligne : on la laisse à son prix affiché mais on met
+           la quantité à 0, pour qu'elle ne puisse pas être achetée tant que le
+           vrai prix n'est pas posé. */
+        if(!published)return;
+        price=(v.shopifyPrice!=null?v.shopifyPrice:0);
+        qty=0;
+      }else{
+        price=_p;
+        v.shopifyPrice=price;        // mémoire du dernier prix affiché
+      }
+    }
     else{price=(v.shopifyPrice!=null?v.shopifyPrice:0);} // épuisée : on garde le dernier prix connu (rupture, stock 0)
-    out.push({varId:v.id,sku:shopVarSku(v),label:shopSizeEU(v),price:String(price),qty:arts.length});
+    out.push({varId:v.id,sku:shopVarSku(v),label:shopSizeEU(v),price:String(price),qty:qty});
   });
   return {modele:m,variants:out};
 }
@@ -7074,6 +7116,15 @@ async function shopSyncPieceSbt(a){
   var _qty=(a.dispo&&inStock(a))?1:0;
   // Prix : prix cible de la pièce (sinon 0).
   var price=(+a.pv||0)>0?(+a.pv):((+m.prixCible||0)>0?(+m.prixCible):0);
+  /* Ici une pièce = un produit : il n'existe aucune autre paire pour fournir
+     le prix, et aucun « dernier prix de la taille » à reprendre. Publier au
+     prix de sécurité mettrait 999 € en vitrine, publier à 0 € offrirait la
+     paire. On ne publie donc pas, et on le dit. */
+  if(price===PV_SECURITE||price<=0){
+    console.warn("[Shopify SBT] "+(a.ref||"")+" non publiée : prix cible "
+      +(price===PV_SECURITE?("de sécurité ("+PV_SECURITE+" €)"):"absent"));
+    return {skipped:true,reason:"prix cible manquant"};
+  }
   // SKU UNIQUE par pièce : base SKU + taille + réf pièce (évite tout regroupement Shopify).
   var baseSku=(m.sku||("V"+v.id)).trim();
   // La référence pièce suffit à rendre le SKU unique ; la taille n'y est ajoutée
