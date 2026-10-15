@@ -397,6 +397,10 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murLg{display:flex;gap:14px;flex-wrap:wrap;padding:10px 18px 13px;border-top:1px solid var(--line);
   font-size:11.5px;color:var(--muted)}
 .murLgI{display:flex;align-items:center;gap:6px}
+/* En vue marge, le bord ne parle plus du chiffre affiché : il faut le dire. */
+.murLgT{font-weight:700;color:var(--ink)}
+/* Un montant tient moins bien que « 0,73 » dans 132 px. */
+.murC.eur .murCv{font-size:17px}
 .murLgI::before{content:"";width:11px;height:4px;border-radius:2px;background:#cbd5e1}
 .murLgI.ok::before{background:#16a34a}
 .murLgI.warn::before{background:#d97706}
@@ -460,6 +464,13 @@ body{background:var(--bg,#f8fafc);margin:0}
   font-size:13px;font-weight:700;text-align:center;font-family:inherit}
 .btn.mini{padding:4px 11px;font-size:12px}
 .btn.mini.danger{color:#b91c1c}
+/* Bascule du mur : deux lectures du même mur, jamais deux murs. L'état actif
+   doit être évident, sinon on lit des euros en croyant lire un ratio. */
+.murVueB{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+.murVueB>button{border:0;background:#fff;color:var(--muted);font:inherit;font-size:12px;font-weight:600;
+  padding:5px 12px;cursor:pointer}
+.murVueB>button+button{border-left:1px solid var(--line)}
+.murVueB>button.on{background:var(--violet);color:#fff}
 
 /* ---- Modèles : garder ou couper ---- */
 .amFs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
@@ -1761,6 +1772,53 @@ function murRemplissage(rend){
   return Math.max(3,Math.min(100,Math.round(rend/haut*100)));
 }
 
+/* ---------- LES DEUX LECTURES DU MUR ----------------------------------------
+   Le GMROI répond « où mettre le prochain euro » : il divise par le capital,
+   donc il récompense ce qui immobilise peu. La marge répond « quoi mettre sur
+   la prochaine case » : elle compte les euros gagnés, point.
+
+   Ce ne sont pas deux avis sur la même question, ce sont deux questions. Un
+   modèle qui dégage 150 € de marge sur 100 € de capital bat au GMROI celui qui
+   en dégage 330 € sur 455 € — et pourtant il rapporte 180 € de moins. Quand la
+   ressource rare est la place en rayon et non la trésorerie, c'est la marge
+   qu'il faut classer. On laisse donc choisir, plutôt que d'imposer un camp.
+
+   En vue « marge », la BARRE se remplit par rapport au meilleur du mur (aucun
+   seuil absolu n'a de sens en euros), mais la COULEUR du bord reste celle du
+   GMROI. Une grande barre à bord rouge se lit alors d'un coup d'œil : ça
+   rapporte beaucoup, et ça coûte cher à porter. */
+var _murVue=null, _murMargeMax=0;
+
+function murVue(){
+  if(_murVue)return _murVue;
+  _murVue="gmroi";
+  try{var b=localStorage.getItem("wathe.mur.vue");if(b==="marge")_murVue="marge";}catch(e){}
+  return _murVue;
+}
+function murVueSet(v){
+  _murVue=(v==="marge")?"marge":"gmroi";
+  try{localStorage.setItem("wathe.mur.vue",_murVue);}catch(e){}
+  renderMur();
+}
+/* Échelle relative : le meilleur contributeur du mur fait le plein. Recalculée
+   à chaque rendu, sinon retirer une case laisserait l'échelle de l'ancienne.
+
+   Les modèles trop récents en sont exclus, pour la même raison qu'ils sont
+   exclus du total : deux ventes en onze jours projettent 1 100 € sur la saison
+   et écrasent à 40 % de barre un modèle qui, lui, a vraiment rapporté 500 €.
+   Leur barre déborde alors et se cale à 100 %, mais leur bord reste gris : la
+   couleur dit déjà de ne pas s'y fier. */
+function murMargeEchelle(L){
+  var J=(L||[]).filter(function(x){return !x.jeune;});
+  if(!J.length)J=(L||[]);
+  _murMargeMax=J.reduce(function(n,x){return Math.max(n,+x.margeSai||0);},0);
+  return _murMargeMax;
+}
+function murRemplissageMarge(mg){
+  if(mg==null||mg<=0||!_murMargeMax)return 0;
+  return Math.max(3,Math.min(100,Math.round(mg/_murMargeMax*100)));
+}
+
 /* ---------- Poser, retirer, régler ---------- */
 
 function murChercher(q){
@@ -1888,16 +1946,29 @@ function murCase(r,c){
   var bulle=(m.fr||m.sku||"")
     +(x.passees?("\n"+x.passees+" paire"+(x.passees>1?"s":"")+" passée"+(x.passees>1?"s":"")
       +" en rayon sur la saison, "+x.vendues+" vendue"+(x.vendues>1?"s":"")
-      +(x.mesProf!=null?(", "+x.mesProf+" encore en stock"):"")):"")
+      +((x.o&&x.o.stock!=null)?(", "+x.o.stock+" encore en stock"):"")):"")
+    +"\nGMROI "+murNum(x.rendement)
+    +(x.margeSai!=null?(" · "+amEur(x.margeSai)+" de marge sur la saison"
+      +(x.jeune?" (projection sur très peu de recul)":" au rythme retenu")):"")
     +"\ncliquer pour régler";
-  return '<div class="murC '+B.cls+(ouvert?" on":"")+'" onclick="murEditer('+m.id+')" '
-    +'title="'+esc(bulle)+'">'
+  /* Le chiffre principal suit la vue ; l'autre descend en pied de case, pour
+     qu'aucune des deux lectures ne disparaisse jamais complètement. */
+  var marge=(murVue()==="marge");
+  var tete=marge
+    ? ((x.margeSai==null)?"—":amEur(x.margeSai))
+    : murNum(x.rendement);
+  var barre=marge?murRemplissageMarge(x.margeSai):murRemplissage(x.rendement);
+  var pied=marge
+    ? ('GMROI '+murNum(x.rendement)+' · '+amEur(x.capital))
+    : (amNum(x.prof,1)+' p · '+amEur(x.capital));
+  return '<div class="murC '+B.cls+(ouvert?" on":"")+(marge?" eur":"")+'" '
+    +'onclick="murEditer('+m.id+')" title="'+esc(bulle)+'">'
     +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCs">'+esc(m.sku||"")+'</div>'
-    +'<div class="murCv">'+murNum(x.rendement)+marque+'</div>'
-    +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
+    +'<div class="murCv">'+tete+marque+'</div>'
+    +'<div class="murB"><span style="width:'+barre+'%"></span></div>'
     +(reel?('<div class="murCf fort">'+reel+'</div>'):'')
-    +'<div class="murCf">'+amNum(x.prof,1)+' p · '+amEur(x.capital)
+    +'<div class="murCf">'+pied
     +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
   +'</div>';
 }
@@ -1988,6 +2059,8 @@ function renderMur(){
   murStatsInvalider();
   var f=murFmt();
   var L=murPoses().map(murCalc);
+  murMargeEchelle(L);          // l'échelle des barres avant de dessiner les cases
+  var vMarge=(murVue()==="marge");
   var rangees="";
   for(var r=0;r<f.rangees;r++){
     var cases="";
@@ -1998,9 +2071,20 @@ function renderMur(){
     +murPose()+murReglage()
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
-        +'<div class="adHs">Chaque case porte le GMROI du modèle : ce qu\'un euro engagé '
-        +'dessus rapporte en marge sur une saison. Clique une case vide pour poser une référence, '
-        +'une case pleine pour la régler.</div>'
+        +'<div class="adHs">'+(vMarge
+          ? 'Chaque case porte les euros de marge que le modèle rapporte sur une saison : '
+            +'le classement de la place en rayon. La barre se mesure par rapport au meilleur '
+            +'du mur, et la couleur du bord reste celle du GMROI — une grande barre à bord '
+            +'rouge rapporte beaucoup mais immobilise cher.'
+          : 'Chaque case porte le GMROI du modèle : ce qu\'un euro engagé dessus rapporte en '
+            +'marge sur une saison. C\'est le classement de la trésorerie.')
+        +' Clique une case vide pour poser une référence, une case pleine pour la régler.</div>'
+        +'<div class="murVueB">'
+          +'<button class="'+(vMarge?"":"on")+'" onclick="murVueSet(\'gmroi\')" '
+            +'title="Où mettre le prochain euro">GMROI</button>'
+          +'<button class="'+(vMarge?"on":"")+'" onclick="murVueSet(\'marge\')" '
+            +'title="Quoi mettre sur la prochaine case">Marge €</button>'
+        +'</div>'
         +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
           +'onchange="murFmtSet(\'rangees\',this.value)"></label>'
         +'<label class="murFmt">Places<input type="number" min="1" max="20" value="'+f.places+'" '
@@ -2009,6 +2093,7 @@ function renderMur(){
       +'</div>'
       +'<div class="murG">'+rangees+'</div>'
       +'<div class="murLg">'
+        +(vMarge?'<span class="murLgT">Couleur du bord = GMROI</span>':'')
         +'<span class="murLgI ok">correct et plus</span>'
         +'<span class="murLgI warn">faible</span>'
         +'<span class="murLgI bad">perdant</span>'
