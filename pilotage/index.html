@@ -1542,11 +1542,12 @@ function amPhraseExclusions(){
    AVANT d'engager l'argent : on compose le mur qu'on voudrait, référence par
    référence, et chaque emplacement dit ce qu'un euro engagé dessus rapporte.
 
-   Le rendement garde la définition qu'on lui a donnée — marge annualisée
-   rapportée au capital immobilisé — mais il se décompose ici en deux leviers
-   que l'on peut bouger :
+   Le chiffre affiché est le GMROI : la marge brute divisée par le capital
+   moyen immobilisé au coût d'achat. Il se décompose ici en les deux seuls
+   leviers sur lesquels on peut agir à l'achat :
 
-       rendement = (ventes par saison ÷ profondeur) × (marge ÷ coût)
+       GMROI = (ventes de la saison ÷ profondeur) × (marge ÷ coût)
+                \_____ la rotation _____/           \_ la marge par euro _/
 
    La profondeur, c'est le nombre de paires qu'on tient pour ce modèle ; en
    acheter dix pour couvrir les tailles double le capital sans doubler les
@@ -1558,6 +1559,11 @@ function amPhraseExclusions(){
    avec ses prix d'achat et de vente, et c'est à l'utilisateur de dire combien il
    espère en vendre. Ce chiffre-là est marqué comme une hypothèse, jamais présenté
    comme une mesure.
+
+   Le GMROI se mesure ici sur la saison (SAISON jours), parce que c'est la
+   durée de vie commerciale réelle d'un modèle. Les repères publiés, eux, sont
+   annuels : on affiche donc aussi l'équivalent annuel (murAnnuel) pour que la
+   comparaison avec l'extérieur soit possible sans refaire le calcul de tête.
 
    La disposition vit sur le MODÈLE (m.mur), seule table que cette page sait
    enregistrer.
@@ -1696,6 +1702,11 @@ function murCalc(m){
     mesVSai:mesVSai,mesProf:mesProf};
 }
 
+/* Le GMROI standard se publie à l'ANNÉE, alors qu'on mesure sur une saison.
+   On donne donc l'équivalent annuel à côté du chiffre de saison : sans lui,
+   impossible de se comparer à quoi que ce soit de publié. */
+function murAnnuel(r){return (r==null)?null:r2(r*365/SAISON);}
+
 /* Deux décimales, toujours : amNum rogne les zéros de fin, et « 0,1 » posé à
    côté de « 1,04 » se compare mal d'un coup d'œil sur une grille. */
 function murNum(x){
@@ -1815,11 +1826,12 @@ function murTuiles(L){
       +'<div class="adTv">'+amEur(cap)+'</div>'
       +'<div class="adTs">'+acPl(L.length,"modèle")+' · '
       +acPl(L.reduce(function(n,x){return n+x.prof;},0),"paire")+'</div></div>'
-    +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">Rendement de saison</div>'
+    +'<div class="adT'+(B.cls==="bad"?" bad":"")+'"><div class="adTl">GMROI de saison</div>'
       +'<div class="adTv">'+murNum(rend)+'</div>'
       +'<div class="adTs">'+(rend==null
         ? "aucun modèle jugeable pour l'instant"
-        : ("1 € engagé rapporte "+murNum(rend)+" € de marge sur la saison"
+        : ("1 € engagé rapporte "+murNum(rend)+" € de marge sur la saison · "
+           +murNum(murAnnuel(rend))+" en équivalent annuel"
            +(ecartes?(" · sur "+acPl(J.length,"modèle")+" jugeable"+(J.length>1?"s":"")):"")))
       +'</div></div>'
     +'<div class="adT"><div class="adTl">Marge de saison</div>'
@@ -1884,13 +1896,14 @@ function murReglage(){
       +'<div class="murRes '+B.cls+'">'
         +'<div class="murResV">'+murNum(x.rendement)+'</div>'
         +'<div class="murResL">'+esc(B.txt)+' · 1 € engagé rapporte '
-        +(x.rendement==null?"—":(murNum(x.rendement)+" € sur la saison"))+'</div>'
+        +(x.rendement==null?"—":(murNum(x.rendement)+" € de marge sur la saison"))
+        +(x.rendement==null?"":(' · <b>GMROI annuel '+murNum(murAnnuel(x.rendement))+'</b>'))+'</div>'
         +'<div class="murB"><span style="width:'+murRemplissage(x.rendement)+'%"></span></div>'
         +'<div class="murResD">'
           +(x.margeCout==null
             ? 'Marge inconnue : renseigne un prix de vente sur ce modèle.'
-            : ('('+amNum(x.vSai,1)+' ventes ÷ '+x.prof+' paires) × '+amNum(x.margeCout,2)
-               +' de marge par euro = '+murNum(x.rendement)))
+            : ('rotation '+amNum(x.vSai/Math.max(1,x.prof),2)+' × marge par euro '+amNum(x.margeCout,2)
+               +' = '+murNum(x.rendement)+'   ('+amNum(x.vSai,1)+' ventes ÷ '+x.prof+' paires)'))
         +'</div>'
         +'<div class="murResD">Seuils : plancher '+murNum(c.rMin)+' · confortable '+murNum(c.rBon)+'</div>'
         /* Deux faits que le rendement seul ne dit pas, et qui renversent souvent
@@ -1938,7 +1951,7 @@ function renderMur(){
     +murPose()+murReglage()
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
-        +'<div class="adHs">Chaque case porte le rendement du modèle : ce qu\'un euro engagé '
+        +'<div class="adHs">Chaque case porte le GMROI du modèle : ce qu\'un euro engagé '
         +'dessus rapporte en marge sur une saison. Clique une case vide pour poser une référence, '
         +'une case pleine pour la régler.</div>'
         +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
