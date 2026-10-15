@@ -420,6 +420,12 @@ body{background:var(--bg,#f8fafc);margin:0}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1}
 .murCm>i{display:block;font-style:normal;font-size:calc(9.5px * var(--mz,1));
   font-weight:600;color:var(--muted);margin-top:1px;letter-spacing:.01em}
+/* La couverture de tailles n'apparaît qu'en cas de trou : c'est un signal,
+   pas une statistique de plus. */
+.murTx{margin-top:4px;font-size:calc(9.5px * var(--mz,1));font-weight:700;
+  color:#92400e;background:#fef3c7;border-radius:4px;padding:2px 5px;display:inline-block;
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.murTx.bas{color:#991b1b;background:#fee2e2}
 /* L'emplacement libre : un creux dans l'étagère, pas une carte. */
 .murVideC{min-height:calc(104px * var(--mz,1));border:1px dashed #c9c1b4;border-radius:5px;
   background:rgba(255,255,255,.35);color:#a8a093;font-size:calc(19px * var(--mz,1));
@@ -1457,7 +1463,8 @@ function amModeles(){
 
     // --- la vie de la pièce : entrée, sortie. Sert aux jours sans stock.
     // Le coût voyage avec la vie de la pièce : c'est lui qui donne le capital moyen.
-    if(jE!=null)o.vies.push({e:jE,v:(jV!=null&&jV>=jE)?jV:null,c:(+a.prix||0)});
+    if(jE!=null)o.vies.push({e:jE,v:(jV!=null&&jV>=jE)?jV:null,c:(+a.prix||0),
+                              t:String(v.taille||v.id)});
 
     // --- stock d'aujourd'hui
     if(!vente&&inStock(a)){
@@ -1558,12 +1565,83 @@ function amModeles(){
     o.joursSansStock=jours;
     o.jourSuivis=(jFin-jD+1);
     o.rupture=o.jourSuivis>0?(jours/o.jourSuivis):0;
-    /* Jours où le modèle a RÉELLEMENT pu se vendre : depuis sa première entrée,
-       moins le temps passé à zéro. C'est le seul dénominateur honnête pour un
-       rythme de ventes. Rapporter 4 ventes à 365 jours quand la référence est
-       arrivée il y a 4 jours la fait passer pour un échec alors qu'elle part
-       plus vite que tout le reste du mur. */
+    /* Jours pendant lesquels le modèle avait au moins une paire. Gardé pour
+       l'affichage, mais il ne sert PLUS de dénominateur au rythme — voir
+       juste en dessous. */
     o.joursEnVente=Math.max(0,o.jourSuivis-jours);
+
+    /* ------------------------------------------------------------------
+       LA RUPTURE SE MESURE PAR TAILLE, et pas sur le modèle entier.
+
+       Un modèle avec huit paires mais plus rien en 42 n'a aucun jour de
+       rupture au compteur global, pendant qu'il refuse tous les clients en
+       42 depuis trois semaines. Chez un détaillant chaussant, c'est là que
+       se perd l'essentiel des ventes, et le compteur global n'en voit rien.
+
+       Le référentiel de tailles est celui des cibles de réassort quand le
+       produit est suivi — c'est la courbe que l'utilisateur a lui-même
+       décidé de tenir. Sinon, les tailles qu'il a déjà tenues pour ce
+       modèle : se comparer à une grille complète de vingt pointures qu'il
+       n'a jamais eu l'intention d'avoir n'aurait aucun sens.
+       ------------------------------------------------------------------ */
+    var parTaille={};
+    o.vies.forEach(function(x){(parTaille[x.t]=parTaille[x.t]||[]).push(x);});
+    var cibles=null;
+    try{
+      var cc=(o.m&&o.m.cibles)?reCiblesCanon(o.m):null;
+      if(cc&&Object.keys(cc).length)cibles=cc;
+    }catch(e){}
+    var tailles=cibles?Object.keys(cibles):Object.keys(parTaille);
+    var jtManque=0, trous=[];
+    tailles.forEach(function(t){
+      var vs=parTaille[t]||[];
+      var ev=[],deb=0;
+      vs.forEach(function(x){
+        ev.push({j:x.e,v:1});
+        if(x.v!=null)ev.push({j:x.v,v:-1});
+        if(x.e<=jD&&(x.v==null||x.v>jD))deb++;
+      });
+      /* Une taille jamais reçue compte comme manquante tout du long : c'est
+         précisément le cas d'une cible de réassort qu'on n'a jamais honorée. */
+      var manque=vs.length?amJoursSansStock(ev,deb,jD,jFin):(jFin-jD+1);
+      jtManque+=manque;
+      if(manque>0)trous.push({t:t,j:manque});
+    });
+    o.tailles=tailles.length;
+    o.jtTotal=tailles.length*o.jourSuivis;
+    o.jtManque=jtManque;
+    o.jtDispo=Math.max(0,o.jtTotal-jtManque);
+    o.couvertureT=(o.jtTotal>0)?(o.jtDispo/o.jtTotal):null;
+    o.ciblees=!!cibles;
+    trous.sort(function(a,b){return b.j-a.j;});
+    o.trous=trous.slice(0,6);
+
+    /* VENTES PERDUES — un PLAFOND, jamais une perte constatée.
+       On suppose que chaque jour-taille disponible vend au même rythme, et
+       on applique ce rythme aux jours-taille manquants. Deux réserves qui
+       doivent accompagner le chiffre partout où il s'affiche : le client qui
+       ne trouve pas sa taille repart souvent avec une autre paire, donc la
+       vente n'est perdue que pour CETTE référence ; et la demande n'est pas
+       régulière, une rupture en pleine sortie coûte plus qu'en creux d'été. */
+    o.ventesPerdues=(o.jtDispo>0&&o.vendues>0)
+      ? r2(o.vendues*jtManque/o.jtDispo) : 0;
+
+    /* LE DERNIER RÉASSORT, mesuré sur ce qu'il est devenu et non modélisé.
+       « 6 paires entrées le 9 octobre, 2 parties en 6 jours » se vérifie en
+       rayon ; un avant/après de rythme sur deux petites séries ne se vérifie
+       pas et dit surtout le bruit. */
+    var premEntree=jPrem;
+    var lots={};
+    o.vies.forEach(function(x){
+      if(x.e===premEntree)return;            // la mise en place n'est pas un réassort
+      (lots[x.e]=lots[x.e]||[]).push(x);
+    });
+    var jLots=Object.keys(lots).map(Number).sort(function(a,b){return b-a;});
+    if(jLots.length){
+      var jr=jLots[0], lot=lots[jr];
+      o.reassort={ jour:jr, jours:(jFin-jr+1), paires:lot.length,
+        vendues:lot.filter(function(x){return x.v!=null;}).length };
+    }
     /* PROFONDEUR MOYENNE : combien de paires ce modèle a tenues en moyenne
        depuis sa première entrée. C'est le pendant de joursEnVente côté stock —
        les deux se rapportent à la même période. Le stock d'aujourd'hui ne peut
@@ -1839,8 +1917,17 @@ function murCalc(m){
      fenêtre entière : une référence reçue il y a quatre jours n'a pas eu un an
      pour faire ses preuves. Sans ce dénominateur, tout ce qui est récent paraît
      mort. */
-  var jours=(o&&o.joursEnVente!=null)?o.joursEnVente:null;
-  var mesVSai=(o&&o.vendues&&jours>0)?r2(o.vendues*SAISON/jours):null;
+  var jours=(o&&o.jourSuivis!=null)?o.jourSuivis:null;        // jours au catalogue
+  var joursDispo=(o&&o.joursEnVente!=null)?o.joursEnVente:null; // dont avec du stock
+  /* LES JOURS AU CATALOGUE, rupture comprise, et non les jours de présence.
+     Corriger le rythme de la rupture revient à effacer le signal même qui
+     dit de réassortir : un produit absent la moitié de la saison a bel et
+     bien produit moitié moins d'argent pour sa place en rayon, et le mur
+     doit le dire. La rupture ne disparaît pas pour autant, elle devient un
+     indicateur à part — c'est elle qui explique le manque et désigne
+     l'action. On garde en revanche le départ à la PREMIÈRE ENTRÉE : une
+     référence reçue il y a sept jours se juge sur sept jours. */
+  var mesVSai=(o&&o.vendues&&o.jourSuivis>0)?r2(o.vendues*SAISON/o.jourSuivis):null;
   /* La profondeur mesurée est la MOYENNE tenue sur la période observée, pas le
      stock du jour : c'est elle qui a produit les ventes qu'on lui rapporte.
      Le stock du jour reste disponible (o.stock) pour le relevé. */
@@ -1894,6 +1981,11 @@ function murCalc(m){
   var ventesMois=(vSai!=null)?r2(vSai*30/SAISON):null;
   var margeMois=(margeSai!=null)?r2(margeSai*30/SAISON):null;
 
+  /* La marge que la rupture a coûtée. Même réserve que pour les ventes
+     perdues : c'est un plafond, et il est libellé comme tel partout. */
+  var ventesPerdues=(o&&o.ventesPerdues)?o.ventesPerdues:0;
+  var margePerdue=(ventesPerdues>0&&margeVente!=null)?r2(ventesPerdues*margeVente):0;
+
   /* Quatre ventes en quatre jours donnent un rythme spectaculaire et ne prouvent
      rien : c'est peut-être la nouveauté, un client qui a pris trois tailles, ou
      un vrai succès. Sous ce seuil d'observation, on affiche la projection mais
@@ -1904,8 +1996,14 @@ function murCalc(m){
   return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mcAff,caVente:caVente,
     margeVente:margeVente, ventesMois:ventesMois, margeMois:margeMois,
     rendement:rend,capital:capital,margeSai:margeSai,
-    jours:jours, jeune:jeune, rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
+    jours:jours, joursDispo:joursDispo, jeune:jeune,
+    rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
     passees:(o?o.passees:null),
+    /* La rupture à la maille taille, et ce qu'elle a coûté. */
+    tailles:(o?o.tailles:null), jtManque:(o?o.jtManque:null), jtTotal:(o?o.jtTotal:null),
+    couvertureT:(o?o.couvertureT:null), ciblees:(o?o.ciblees:false), trous:(o?o.trous:null),
+    ventesPerdues:ventesPerdues, margePerdue:margePerdue,
+    reassort:(o?o.reassort:null),
     /* « estimé » quand aucune vente n'a été mesurée : le chiffre vient alors
        des prix affichés, pas de ce qui s'est passé en caisse. */
     estime:(mesVSai==null),
@@ -2200,7 +2298,7 @@ function murCase(r,c){
     +(x.passees?("\n"+x.passees+" paire"+(x.passees>1?"s":"")+" passée"+(x.passees>1?"s":"")
       +" en rayon sur la saison, "+x.vendues+" vendue"+(x.vendues>1?"s":"")
       +((x.o&&x.o.stock!=null)?(", "+x.o.stock+" encore en stock"):"")):"")
-    +(x.margeMois!=null?("\n"+amEur(x.margeMois)+" de marge par mois de présence"
+    +(x.margeMois!=null?("\n"+amEur(x.margeMois)+" de marge par mois au catalogue"
       +(x.jeune?" (projection sur très peu de recul)":" : "
         +amNum(x.ventesMois,1)+" ventes par mois × "+amEur(x.margeVente)+" de marge")):"")
     +(x.margeSai!=null?("\nsoit "+amEur(x.margeSai)+" sur une saison de "+SAISON+" jours"):"")
@@ -2226,6 +2324,15 @@ function murCase(r,c){
       +' vente'+((x.ventesMois||0)>1?'s':'')+' par mois'
       +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
     +(reel?('<div class="murCf">'+reel+'</div>'):'')
+    /* LA COURBE DE TAILLES, seulement quand elle est trouée. Afficher
+       « 100 % » sur les trois quarts du mur n'apprendrait rien et volerait la
+       place ; c'est le manque qui mérite d'être vu, parce qu'il explique un
+       rythme faible sans qu'on ait à ouvrir la case. */
+    +((x.couvertureT!=null&&x.couvertureT<0.98)
+      ? ('<div class="murTx'+(x.couvertureT<0.7?' bas':'')+'">tailles '
+         +Math.round(x.couvertureT*100)+' %'
+         +(x.trous&&x.trous.length?(' · manque '+esc(x.trous[0].t)):'')+'</div>')
+      : '')
   +'</div>';
 }
 
@@ -2261,7 +2368,8 @@ function murReglage(){
                "tenues en moyenne sur la période observée")
         +ligne("Rythme de ventes", amNum(x.vSai,1)+" par saison",
                (x.jours!=null&&x.vendues!=null)
-                 ? (acPl(x.vendues,"vente")+" en "+acPl(x.jours,"jour")+" de présence")
+                 ? (acPl(x.vendues,"vente")+" en "+acPl(x.jours,"jour")
+                    +" au catalogue, rupture comprise")
                  : "aucune vente mesurée")
         /* Avec les centimes : ces deux lignes se soustraient trois lignes plus
            bas, et « 90 − 59 = 30,75 » ferait douter de tout le reste. */
@@ -2269,6 +2377,27 @@ function murReglage(){
                "moyenne encaissée, remises comprises")
         +ligne("Prix d'achat", amNum(x.cout,2)+" €",
                "moyenne des paires en stock")
+        /* La courbe de tailles : le seul endroit où l'on dit POURQUOI un
+           rythme est bas sans supposer que le produit est mauvais. */
+        +(x.couvertureT!=null
+          ? ligne("Courbe de tailles", Math.round(x.couvertureT*100)+" % tenue",
+                  acPl(x.tailles,"taille")+(x.ciblees?" visée":" tenue")
+                  +(x.tailles>1?"s":"")+" · "+x.jtManque+" jours-taille manquants"
+                  +(x.trous&&x.trous.length
+                    ? (" · surtout "+x.trous.slice(0,3).map(function(z){
+                        return esc(z.t)+" ("+z.j+" j)";}).join(", "))
+                    : ""))
+          : "")
+        +(x.joursDispo!=null&&x.jours!=null&&x.joursDispo<x.jours
+          ? ligne("Rupture totale", (x.jours-x.joursDispo)+" jours",
+                  "sans une seule paire, sur "+x.jours+" jours au catalogue")
+          : "")
+        +(x.reassort
+          ? ligne("Dernier réassort",
+                  acPl(x.reassort.paires,"paire")+" il y a "+acPl(x.reassort.jours,"jour"),
+                  x.reassort.vendues+" déjà vendue"+(x.reassort.vendues>1?"s":"")
+                  +" · "+Math.round(100*x.reassort.vendues/x.reassort.paires)+" % écoulé")
+          : "")
       +'</div>'
       +'<div class="murRes '+B.cls+'">'
         +'<div class="murResV">'+((x.margeMois==null)?"—":amEur(x.margeMois))
@@ -2314,9 +2443,21 @@ function murReglage(){
              +' seulement : le rythme est une projection, pas un verdict. '
              +'Reviens-y après '+MUR_JOURS_MINI+' jours de présence.</div>')
           : '')
+        /* Le manque à gagner. Présenté comme un PLAFOND, et accompagné de la
+           raison pour laquelle c'en est un : sans cette phrase, le chiffre
+           sera lu comme de l'argent perdu et servira à justifier des achats. */
+        +((x.ventesPerdues>0.5&&x.margePerdue>0)
+          ? ('<div class="murAvis">Courbe trouée '+x.jtManque+' jours-taille : '
+             +'au rythme des jours où la taille était là, cela représente '
+             +'<b>'+amNum(x.ventesPerdues,1)+' vente'+(x.ventesPerdues>1?'s':'')+'</b> '
+             +'et <b>'+amEur(x.margePerdue)+'</b> de marge. C\'est un plafond : '
+             +'un client qui ne trouve pas sa pointure repart souvent avec une autre '
+             +'paire, et la vente n\'est alors perdue que pour cette référence.</div>')
+          : '')
         +((x.rupture!=null&&x.rupture>c.ruptureMax)
-          ? ('<div class="murAvis">En rupture '+amPct(x.rupture)+' du temps : '
-             +'les ventes mesurées sous-estiment la demande. Réassortis avant de juger.</div>')
+          ? ('<div class="murAvis">Plus une seule paire '+amPct(x.rupture)+' du temps. '
+             +'Le rythme affiché tient compte de ces jours-là — il dit ce que la place '
+             +'a réellement rapporté, pas ce que le produit vaut.</div>')
           : '')
       +'</div>'
     +'</div>'
@@ -2359,7 +2500,8 @@ function renderMur(){
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
         +'<div class="adHs">Chaque case porte les euros de marge que la référence sort '
-        +'<b>par mois de présence</b> : ventes par mois × marge par vente. La barre compare '
+        +'<b>par mois au catalogue</b> : ventes par mois × marge par vente. Une rupture fait '
+        +'donc baisser le chiffre — c\'est elle qui désigne les réassorts à faire. La barre compare '
         +'au meilleur du mur. '
         +'Clique une case vide pour poser une référence, une case pleine pour la régler.<br>'
         +'<span class="adHp">Le mur regarde le groupe entier : toutes les ventes comptent, '
