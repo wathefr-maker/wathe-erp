@@ -338,6 +338,9 @@ body{background:var(--bg,#f8fafc);margin:0}
 .adH{display:flex;align-items:flex-start;gap:14px;padding:15px 18px 13px;border-bottom:1px solid var(--line)}
 .adHt{font-size:14.5px;font-weight:700}
 .adHs{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:2px;max-width:72ch}
+/* Le périmètre du calcul : discret, mais jamais absent. Un chiffre dont on
+   ignore le périmètre se fait contredire par le premier export comptable. */
+.adHp{display:inline-block;margin-top:5px;font-size:11.5px;color:#8b93a1}
 .adH>button{margin-left:auto;flex:0 0 auto}
 .adH>div:first-child{min-width:0}
 .adVide{padding:28px 18px;text-align:center;color:var(--muted);font-size:13px}
@@ -680,6 +683,11 @@ function saleSplit(pv,pa,tvaName,destRate){
   return {ca:ca,vat:r?r2(pv-ca):0,regime:r?("TVA "+fmtRate(r)+" %"):"Exonéré"};
 }
 
+/* Le coût COMPTABLE d'une ligne : coût cédé pour une vente sous cession, prix
+   d'achat sinon. C'est le chiffre juste pour les comptes de chaque société.
+   L'analyse du mur ne s'en sert PAS et doit continuer de ne pas s'en servir :
+   elle raisonne au niveau du groupe, voir amCoutAchat. Conservé ici parce que
+   c'est la règle de l'ERP, et qu'il faut pouvoir la retrouver. */
 function lineCost(l,a){
   if(l&&l.cost!=null&&l.cost!=="")return +l.cost;
   if(a&&a.viSoldBy!=null)return viCost(a);
@@ -1240,6 +1248,24 @@ function amEur(x){return Math.round(+x||0).toLocaleString("fr-FR")+" €";}
    il faut la date de vente de chaque pièce pour mesurer son délai, même si elle
    est partie avant la fenêtre d'analyse.
    Les pièces reprises par un avoir sont retirées : elles ne sont pas vendues. */
+/* LE COÛT DU GROUPE, ET NON CELUI DE LA SOCIÉTÉ QUI VEND.
+   Une paire n'est achetée qu'une fois, par WATHE, au fournisseur. Quand SBT la
+   vend, l'ERP lui facture un « coût cédé » — prix d'achat WATHE plus un taux de
+   cession — et c'est ce montant qui est figé sur la ligne (l.cost). C'est juste
+   pour que les deux comptabilités tombent juste.
+
+   Pour décider si un produit mérite sa place en rayon, cette marge-là n'existe
+   pas : elle sort d'une poche pour entrer dans l'autre. Jugée au coût cédé, une
+   référence vendue par SBT paraît moins rentable qu'exactement la même vendue
+   par WATHE, ce qui n'a aucun sens quand on choisit quoi racheter.
+   On remonte donc toujours au prix payé au fournisseur. */
+function amCoutAchat(l,a){
+  if(a&&(+a.prix||0)>0)return +a.prix;              // le prix payé au fournisseur
+  if(l&&l.viPa!=null&&l.viPa!=="")return +l.viPa;   // figé sur la ligne à la vente
+  if(l&&l.cost!=null&&l.cost!=="")return +l.cost;   // dernier secours : le coût cédé
+  return 0;
+}
+
 function amVentesParPiece(){
   var refs=acIndexRefs(), out={}, annulees={};
   (DB.factures||[]).forEach(function(f){
@@ -1252,7 +1278,7 @@ function amVentesParPiece(){
       (l.refs||[]).forEach(function(ref){
         var k=String(ref), a=refs[k]; if(!a)return;
         if(avoir){annulees[k]=1;return;}
-        var cout=lineCost(l,a);
+        var cout=amCoutAchat(l,a);
         var sp=saleSplit(+l.puTTC||0,cout,l.tva||a.tva);
         var cur=out[k];
         if(cur&&cur.date<=dt)return;            // on garde la première
@@ -1302,7 +1328,7 @@ function amVente(a,fact){
   var dv=String((a&&a.dateVente)||"").slice(0,10);
   if(fact)return {date:(dv||fact.date), ht:fact.ht, cout:fact.cout, marge:fact.marge};
   if(!dv)return null;
-  var cout=lineCost(null,a);
+  var cout=amCoutAchat(null,a);
   var ttc=(a.venteTTC!=null&&a.venteTTC!=="")?(+a.venteTTC):null;
   if(ttc==null)return {date:dv, ht:null, cout:cout, marge:null};
   var sp=saleSplit(ttc,cout,a.tva);
@@ -1331,7 +1357,11 @@ function amModeles(){
 
   (DB.articles||[]).forEach(function(a){
     if(!a||a.archived)return;
-    if(socFilter&&a.societeId!=socFilter)return;
+    /* PAS DE FILTRE SOCIÉTÉ ICI, volontairement. Le stock est commun : une paire
+       appartient à WATHE et peut être vendue par WATHE ou par SBT, en boutique
+       ou sur le site. Filtrer sur la société qui possède ferait disparaître
+       toutes les ventes SBT ; filtrer sur celle qui vend couperait le produit
+       en deux. Une référence se juge sur tout ce qu'elle a rapporté au groupe. */
     if(a.achatId!=null&&fs[String(a.achatId)]){_amExclus.flowstock++;return;}
     // Le dépôt n'immobilise pas ton argent : il ne se juge pas au rendement.
     if(a.depot){_amExclus.depot++;return;}
@@ -1671,8 +1701,7 @@ function murStats(){
    les euros affichés. */
 function murCout(m){
   var pieces=(DB.articles||[]).filter(function(a){
-    if(!a||a.archived)return false;
-    if(socFilter&&a.societeId!=socFilter)return false;
+    if(!a||a.archived)return false;      // groupe entier, comme amModeles
     var v=varById(a.varianteId);
     return v&&v.modeleId==m.id&&(+a.prix||0)>0;
   });
@@ -2121,9 +2150,14 @@ function renderMur(){
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
         +'<div class="adHs">Chaque case porte les euros de marge que la référence sort '
-        +'<b>par mois de présence</b> : ventes par mois × marge par vente. Le prix d\'achat '
-        +'n\'y entre pas. La barre compare au meilleur du mur. '
-        +'Clique une case vide pour poser une référence, une case pleine pour la régler.</div>'
+        +'<b>par mois de présence</b> : ventes par mois × marge par vente. La barre compare '
+        +'au meilleur du mur. '
+        +'Clique une case vide pour poser une référence, une case pleine pour la régler.<br>'
+        +'<span class="adHp">Le mur regarde le groupe entier : toutes les ventes comptent, '
+        +'boutique WATHE, boutique SBT et site, et le coût est toujours le prix payé au '
+        +'fournisseur — jamais le coût cédé entre les deux sociétés. Le sélecteur de société '
+        +'en haut de page ne s\'y applique pas. FlowStock et Sourcing Hub restent exclus : '
+        +'ils n\'immobilisent pas ton argent.</span></div>'
         +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
           +'onchange="murFmtSet(\'rangees\',this.value)"></label>'
         +'<label class="murFmt">Places<input type="number" min="1" max="20" value="'+f.places+'" '
