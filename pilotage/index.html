@@ -1266,18 +1266,53 @@ function amCoutAchat(l,a){
   return 0;
 }
 
+/* Les noms de tes propres sociétés, pour reconnaître une facture dont
+   l'ACHETEUR est l'autre société du groupe. */
+function amSocietesNoms(){
+  var n={};
+  (DB.societes||[]).forEach(function(s){
+    if(s&&s.nom)n[String(s.nom).trim().toLowerCase()]=1;
+  });
+  return n;
+}
+
 function amVentesParPiece(){
-  var refs=acIndexRefs(), out={}, annulees={};
+  var refs=acIndexRefs(), out={}, annulees={}, socNoms=amSocietesNoms();
   (DB.factures||[]).forEach(function(f){
     if(!f||!f.lines)return;
     var dt=String(f.date||"").slice(0,10); if(!dt)return;
     // Cession interne : la pièce change de société, elle n'est pas vendue.
     if(f.source==="expedition"&&f.viInternal)return;
+    /* Ce drapeau-là n'est JAMAIS posé sur la facture : viInternal vit sur
+       l'expédition, que cette page ne charge pas. Il a donc fallu reconnaître
+       la cession autrement — voir plus bas. On garde la ligne : le jour où le
+       drapeau existera, elle fera son travail. */
+    var expedition=(f.source==="expedition");
+    /* L'acheteur est l'une de tes sociétés : c'est une cession, pas une vente. */
+    var acheteurInterne=expedition&&!!socNoms[String(f.buyer||"").trim().toLowerCase()];
     var avoir=(f.type==="avoir");
     (f.lines||[]).forEach(function(l){
       (l.refs||[]).forEach(function(ref){
         var k=String(ref), a=refs[k]; if(!a)return;
         if(avoir){annulees[k]=1;return;}
+        /* CESSION INTERNE — à écarter, et c'est capital.
+           WATHE facture la paire à SBT au prix d'achat plus le taux de cession
+           (5 %). Ce n'est pas une vente : la paire n'a pas quitté le groupe, et
+           la majoration n'est pas une marge, elle change de poche.
+
+           Comptées comme des ventes, ces lignes faisaient deux dégâts. Elles
+           gonflaient le nombre de ventes. Et surtout, comme on ne garde que la
+           PREMIÈRE vente de chaque pièce et que la cession précède forcément la
+           vente au client, elles MASQUAIENT la vraie vente : une paire cédée
+           puis vendue 110 € comptait pour une vente à 3 € de marge.
+
+           Deux filets, parce qu'aucun ne couvre tout l'historique à lui seul :
+           l'acheteur est une de tes sociétés (ci-dessus), ou la pièce porte
+           l'id de l'expédition de cession qui l'a facturée — c'est la règle
+           exacte que l'ERP applique dans son propre tableau de bord. */
+        if(acheteurInterne)return;
+        if(expedition&&f.expedId!=null&&a.viBillExpId!=null
+           &&String(a.viBillExpId)===String(f.expedId))return;
         var cout=amCoutAchat(l,a);
         var sp=saleSplit(+l.puTTC||0,cout,l.tva||a.tva);
         var cur=out[k];
