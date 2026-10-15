@@ -5927,6 +5927,57 @@ function achEditLine(i){var l=curAchat&&curAchat.lignes[i];if(!l)return;
   if(q){try{q.scrollIntoView({behavior:"smooth",block:"center"});}catch(_){}}
 }
 function fillAchSizes(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.grille]||attrLabels("Taille");const vs=DB.variantes.filter(v=>v.modeleId==mid).slice().sort((x,y)=>{const ix=order.indexOf(String(x.taille)),iy=order.indexOf(String(y.taille));return (ix<0?9999:ix)-(iy<0?9999:iy);});al_size.innerHTML=vs.length?('<option value="">-- Taille --</option>'+vs.map(v=>`<option value="${v.id}">${esc(vSizeTxt(v))}</option>`).join("")):'<option value="">-- Aucune taille (génère les variantes du modèle) --</option>';}
+/* ============================================================================
+   LES DEUX PRIX OBLIGATOIRES, ET LE PRIX DE SÉCURITÉ
+   ----------------------------------------------------------------------------
+   Une pièce sans prix cible (pv) ne reste pas inoffensive : rzPiece() l'envoie
+   en caisse avec « pvTTC:0 », et la paire SONNE À ZÉRO si on la scanne au
+   comptoir. Elle sort du stock, elle passe en vente, elle ne fait aucun
+   chiffre. Shopify, lui, l'ignore pour le prix — donc elle se retrouve en
+   ligne au prix d'une autre taille, ou pas en ligne du tout.
+
+   D'où deux règles :
+
+   1. On refuse la saisie d'une ligne d'achat ou de dépôt sans prix d'achat ET
+      sans prix cible. Le refus est en AMONT parce que les pièces sont créées
+      dès la saisie de la ligne (apSyncAchat, statut « Approvisionnement ») :
+      une fois créées, il faut les retrouver une par une.
+
+   2. Quand on ne connaît pas encore le prix de vente — import FlowStock,
+      rattrapage de l'existant — on pose PV_SECURITE au lieu de zéro. 999 €
+      n'est pas un prix de vente : c'est un prix qui ARRÊTE la vente. Le
+      vendeur le voit à l'écran, s'interrompt, et va chercher le vrai prix.
+      Mieux vaut une paire invendable une minute qu'une paire donnée.
+   ========================================================================== */
+var PV_SECURITE=999;
+
+/* Les lignes fautives, nommées : un refus qui dit seulement « prix manquant »
+   oblige à rouvrir la commande ligne par ligne pour trouver laquelle. */
+function prixManquants(lignes){
+  return (lignes||[]).map(function(l,i){
+    if(!l)return null;
+    var pa=+l.prixHT||0, pv=+l.pv||0;
+    if(pa>0&&pv>0)return null;
+    var m=(typeof modeleById==="function"?modeleById(l.modeleId):null)||{};
+    var v=(typeof varById==="function"?varById(l.varianteId):null)||{};
+    return {nom:(m.fr||m.sku||("ligne "+(i+1))),
+      taille:(typeof vSizeTxt==="function"?vSizeTxt(v):(v.taille||"")),
+      manque:(pa<=0?(pv<=0?"prix d'achat et prix cible":"prix d'achat"):"prix cible")};
+  }).filter(Boolean);
+}
+/* Rend true quand il faut arrêter. Appelé avant toute création de pièces. */
+function bloquerSiPrixManquants(lignes,quoi){
+  var ko=prixManquants(lignes);
+  if(!ko.length)return false;
+  alert("Impossible de "+quoi+" : "+ko.length+" ligne(s) sans prix.\n\n"
+    +ko.slice(0,12).map(function(x){
+      return "• "+x.nom+(x.taille?(" "+x.taille):"")+" — "+x.manque+" manquant";}).join("\n")
+    +(ko.length>12?("\n… et "+(ko.length-12)+" autre(s)"):"")
+    +"\n\nUne paire sans prix cible part en caisse à 0 € et sonne à zéro au comptoir."
+    +"\nOuvre la commande, modifie ces lignes, puis recommence.");
+  return true;
+}
+
 /* ===== APPROVISIONNEMENT : pièces créées dès la commande d'achat =====
    Synchronise les pièces "Approvisionnement" d'une commande avec ses lignes.
    Appelé à chaque création/modif de commande NON livrée. Crée les pièces
@@ -6012,6 +6063,10 @@ function apSyncAchat(a){
    la même commande écrivent la même pièce au lieu d'en créer deux. */
 function makePiece(a,l,key){const id=key?stableId("piece",key,DB.articles,function(x){return x.fsKey===key;}):newId(DB.articles);const ref=newRef();DB.articles.unshift({id,ref,varianteId:l.varianteId,societeId:a.societeId,prix:l.prixHT,pv:l.pv||0,tva:l.tva,etat:l.etat,statut:"En Stock",date:a.date,fourId:a.fournId,ville:a.ville||"Vichy",emplacement:a.emplacement||"",tag:l.tag||"Aucun",fact:a.nFacture||a.ref,achatId:a.id,dispo:l.dispo?1:0,maj:today(),archived:0});}
 async function deliverAchatObj(a){if(!a.lignes.length){alert("Ajoute au moins un produit avant de livrer.");return false;}
+  /* Second verrou. Le contrôle de saisie protège les lignes créées depuis sa
+     mise en place ; celles d'avant, et celles modifiées après coup, passent
+     par ici. C'est le dernier point avant la création des pièces. */
+  if(bloquerSiPrixManquants(a.lignes,"livrer cette commande"))return false;
   if(!confirm(`Marquer ${a.ref} comme livrée ?\nCela va créer ${achPieces(a)} pièce(s) en stock.`))return false;
   /* Les pièces en « Approvisionnement » de cette commande existent DÉJÀ : elles
      ont été créées à la saisie des lignes. Il faut les faire passer en stock, pas
@@ -6043,6 +6098,9 @@ async function deliverAchatObj(a){if(!a.lignes.length){alert("Ajoute au moins un
   logAct("Réception","Commande d'achat",`${a.ref} · ${n} pièce(s) ajoutée(s) au stock`);await save();renderAll();await shopAutoSyncReceived(made);return true;}
 let _recvId=null;
 function openRecv(id){const a=DB.achats.find(x=>x.id==id);if(!a)return;if(!a.lignes||!a.lignes.length){alert("Ajoute au moins un produit avant de réceptionner.");return;}
+  // On refuse AVANT d'ouvrir la fenêtre : cocher des produits pour se voir
+  // refuser à la fin serait du travail perdu.
+  if(bloquerSiPrixManquants(a.lignes,"réceptionner cette commande"))return;
   _recvId=id;document.getElementById("recvTitle").textContent="Réception — "+a.ref;
   const rows=a.lignes.map(function(l,i){const m=modeleById(l.modeleId)||{},v=varById(l.varianteId)||{};const recu=+l.recu||0;const reste=(+l.qte||0)-recu;
     const lib='<b>'+esc(m.fr||"")+'</b> <span class="muted">'+szcellV(v)+'</span> <span class="muted" style="font-size:11px">· '+esc(m.sku||"")+'</span>'+(reste>1?' <span class="muted">(×'+reste+')</span>':'');
@@ -6055,6 +6113,9 @@ function openRecv(id){const a=DB.achats.find(x=>x.id==id);if(!a)return;if(!a.lig
   ovRecv.classList.add("show");
 }
 async function recvDo(all){const a=DB.achats.find(x=>x.id==_recvId);if(!a)return;
+  // Ceinture et bretelles : la fenêtre a pu rester ouverte pendant qu'on
+  // modifiait la commande ailleurs.
+  if(bloquerSiPrixManquants(a.lignes,"réceptionner cette commande"))return;
   const created=[];
   a.lignes.forEach(function(l,i){const recu=+l.recu||0;const reste=(+l.qte||0)-recu;if(reste<=0)return;
     let take;if(all){take=true;}else{const c=document.querySelector('.recvchk[data-i="'+i+'"]');take=c?c.checked:false;}
@@ -6153,7 +6214,12 @@ function aiBuildAchatFromInvoice(j){
     if(!v){miss.push((m.fr||sku)+" — taille « "+tval+" » introuvable");return;}
     const qte=Math.max(1,parseInt(L.qte)||1);const tva=(DB.taxes||[]).some(function(t){return t.nom===L.tva;})?L.tva:"TVASM";
     const etat=(attrLabels("État du produit")[0]||"Used");
-    for(let k=0;k<qte;k++)a.lignes.push({modeleId:m.id,varianteId:v.id,qte:1,prixHT:parseFloat(L.prix_ht)||0,pv:parseFloat(L.prix_vente_ttc)||0,tva,etat,tag:"Aucun",dispo:0});
+    /* Une facture fournisseur ne porte jamais le prix de VENTE : sans repli, la
+       commande naissait avec des prix cibles à zéro et se faisait refuser à la
+       réception. PV_SECURITE la rend réceptionnable tout en restant invendable
+       par accident — le vrai prix se saisit en modifiant les lignes. */
+    const _pvFact=parseFloat(L.prix_vente_ttc)||0;
+    for(let k=0;k<qte;k++)a.lignes.push({modeleId:m.id,varianteId:v.id,qte:1,prixHT:parseFloat(L.prix_ht)||0,pv:(_pvFact>0?_pvFact:PV_SECURITE),tva,etat,tag:"Aucun",dispo:0});
   });
   if(!a.lignes.length)return {ok:false,reason:"no_match",miss};
   return {ok:true,a,fourId,miss};
@@ -6437,6 +6503,17 @@ function addAchatLine(){const mid=+selMod||0,vid=+al_size.value,qte=parseInt(al_
   if(!mid)return alert("Choisis un produit (tape un nom ou un SKU).");
   if(!vid)return alert("Choisis une taille.");
   if(al_prix.value===""||isNaN(parseFloat(al_prix.value)))return alert("Le prix d'achat HT est obligatoire.");
+  /* Les deux prix sont exigés ICI parce que la ligne crée immédiatement des
+     pièces en « Approvisionnement » : accepter un zéro, c'est le retrouver en
+     caisse. Le zéro explicite est refusé comme l'absence de saisie — une paire
+     achetée 0 € ou vendue 0 € se saisit par un avoir ou un geste commercial,
+     pas par une ligne de commande. */
+  if(parseFloat(al_prix.value)<=0)return alert("Le prix d'achat HT doit être supérieur à 0.");
+  if(al_pv.value===""||isNaN(parseFloat(al_pv.value))||parseFloat(al_pv.value)<=0)
+    return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire part en caisse à 0 €"
+      +" et sonne à zéro si on la scanne.\n\nSi tu ne connais pas encore le prix de vente,"
+      +" mets "+PV_SECURITE+" € : c'est le prix de sécurité, il bloque la vente au comptoir"
+      +" le temps que tu fixes le vrai prix.");
   if(!al_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
   curAchat.lignes=curAchat.lignes||[];
@@ -6454,6 +6531,7 @@ function depRef(d){const dt=new Date(d.date||today());return "DEP-"+dt.getFullYe
 function sizeOpts(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.grille]||attrLabels("Taille");const vs=DB.variantes.filter(v=>v.modeleId==mid).slice().sort((x,y)=>{const ix=order.indexOf(String(x.taille)),iy=order.indexOf(String(y.taille));return (ix<0?9999:ix)-(iy<0?9999:iy);});return vs.length?('<option value="">-- Taille --</option>'+vs.map(v=>`<option value="${v.id}">${esc(vSizeTxt(v))}</option>`).join("")):'<option value="">-- Aucune taille (génère les variantes du modèle) --</option>';}
 function makePieceDepot(d,l,key){const id=key?stableId("piece",key,DB.articles,function(x){return x.fsKey===key;}):newId(DB.articles);const ref=newRef();DB.articles.unshift({id,ref,varianteId:l.varianteId,societeId:d.societeId,prix:l.prixHT,pv:l.pv||0,tva:l.tva,etat:l.etat,statut:"En Stock",date:d.date,fourId:d.fournId,ville:d.ville||"Vichy",emplacement:d.emplacement||"",tag:l.tag||"Aucun",fact:d.ref,dispo:l.dispo?1:0,depot:1,refDep:l.refDep||"",maj:today(),archived:0});}
 async function deliverDepotObj(d){if(!d.lignes.length){alert("Ajoute au moins un produit avant de réceptionner.");return false;}
+  if(bloquerSiPrixManquants(d.lignes,"réceptionner ce dépôt"))return false;
   if(!confirm(`Marquer ${d.ref} comme reçu en dépôt ?\nCela va créer ${depPieces(d)} pièce(s) en stock (marquées « dépôt »).`))return false;
   let n=0;const made=[];d.lignes.forEach((l,li)=>{for(let k=0;k<(+l.qte||0);k++){
     const _k="D"+d.id+"|"+li+"|"+k;makePieceDepot(d,l,_k);DB.articles[0].fsKey=_k;made.push(DB.articles[0]);n++;}});d.statut="En dépôt";d.delivered=1;
@@ -6598,6 +6676,15 @@ function addDepotLine(){const mid=+selDepMod||0,vid=+dl_size.value,qte=parseInt(
   if(!mid)return alert("Choisis un produit (tape un nom ou un SKU).");
   if(!vid)return alert("Choisis une taille.");
   if(dl_prix.value===""||isNaN(parseFloat(dl_prix.value)))return alert("Le prix dépôt est obligatoire.");
+  /* Même raison que pour l'achat. Une paire en dépôt se vend au comptoir
+     exactement comme les autres : le prix cible n'est pas facultatif sous
+     prétexte que la paire ne nous appartient pas. */
+  if(parseFloat(dl_prix.value)<=0)return alert("Le prix dépôt doit être supérieur à 0.");
+  if(dl_pv.value===""||isNaN(parseFloat(dl_pv.value))||parseFloat(dl_pv.value)<=0)
+    return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire part en caisse à 0 €"
+      +" et sonne à zéro si on la scanne.\n\nSi tu ne connais pas encore le prix de vente,"
+      +" mets "+PV_SECURITE+" € : c'est le prix de sécurité, il bloque la vente au comptoir"
+      +" le temps que tu fixes le vrai prix.");
   if(!dl_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
   curDepot.lignes.push({modeleId:mid,varianteId:vid,qte,prixHT:parseFloat(dl_prix.value),pv:parseFloat(dl_pv.value)||0,tva:dl_tva.value,etat:dl_etat.value,refDep:dl_ref.value,tag:dl_tag.value||"Aucun",dispo:+dl_dispo.value});
@@ -9559,7 +9646,12 @@ function flowstockImport(txt,silent){
       let v=null;if(m)v=varsOf(m.id).find(x=>{const eu=String(shopSizeEU(x)||"").replace(/[^0-9]/g,"");const t=String(x.taille||"").replace(/[^0-9]/g,"");const usD=String(fsEuToUs(it.size,m.grille)||"").replace(/[^0-9]/g,"");return sizeD&&(eu===sizeD||t===sizeD||(usD&&t===usD));})||null;
       if(m&&!v){const cs=fsCleanSize(it.size);const vid=fsVarianteId(m.id,cs);v={id:vid,modeleId:m.id,taille:cs,eu:cs,barcode:""};DB.variantes.push(v);}
       const qte=Math.max(1,+it.quantity||1);
-      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:(+it.unit_price||((p.price||{}).amount)||0),pv:0,tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};   /* FlowStock : pas mis en vente automatiquement (pas de prix cible défini) */
+      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:(+it.unit_price||((p.price||{}).amount)||0),pv:PV_SECURITE,tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};
+      /* FlowStock ne nous donne aucun prix de vente : on ne le connaît qu'une
+         fois la paire en main. Elle partait donc en caisse à 0 € — scannée au
+         comptoir, elle sonnait à zéro. PV_SECURITE la rend visible et
+         invendable par accident : 999 € arrête le vendeur au lieu de passer.
+         dispo reste à 0, donc rien ne part sur Shopify à ce prix. */
       a.lignes.push(line);
       if(!cancelled&&v){for(let k=0;k<qte;k++){makePiece(a,line);const piece=DB.articles[0];
         /* Clé naturelle de la pièce : achat FlowStock + ligne + n° d'exemplaire.
