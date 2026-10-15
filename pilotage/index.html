@@ -245,7 +245,7 @@ body{background:var(--bg,#f8fafc);margin:0}
    au-delà de 1240 px, mais un mur d'étagères n'est pas du texte : plus il est
    large, plus les boîtes sont grandes et moins la typo a besoin de se
    resserrer. Les paragraphes gardent leur propre limite (adHs). */
-.page.mur{max-width:none}
+.page.mur{max-width:none;padding-left:56px;padding-right:56px}
 #loginOverlay{display:none}
 
 /* ---- Réassort en lignes ---- */
@@ -434,7 +434,11 @@ body{background:var(--bg,#f8fafc);margin:0}
 /* Le remplissage et le coût ne sont pas des alertes : ils informent. On les
    sort de la palette vert/orange/rouge pour qu'on ne les confonde pas avec le
    verdict porté par le couvercle de la boîte. */
-.murTx.neutre{color:#475569;background:#eef2f7}
+/* Le bilan de la saison : pas une alerte, un constat. Pas de fond coloré,
+   seuls les chiffres portent la couleur du manque. */
+.murCt{margin-top:4px;font-size:calc(9.5px * var(--mz,1));color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.murCt>b{font-weight:800;color:#b45309}
 /* L'emplacement libre : un creux dans l'étagère, pas une carte. */
 .murVideC{min-height:calc(104px * var(--mz,1));border:1px dashed #c9c1b4;border-radius:5px;
   background:rgba(255,255,255,.35);color:#a8a093;font-size:calc(19px * var(--mz,1));
@@ -2398,26 +2402,31 @@ function murCase(r,c){
       +' vente'+((x.ventesMois||0)>1?'s':'')+' par mois'
       +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
     +(reel?('<div class="murCf">'+reel+'</div>'):'')
-    /* LA COURBE DE TAILLES. Deux chiffres qui ne répondent pas à la même
-       question : le premier est l'état de ce matin — ce qu'on commande — le
-       second la part du temps où les tailles ont été là sur la saison — ce que
-       le trou a déjà coûté. Rien ne s'affiche quand tout est tenu : « 100 % »
-       répété sur les trois quarts du mur n'apprendrait rien. */
-    +((x.dispoT!=null&&(x.dispoT<1||(x.couvertureT!=null&&x.couvertureT<0.98)))
-      ? ('<div class="murTx'+(x.dispoT<0.7?' bas':'')+'">tailles '
-         +Math.round(x.dispoT*100)+' %'
-         +((x.couvertureT!=null&&x.couvertureT<0.98)
-            ? (' · '+Math.round(x.couvertureT*100)+' % saison') : '')
-         +'</div>')
-      : '')
-    /* Le remplissage de la courbe visée, en paires, et ce que la rupture a
-       coûté. Deux faits que seul le réassort peut corriger. */
-    +((x.courbe!=null||x.margePerdue>0)
-      ? ('<div class="murTx neutre">'
-         +(x.courbe!=null?('courbe '+Math.round(x.courbe*100)+' %'):'')
-         +((x.courbe!=null&&x.margePerdue>0)?' · ':'')
-         +(x.margePerdue>0?('rupture '+amEur(x.margePerdue)):'')+'</div>')
-      : '')
+    /* LA COURBE DE TAILLES, dite dans le sens du MANQUE.
+       Les trois chiffres de cette zone parlent de ce qui fait défaut — tailles
+       absentes, temps passé à court, euros perdus. Exprimer celui du milieu en
+       disponibilité obligeait à l'inverser mentalement à chaque lecture, et
+       rien à l'écran ne disait dans quel sens il allait : « 50 % » pouvait se
+       comprendre à moitié servi comme à moitié vide.
+       La première ligne est l'état de CE MATIN, celle sur laquelle on
+       commande ; la seconde ce que la saison a déjà coûté. Rien ne s'affiche
+       quand il n'y a rien à signaler. */
+    +(function(){
+      var manq=(x.tailles!=null&&x.taillesPresentes!=null)
+        ? (x.tailles-x.taillesPresentes) : 0;
+      var aCourt=(x.couvertureT!=null)?(1-x.couvertureT):0;
+      var h='';
+      if(manq>0){
+        h+='<div class="murTx'+((x.dispoT!=null&&x.dispoT<0.7)?' bas':'')+'">'
+          +'il manque '+manq+' taille'+(manq>1?'s':'')+' sur '+x.tailles
+          +' ('+Math.round(manq/x.tailles*100)+' %)</div>';
+      }
+      if(aCourt>=0.02||x.margePerdue>0){
+        h+='<div class="murCt">à court <b>'+Math.round(aCourt*100)+' %</b> du temps'
+          +(x.margePerdue>0?(' · <b>'+amEur(x.margePerdue)+'</b> perdus'):'')+'</div>';
+      }
+      return h;
+    })()
   +'</div>';
 }
 
@@ -2465,7 +2474,11 @@ function murReglage(){
         /* La courbe de tailles : le seul endroit où l'on dit POURQUOI un
            rythme est bas sans supposer que le produit est mauvais. */
         +(x.dispoT!=null
-          ? ligne("Tailles aujourd'hui", Math.round(x.dispoT*100)+" % disponibles",
+          ? ligne("Tailles aujourd'hui",
+                  ((x.tailles-x.taillesPresentes)>0
+                    ? ("il manque "+(x.tailles-x.taillesPresentes)+" taille"
+                       +((x.tailles-x.taillesPresentes)>1?"s":"")+" sur "+x.tailles)
+                    : "la courbe est complète"),
                   x.taillesPresentes+" sur "+acPl(x.tailles,"taille")
                   +(x.ciblees?" visée":" tenue")+(x.tailles>1?"s":"")
                   +((x.taillesVides&&x.taillesVides.length)
@@ -2473,7 +2486,7 @@ function murReglage(){
                     : " · rien ne manque"))
           : "")
         +(x.couvertureT!=null
-          ? ligne("Sur la saison", Math.round(x.couvertureT*100)+" % du temps",
+          ? ligne("Sur la saison", "à court "+Math.round((1-x.couvertureT)*100)+" % du temps",
                   x.jtManque+" jours-taille manquants"
                   +(x.trous&&x.trous.length
                     ? (" · surtout "+x.trous.slice(0,3).map(function(z){
