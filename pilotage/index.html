@@ -427,8 +427,11 @@ body{background:var(--bg,#f8fafc);margin:0}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .murAl.fort{color:#8f1d17}
 .murOk{font-size:calc(10.5px * var(--mz,1));color:var(--muted)}
+/* Ce chiffre-là ne doit jamais être coupé : c'est le seul qui chiffre ce que
+   la rupture coûte, et une ellipse en ferait disparaître les euros. Il passe
+   donc à la ligne plutôt que de déborder. */
 .murCt{margin-top:calc(3px * var(--mz,1));font-size:calc(9.5px * var(--mz,1));
-  color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  color:var(--muted);line-height:1.45}
 .murCt>b{font-weight:800;color:#b45309}
 /* L'évolution ferme la case. Le mot d'abord, à droite ; puis la bande des six
    mois, d'un bord à l'autre et posée sur l'arête basse — c'est ce qui permet
@@ -2691,8 +2694,7 @@ function murReglage(){
                 : 'La courbe est complète ce matin. ')
        +'Sur la saison, tu as été à court '+Math.round((1-(x.couvertureT||0))*100)+' % du temps'
        +(x.margePerdue>0
-          ? (', ce qui représente au plus '+amEur(x.margePerdue)+' de marge non faite — '
-             +'un client qui ne trouve pas sa pointure repart souvent avec une autre paire.')
+          ? (', ce qui représente au plus '+amEur(x.margePerdue)+' de marge non faite.')
           : '.')
        +(x.courbe!=null?(' Tu tiens '+stock+' paires pour '+acPl(x.cibleTotale,"paire")
           +' visée'+(x.cibleTotale>1?"s":"")+', soit '+Math.round(x.courbe*100)+' % de la cible.'):'')
@@ -2718,16 +2720,6 @@ function murReglage(){
       ? (', et plus une seule paire pendant '+(x.jours-x.joursDispo)+' jours.')
       : '.')+'</p>';
 
-  /* --- 5. Le GMROI, pour le jour où c'est la trésorerie qui bloque. ---- */
-  var argent=(x.rendement!=null)
-    ? ('<p class="pnFait">GMROI <b>'+murNum(x.rendement)+'</b> par saison, '
-       +murNum(murAnnuel(x.rendement))+' en équivalent annuel, sur '
-       +amEur(x.capital)+' immobilisés en moyenne.</p>'
-       +'<p class="pnNote">À lire quand tu dois choisir entre deux achats sans pouvoir '
-       +'payer les deux. Tant que c\'est la place en rayon qui manque et non l\'argent, '
-       +'c\'est le montant par mois qui décide.</p>')
-    : '';
-
   return '<div class="adCard murRg">'
     +'<div class="adH"><div class="adHt">'+esc(m.fr||m.sku||"?")+'</div>'
       +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")+'</div>'
@@ -2746,7 +2738,6 @@ function murReglage(){
       +bloc("Les six derniers mois",histo)
       +bloc("La courbe de tailles",tailles)
       +bloc("Ce qui s'est passé",releve)
-      +(argent?bloc("Si c'est la trésorerie qui bloque",argent):"")
     +'</div>'
   +'</div>';
 }
@@ -2786,16 +2777,6 @@ function renderMur(){
     +murPose()+murReglage()
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
-        +'<div class="adHs">Chaque case porte les euros de marge que la référence sort '
-        +'<b>par mois au catalogue</b> : ventes par mois × marge par vente. Une rupture fait '
-        +'donc baisser le chiffre — c\'est elle qui désigne les réassorts à faire. La barre compare '
-        +'au meilleur du mur. '
-        +'Clique une case vide pour poser une référence, une case pleine pour la régler.<br>'
-        +'<span class="adHp">Le mur regarde le groupe entier : toutes les ventes comptent, '
-        +'boutique WATHE, boutique SBT et site, et le coût est toujours le prix payé au '
-        +'fournisseur — jamais le coût cédé entre les deux sociétés. Le sélecteur de société '
-        +'en haut de page ne s\'y applique pas. FlowStock et Sourcing Hub restent exclus : '
-        +'ils n\'immobilisent pas ton argent.</span></div>'
         +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
           +'onchange="murFmtSet(\'rangees\',this.value)"></label>'
         +'<label class="murFmt">Places<input type="number" min="1" max="20" value="'+f.places+'" '
