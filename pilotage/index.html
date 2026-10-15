@@ -411,9 +411,15 @@ body{background:var(--bg,#f8fafc);margin:0}
   margin-left:3px;vertical-align:2px}
 .murCf{font-size:calc(10px * var(--mz,1));color:var(--muted);margin-top:4px;
   font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* Le relevé réel passe avant l'hypothèse : c'est lui qui est vrai. */
-.murCf.fort{color:var(--ink);font-weight:600;margin-top:5px}
+.murCf.fort{color:var(--ink);font-weight:600}
 .murCf.fort+.murCf{margin-top:1px}
+/* La marge par paire : le second chiffre de la case, et le premier sur lequel
+   on peut agir. Elle doit se lire sans être confondue avec le total du haut. */
+.murCm{margin-top:calc(7px * var(--mz,1));font-size:calc(13.5px * var(--mz,1));
+  font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1}
+.murCm>i{display:block;font-style:normal;font-size:calc(9.5px * var(--mz,1));
+  font-weight:600;color:var(--muted);margin-top:1px;letter-spacing:.01em}
 /* L'emplacement libre : un creux dans l'étagère, pas une carte. */
 .murVideC{min-height:calc(104px * var(--mz,1));border:1px dashed #c9c1b4;border-radius:5px;
   background:rgba(255,255,255,.35);color:#a8a093;font-size:calc(19px * var(--mz,1));
@@ -1866,7 +1872,15 @@ function murCalc(m){
   var mcAff=(margeVente!=null&&cout>0)?r2(margeVente/cout):mc;
 
   var rend=(prof>0&&vSai!=null&&mcAff!=null)?r2((vSai/prof)*mcAff):null;
-  var capital=r2(prof*cout);
+  /* LE CAPITAL MOYEN, mesuré pièce par pièce : la somme des coûts multipliés
+     par leurs jours de présence, ramenée à la durée de la saison. C'est de
+     l'argent réellement immobilisé, jour après jour.
+     On ne se contente pas de profondeur × coût : ce produit mélange une
+     moyenne de paires calculée sur la période de présence du modèle avec un
+     prix moyen pris sur le stock d'aujourd'hui, et tombe à côté dès qu'un lot
+     est arrivé en cours de saison. Le repli n'existe que pour une référence
+     jamais entrée en stock. */
+  var capital=(o&&o.capitalMoyen>0)?o.capitalMoyen:r2(prof*cout);
   var margeSai=(vSai!=null&&margeVente!=null)?r2(vSai*margeVente):null;
 
   /* L'INDICE DU MUR : les euros de marge rapportés au temps de présence.
@@ -2135,8 +2149,8 @@ function murTuiles(L){
     +'<div class="adT"><div class="adTl">Le mur rapporte</div>'
       +'<div class="adTv">'+amEur(mj)+'<span class="adTu">/mois</span></div>'
       +'<div class="adTs">'+(mj>0
-        ? (amEur(mg)+" sur une saison de "+SAISON+" jours"
-           +(ecartes?(" · sur "+acPl(J.length,"modèle")+" jugeable"+(J.length>1?"s":"")):""))
+        ? ("rapporté au temps que les références passent en rayon"
+           +(ecartes?(" · "+acPl(ecartes,"modèle")+" mis de côté"):""))
         : "aucun modèle jugeable pour l'instant")+'</div></div>'
     +'<div class="adT"><div class="adTl">Par case occupée</div>'
       +'<div class="adTv">'+(J.length?amEur(mj/J.length):"—")+'<span class="adTu">/mois</span></div>'
@@ -2144,10 +2158,16 @@ function murTuiles(L){
         ? ("médiane "+amEur(ref)+"/mois"
            +(((+amCfg().mjCible)||0)>0?" — ton objectif":" — la moitié du mur fait mieux"))
         : "pas encore de repère")+'</div></div>'
-    +'<div class="adT"><div class="adTl">Capital engagé</div>'
+    +'<div class="adT"><div class="adTl">Marge de la saison</div>'
+      +'<div class="adTv">'+amEur(mg)+'</div>'
+      +'<div class="adTs">'+(mg>0
+        ? ("les euros encaissés en "+SAISON+" jours, pas un rythme"
+           +(ecartes?(" · "+acPl(J.length,"modèle")+" jugeable"+(J.length>1?"s":"")):""))
+        : "rien de mesurable pour l'instant")+'</div></div>'
+    +'<div class="adT"><div class="adTl">Capital moyen immobilisé</div>'
       +'<div class="adTv">'+amEur(cap)+'</div>'
       +'<div class="adTs">'+acPl(L.length,"modèle")+' · '
-      +amNum(L.reduce(function(n,x){return n+x.prof;},0),1)+' paires'
+      +amNum(L.reduce(function(n,x){return n+x.prof;},0),1)+' paires tenues'
       +(rend!=null?(' · GMROI '+murNum(rend)):'')+'</div></div>'
     +'<div class="adT'+(faibles.length?" bad":"")+'"><div class="adTl">Sous la moitié du repère</div>'
       +'<div class="adTv">'+faibles.length+'</div>'
@@ -2195,12 +2215,17 @@ function murCase(r,c){
     +'<div class="murCv">'+((x.margeMois==null)?"—":amEur(x.margeMois))
       +'<i>/mois</i>'+marque+'</div>'
     +'<div class="murB"><span style="width:'+murRemplissageMj(x.margeMois)+'%"></span></div>'
-    +(reel?('<div class="murCf fort">'+reel+'</div>'):'')
-    /* Le pied porte les deux facteurs du chiffre de tête : la vitesse et la
-       marge unitaire. C'est là qu'on voit lequel des deux fait défaut. */
-    +'<div class="murCf">'+(x.ventesMois==null?"—":amNum(x.ventesMois,1))+'/mois × '
-      +(x.margeVente==null?"—":amEur(x.margeVente))
+    /* Les deux facteurs du chiffre de tête, et d'abord la MARGE PAR PAIRE :
+       c'est elle qu'on va négocier ou reprixer, et elle se compare d'une
+       référence à l'autre bien mieux qu'un rythme. La vitesse vient ensuite,
+       puis le relevé. Un indice tombe toujours par l'un ou par l'autre, et on
+       ne corrige pas les deux de la même façon. */
+    +'<div class="murCm">'+(x.margeVente==null?"—":amNum(x.margeVente,2)+' €')
+      +'<i>de marge la paire</i></div>'
+    +'<div class="murCf fort">'+(x.ventesMois==null?"—":amNum(x.ventesMois,1))
+      +' vente'+((x.ventesMois||0)>1?'s':'')+' par mois'
       +(x.jeune&&x.jours!=null?(' · '+x.jours+' j'):'')+'</div>'
+    +(reel?('<div class="murCf">'+reel+'</div>'):'')
   +'</div>';
 }
 
