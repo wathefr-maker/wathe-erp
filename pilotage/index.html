@@ -1429,6 +1429,15 @@ function amModeles(){
   var debutCohorte=amJour(amMoins(c.fenetre+c.jours)); // et au plus tôt là
   _amExclus.flowstock=0;_amExclus.depot=0;_amExclus.sansIssue=0;_amExclus.pieces=0;
 
+  /* Les variantes rangées par modèle, une fois pour toutes : la rupture par
+     taille doit nommer les pointures jamais reçues, qui n'ont par définition
+     aucune pièce pour les désigner. */
+  var varsDuModele={};
+  (DB.variantes||[]).forEach(function(v){
+    if(!v||v.modeleId==null)return;
+    (varsDuModele[String(v.modeleId)]=varsDuModele[String(v.modeleId)]||[]).push(v);
+  });
+
   var parM={};
   var obtenir=function(mid,m){
     return parM[mid]||(parM[mid]={id:mid,m:m,
@@ -1584,13 +1593,34 @@ function amModeles(){
        modèle : se comparer à une grille complète de vingt pointures qu'il
        n'a jamais eu l'intention d'avoir n'aurait aucun sens.
        ------------------------------------------------------------------ */
-    var parTaille={};
-    o.vies.forEach(function(x){(parTaille[x.t]=parTaille[x.t]||[]).push(x);});
     var cibles=null;
     try{
       var cc=(o.m&&o.m.cibles)?reCiblesCanon(o.m):null;
       if(cc&&Object.keys(cc).length)cibles=cc;
     }catch(e){}
+    /* LES DEUX CÔTÉS DOIVENT PARLER LA MÊME LANGUE. Les cibles de réassort
+       sont rangées en pointure US par reCiblesCanon, alors que les variantes
+       portent la taille telle qu'elle a été saisie, en EU le plus souvent.
+       Comparer « 5W » à « 36 2/3 » ne donne jamais de correspondance : TOUTES
+       les cibles paraissaient alors jamais reçues, et la case affichait
+       « tailles 0 % » sur un modèle parfaitement approvisionné.
+       On canonise donc aussi les tailles des pièces, avec la même fonction. */
+    var canon=cibles
+      ? function(t){try{return reCanonSize(o.m,t)||t;}catch(e){return t;}}
+      : function(t){return t;};
+    var parTaille={};
+    o.vies.forEach(function(x){
+      var k=canon(x.t);
+      (parTaille[k]=parTaille[k]||[]).push(x);
+    });
+    /* Et pour l'affichage, on remonte au libellé que l'utilisateur connaît :
+       il range son stock en EU, pas en pointure US. Une cible jamais reçue n'a
+       pas de variante pour la nommer : elle garde sa clé. */
+    var libT={};
+    (varsDuModele[String(o.id)]||[]).forEach(function(v){
+      var k=canon(String(v.taille||v.id));
+      if(libT[k]==null)libT[k]=String(v.taille||k);
+    });
     var tailles=cibles?Object.keys(cibles):Object.keys(parTaille);
     var jtManque=0, trous=[];
     tailles.forEach(function(t){
@@ -1605,7 +1635,7 @@ function amModeles(){
          précisément le cas d'une cible de réassort qu'on n'a jamais honorée. */
       var manque=vs.length?amJoursSansStock(ev,deb,jD,jFin):(jFin-jD+1);
       jtManque+=manque;
-      if(manque>0)trous.push({t:t,j:manque});
+      if(manque>0)trous.push({t:(libT[t]||t),j:manque});
     });
     o.tailles=tailles.length;
     o.jtTotal=tailles.length*o.jourSuivis;
