@@ -1386,7 +1386,7 @@ function amModeles(){
       segment:acFamille(m)+" · ",
       stock:0, valeur:0, ageMax:null,
       cohorte:0, cohorteOk:0, delais:[],
-      vendues:0, marge:0, ratios:[], ratiosTheo:[],
+      vendues:0, marge:0, ratios:[], ratiosTheo:[], caVentes:[],
       vies:[], aUnePiece:false});
   };
 
@@ -1447,6 +1447,13 @@ function amModeles(){
         o.marge+=vente.marge;
         if(vente.cout>0)o.ratios.push(vente.marge/vente.cout);
       }
+      /* Le CA HT encaissé, pièce par pièce. C'est la seule grandeur qui ne
+         bouge pas quand on simule un autre prix d'achat, donc la seule à
+         laquelle accrocher une marge simulée. Reconstituer ce prix en
+         multipliant le coût médian par le ratio de marge médian donnait un
+         chiffre faux dès que les pièces n'avaient pas toutes coûté pareil :
+         deux médianes prises sur des pièces différentes ne se recollent pas. */
+      if(vente.ht!=null&&vente.ht>0)o.caVentes.push(vente.ht);
     }
   });
 
@@ -1461,6 +1468,7 @@ function amModeles(){
     o.delaiMedian=acMediane(o.delais);
     /* La marge rapportée au COÛT, et non au prix de vente : c'est elle qui dit
        combien d'euros rapporte un euro engagé, donc elle qui fixe le seuil. */
+    o.caVente=acMediane2(o.caVentes);   // prix de vente HT médian, mesuré
     o.margeCout=acMediane2(o.ratios);
     if(o.margeCout==null)o.margeCout=acMediane2(o.ratiosTheo);
     /* CAPITAL MOYEN, et non le stock d'aujourd'hui.
@@ -1793,7 +1801,9 @@ function murCalc(m){
      à partir des mesures, et la marge s'en déduit : acheter moins cher la fait
      monter. Avant, le coût ne touchait à rien, et baisser le prix d'achat
      faisait baisser la marge affichée — l'inverse de la réalité. */
-  var caVente=(coutMes>0&&mc!=null)?(coutMes*(1+mc)):null;
+  var caVente=(o&&o.caVente>0)?o.caVente              // mesuré : toujours préféré
+              :((coutMes>0&&mc!=null)?(coutMes*(1+mc))  // déduit, faute de vente
+              :null);
   var margeVente=(caVente!=null)?r2(caVente-cout)
                  :((mc!=null)?r2(mc*cout):null);   // secours : aucun coût mesuré
   /* La marge par euro de coût se recalcule sur le coût retenu, sinon elle
