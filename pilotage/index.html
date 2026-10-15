@@ -427,6 +427,14 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murC.warn .murB>span,.murRes.warn .murB>span{background:#d97706}
 .murC.bad .murB>span,.murRes.bad .murB>span{background:#dc2626}
 
+/* Le relevé du panneau : quatre faits alignés, rien de cliquable. Libellé à
+   gauche, valeur à droite, et la précision sous la valeur — jamais au fil du
+   texte, sinon elle se coupe n'importe où quand le panneau rétrécit. */
+.murLns{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:11px 26px}
+.murLn{display:grid;grid-template-columns:132px 1fr;gap:2px 10px;align-items:baseline}
+.murLn>span{font-size:12px;color:var(--muted)}
+.murLn>b{font-size:14px;font-variant-numeric:tabular-nums}
+.murLn>i{grid-column:2;font-style:normal;font-size:11px;color:#9aa1ad;line-height:1.35}
 .murPos{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 18px;
   border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
 .murPos>i{font-style:normal;font-size:11px;color:#9aa1ad}
@@ -453,12 +461,7 @@ body{background:var(--bg,#f8fafc);margin:0}
 
 /* Panneau de réglage d'un emplacement. */
 .murRg{border-color:#bfdbfe}
-.murF{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;padding:15px 18px 17px;
-  align-items:start}
-.murF label{display:flex;flex-direction:column;font-size:12px;font-weight:700;gap:3px}
-.murF label>span{font-size:11px;font-weight:500;color:var(--muted)}
-.murF input{padding:8px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px;
-  font-family:inherit;text-align:right;font-variant-numeric:tabular-nums}
+.murF{display:grid;gap:14px;padding:15px 18px 17px;align-items:start}
 .murSrc{font-size:10.5px;font-style:normal;font-weight:500;color:var(--muted);margin-top:3px}
 .murRes{grid-column:1/-1;border:1px solid var(--line);border-left-width:4px;border-radius:11px;padding:12px 14px;
   background:#fcfcfd}
@@ -1798,7 +1801,10 @@ function murCout(m){
   if(!pieces.length)return 0;
   var enStock=pieces.filter(function(a){return inStock(a);});
   var src=enStock.length?enStock:pieces;
-  return acMediane2(src.map(function(a){return +a.prix||0;}))||0;
+  /* MOYENNE : toutes les paires ont un prix d'achat renseigné, il n'y a donc
+     pas de valeur aberrante à écarter, et un lot acheté plus cher pour
+     compléter une courbe de tailles coûte réellement ce qu'il coûte. */
+  return acMoyenne(src.map(function(a){return +a.prix||0;}))||0;
 }
 
 /* Marge par euro engagé, mesurée sur les ventes si possible, déduite des prix
@@ -1835,19 +1841,21 @@ function murCalc(m){
   var mesProf=(o&&o.profMoyenne>0)?o.profMoyenne:((o&&o.stock)?o.stock:null);
   var mc=murMargeCout(m,o);
 
-  var prof=(m.mur.prof!=null)?(+m.mur.prof||0):(mesProf||1);
-  /* Reprise des murs composés avant le passage à la saison : la valeur saisie
-     y était annuelle, on la ramène à une saison plutôt que de la jeter. */
-  if(m.mur.vAn!=null&&m.mur.vSai==null){m.mur.vSai=r2((+m.mur.vAn||0)/2);delete m.mur.vAn;}
-  var vSai=(m.mur.vSai!=null)?(+m.mur.vSai||0):(mesVSai!=null?mesVSai:null);
+  /* TOUT EST MESURÉ, rien n'est saisi. Les trois valeurs qu'on pouvait forcer
+     sur la case — profondeur, rythme, coût — ont été retirées : le mur montre
+     ce que les produits font, il ne sert pas à écrire ce qu'on aimerait qu'ils
+     fassent. Une hypothèse tapée un jour reste ensuite en place sans le dire,
+     et on finit par juger une référence d'octobre sur un prix de mai.
+     Les anciennes valeurs encore enregistrées (prof, vSai, vAn, cout) sont
+     simplement ignorées ; elles disparaissent au prochain déplacement. */
+  var prof=mesProf||1;
+  var vSai=mesVSai;
   var coutMes=murCout(m);
-  var cout=(m.mur.cout!=null)?(+m.mur.cout||0):coutMes;
+  var cout=coutMes;
 
-  /* Ce qui est stable quand on simule un autre prix d'achat, c'est le PRIX DE
-     VENTE, pas la marge. On reconstitue donc le chiffre d'affaires HT par vente
-     à partir des mesures, et la marge s'en déduit : acheter moins cher la fait
-     monter. Avant, le coût ne touchait à rien, et baisser le prix d'achat
-     faisait baisser la marge affichée — l'inverse de la réalité. */
+  /* Le prix de vente est la grandeur mesurée ; la marge s'en déduit en
+     retirant le coût. Reconstituer le prix à partir d'un ratio de marge ne
+     sert plus qu'aux références qui n'ont encore rien vendu. */
   var caVente=(o&&o.caVente>0)?o.caVente              // mesuré : toujours préféré
               :((coutMes>0&&mc!=null)?(coutMes*(1+mc))  // déduit, faute de vente
               :null);
@@ -1877,16 +1885,16 @@ function murCalc(m){
      un vrai succès. Sous ce seuil d'observation, on affiche la projection mais
      on refuse de la colorer — on ne condamne ni ne sacre une référence qui n'a
      pas encore eu le temps de parler. */
-  var jeune=(m.mur.vSai==null)&&(jours==null||jours<MUR_JOURS_MINI);
+  var jeune=(jours==null||jours<MUR_JOURS_MINI);
 
-  return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mcAff,
+  return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mcAff,caVente:caVente,
     margeVente:margeVente, ventesMois:ventesMois, margeMois:margeMois,
     rendement:rend,capital:capital,margeSai:margeSai,
     jours:jours, jeune:jeune, rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
     passees:(o?o.passees:null),
-    /* « estimé » dès qu'un chiffre vient de l'utilisateur ou qu'aucune vente
-       n'a été mesurée : on ne présente pas une hypothèse comme un relevé. */
-    estime:(m.mur.vSai!=null||mesVSai==null||m.mur.prof!=null),
+    /* « estimé » quand aucune vente n'a été mesurée : le chiffre vient alors
+       des prix affichés, pas de ce qui s'est passé en caisse. */
+    estime:(mesVSai==null),
     mesVSai:mesVSai,mesProf:mesProf};
 }
 
@@ -2062,6 +2070,7 @@ function murDeposer(ev,r,c){
     autre.mur.r=+m.mur.r; autre.mur.c=+m.mur.c;
   }
   m.mur.r=+r; m.mur.c=+c;
+  murOublierSaisies(m); if(autre)murOublierSaisies(autre);
   try{logAct("Mur","Déplacement",(m.fr||m.sku||"")+" → rangée "+(+r+1)+", place "+(+c+1));}catch(e){}
   save();renderMur();
 }
@@ -2077,20 +2086,21 @@ function murBouger(id,dr,dc){
   var autre=murAt(r,c);
   if(autre&&autre.id!==m.id){autre.mur.r=+m.mur.r;autre.mur.c=+m.mur.c;}
   m.mur.r=r;m.mur.c=c;
+  murOublierSaisies(m); if(autre)murOublierSaisies(autre);
   try{logAct("Mur","Déplacement",(m.fr||m.sku||"")+" → rangée "+(r+1)+", place "+(c+1));}catch(e){}
   save();renderMur();
 }
-function murSet(id,cle,val){
-  var m=modeleById(id);if(!m||!m.mur)return;
-  var v=parseFloat(String(val).replace(",","."));
-  if(!isFinite(v)||v<0){delete m.mur[cle];}       // vide : on revient à la mesure
-  else m.mur[cle]=r2(v);
-  save();renderMur();
-}
-function murReset(id){
-  var m=modeleById(id);if(!m||!m.mur)return;
-  delete m.mur.prof;delete m.mur.vSai;delete m.mur.vAn;delete m.mur.cout;
-  save();renderMur();
+/* Les valeurs forcées à la main n'existent plus (voir murCalc). On nettoie ce
+   qu'un ancien mur avait pu enregistrer, mais seulement quand on enregistre
+   déjà pour une autre raison : écrire en base au simple affichage d'un écran
+   est le genre d'effet de bord qu'on ne retrouve jamais ensuite. */
+function murOublierSaisies(m){
+  if(!m||!m.mur)return false;
+  var sale=false;
+  ["prof","vSai","vAn","cout"].forEach(function(k){
+    if(m.mur[k]!=null){delete m.mur[k];sale=true;}
+  });
+  return sale;
 }
 function murVider(){
   var l=murPoses();
@@ -2198,19 +2208,17 @@ function murReglage(){
   if(!_murEdit)return "";
   var m=modeleById(+_murEdit);if(!m||!m.mur)return "";
   var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune),c=amCfg();
-  var src=function(mes){return mes==null
-    ? '<i class="murSrc">aucune vente mesurée</i>'
-    : '<i class="murSrc">mesuré : '+amNum(mes,2)+'</i>';};
-  /* Le dénominateur du rythme, écrit en toutes lettres : c'est lui qui décide
-     si « 4 ventes » est un succès ou un échec, et personne ne peut le deviner. */
-  var base=(x.jours==null||x.vendues==null)?""
-    :('<i class="murSrc">'+acPl(x.vendues,"vente")+' en '+acPl(x.jours,"jour")+' de présence</i>');
+  /* Une fiche de lecture, pas un simulateur. Les trois champs qui se
+     saisissaient ici — profondeur, rythme, coût — ont été retirés : le mur sert
+     à voir ce que les produits rapportent, et un chiffre tapé à la main se
+     démode en silence. Un coût de mai laissé sur une référence rachetée en
+     octobre faussait la case de 30 % sans que rien ne le signale. */
+  var ligne=function(l,v,n){return '<div class="murLn"><span>'+l+'</span><b>'+v+'</b>'
+    +(n?('<i>'+n+'</i>'):'')+'</div>';};
   return '<div class="adCard murRg">'
     +'<div class="adH"><div class="adHt">'+esc(m.fr||m.sku||"?")+'</div>'
       +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")
-      +' — bouge le rythme de ventes ou le prix d\'achat et regarde ce que la case '
-      +'rapporte par mois.</div>'
-      +'<button class="btn mini" onclick="murReset('+m.id+')">Revenir aux mesures</button>'
+      +' — tout ce que cette case a réellement fait sur la saison.</div>'
       +'<button class="btn mini" onclick="murRetirer('+m.id+')">Retirer du mur</button></div>'
     /* Place et déplacement. Le glisser-déposer suffit à la souris ; ces flèches
        sont là pour la tablette, où il n'existe pas. */
@@ -2223,20 +2231,20 @@ function murReglage(){
       +'</span>'
       +'<i>une case occupée échange sa place</i></div>'
     +'<div class="murF">'
-      +'<label>Profondeur<span>paires tenues en moyenne</span>'
-        +'<input type="number" min="0" step="0.5" value="'+x.prof+'" '
-        +'onchange="murSet('+m.id+',\'prof\',this.value)">'+src(x.mesProf)+'</label>'
-      +'<label>Ventes par saison<span>rythme sur '+SAISON+' jours</span>'
-        +'<input type="number" min="0" step="0.5" value="'+(x.vSai==null?"":x.vSai)+'" '
-        +'onchange="murSet('+m.id+',\'vSai\',this.value)">'+src(x.mesVSai)+base+'</label>'
-      +'<label>Coût unitaire<span>prix d\'achat HT</span>'
-        +'<input type="number" min="0" step="1" value="'+(x.cout||"")+'" '
-        +'onchange="murSet('+m.id+',\'cout\',this.value)">'
-        /* Le prix de vente mesuré reste fixe quand on simule un autre prix
-           d'achat : c'est la marge qui bouge, comme à la négociation. */
-        +'<i class="murSrc">'+(x.margeVente!=null
-          ? ('marge par vente : '+amEur(x.margeVente))
-          : 'aucune marge mesurée')+'</i></label>'
+      +'<div class="murLns">'
+        +ligne("Profondeur", amNum(x.prof,1)+" paires",
+               "tenues en moyenne sur la période observée")
+        +ligne("Rythme de ventes", amNum(x.vSai,1)+" par saison",
+               (x.jours!=null&&x.vendues!=null)
+                 ? (acPl(x.vendues,"vente")+" en "+acPl(x.jours,"jour")+" de présence")
+                 : "aucune vente mesurée")
+        /* Avec les centimes : ces deux lignes se soustraient trois lignes plus
+           bas, et « 90 − 59 = 30,75 » ferait douter de tout le reste. */
+        +ligne("Prix de vente", (x.caVente!=null?(amNum(x.caVente,2)+" € HT"):"—"),
+               "moyenne encaissée, remises comprises")
+        +ligne("Prix d'achat", amNum(x.cout,2)+" €",
+               "moyenne des paires en stock")
+      +'</div>'
       +'<div class="murRes '+B.cls+'">'
         +'<div class="murResV">'+((x.margeMois==null)?"—":amEur(x.margeMois))
           +'<span class="murResU">/mois</span></div>'
@@ -2256,9 +2264,8 @@ function murReglage(){
             : (amNum(x.ventesMois,2)+' ventes par mois × '+amNum(x.margeVente,2)+' € de marge par vente'
                +' = <b>'+amEur(x.margeMois)+'/mois</b>'))
         +'</div>'
-        /* Le relevé brut, sous le ratio. Les trois champs au-dessus se saisissent
-           et peuvent donc mentir ; ces chiffres-là viennent du stock et ne se
-           règlent pas. C'est à eux qu'on revient quand le GMROI surprend. */
+        /* Le relevé brut : les paires, pas les moyennes. C'est à lui qu'on
+           revient quand un chiffre surprend. */
         +(x.passees
           ? ('<div class="murResD rel"><b>Relevé de la saison</b> — '
              +acPl(x.passees,"paire")+' passée'+(x.passees>1?'s':'')+' en rayon, '
