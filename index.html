@@ -4096,6 +4096,74 @@ function vbRecalcFacture(f){
   f.subtotal=r2(sub);f.totalHT=r2(ht+shipHT);f.totalTTC=r2(sub+ship);
 }
 
+/* ============================================================================
+   LES CARACTÈRES QUE LE PDF SAIT ÉCRIRE
+
+   jsPDF n'embarque que ses polices standard, encodées en WinAnsi (cp1252).
+   Tout caractère hors de ce jeu sort en charabia : la flèche « → » de
+   l'estampille de correction s'imprimait « !' » sur les factures.
+
+   Trois temps, dans cet ordre :
+     1. les signes courants deviennent un équivalent lisible (→ donne ->) ;
+     2. les lettres accentuées que cp1252 ne porte pas sont dépliées (ā -> a),
+        ce qui sauve un nom de produit étranger au lieu de le trouer ;
+     3. ce qui reste d'irreprésentable est retiré.
+
+   On enveloppe les méthodes d'écriture du document plutôt que de filtrer à
+   chaque appel : il y a des dizaines de doc.text() dans une facture, et le
+   prochain qu'on ajoutera profitera du filtre sans qu'on y pense. C'est aussi
+   ce qui protège les noms de modèles, saisis à la main et parfois collés
+   depuis une page étrangère.
+   ========================================================================== */
+var PDF_SIGNES={"\u2192":"->","\u27F6":"->","\u2190":"<-","\u2194":"<->",
+  "\u21D2":"=>","\u21D0":"<=","\u21A9":"<-","\u2265":">=","\u2264":"<=",
+  "\u2260":"!=","\u2248":"~","\u2713":"OK","\u2714":"OK","\u2717":"X",
+  "\u2718":"X","\u2605":"*","\u2606":"*","\u26A0":"!","\u2011":"-",
+  "\u2212":"-","\u3000":" ","\u00A0":" ",
+  /* Lettres barrées : elles ne se déplient pas en NFD (la barre n'est pas un
+     accent combinant) et disparaîtraient. « Łódź » donnerait « ódz ». */
+  "\u0141":"L","\u0142":"l","\u0110":"D","\u0111":"d","\u0126":"H","\u0127":"h"};
+/* Les 27 caractères que cp1252 loge entre 0x80 et 0x9F : ils passent, alors
+   que leur code dépasse 0xFF. Sans cette liste, le filtre supprimerait les
+   apostrophes typographiques et les tirets cadratins, qui s'impriment très
+   bien aujourd'hui. */
+var PDF_CP1252_HAUT="\u20AC\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030"
+  +"\u0160\u2039\u0152\u017D\u2018\u2019\u201C\u201D\u2022\u2013\u2014"
+  +"\u02DC\u2122\u0161\u203A\u0153\u017E\u0178";
+function pdfTexteSur(x){
+  if(Array.isArray(x))return x.map(pdfTexteSur);
+  if(x==null||typeof x!=="string")return x;
+  var out="";
+  for(var i=0;i<x.length;i++){
+    var c=x[i];
+    if(PDF_SIGNES[c]!==undefined){out+=PDF_SIGNES[c];continue;}
+    if(c.charCodeAt(0)<=0xFF||PDF_CP1252_HAUT.indexOf(c)>=0){out+=c;continue;}
+    /* Dernière chance : déplier l'accent. « ā » devient « a », « 東 » ne
+       donne rien et disparaît plutôt que de salir la page. */
+    var d="";
+    try{d=c.normalize("NFD").replace(/[\u0300-\u036f]/g,"");}catch(_e){d="";}
+    for(var j=0;j<d.length;j++)if(d.charCodeAt(j)<=0xFF)out+=d[j];
+  }
+  return out;
+}
+/* Enveloppe un document jsPDF : tout ce qui s'écrit passe par le filtre. */
+function pdfSansCharabia(doc){
+  var _t=doc.text.bind(doc), _s=doc.splitTextToSize.bind(doc);
+  doc.text=function(txt){
+    var args=Array.prototype.slice.call(arguments);
+    args[0]=pdfTexteSur(txt);
+    return _t.apply(doc,args);
+  };
+  /* Le découpage mesure la largeur : il doit voir le texte RÉEL, celui qui
+     sera imprimé, sinon la ligne se coupe au mauvais endroit. */
+  doc.splitTextToSize=function(txt){
+    var args=Array.prototype.slice.call(arguments);
+    args[0]=pdfTexteSur(txt);
+    return _s.apply(doc,args);
+  };
+  return doc;
+}
+
 /* Estampille de correction, en clair, pour la fiche et pour le PDF. Une
    correction silencieuse serait pire que pas de correction du tout : le
    document doit dire lui-même ce qui a bougé, et quand. */
@@ -5906,7 +5974,7 @@ function buildAttestationDoc(achatId){
   const dateStr=a.date?a.date.split("-").reverse().join("/"):"";
   const groups={};(a.lignes||[]).forEach(function(l){const k=l.modeleId+"|"+l.varianteId+"|"+l.prixHT;if(!groups[k])groups[k]={l:l,qte:0};groups[k].qte+=(+l.qte||1);});
   let total=0;const body=Object.keys(groups).map(function(k){const g=groups[k],l=g.l;const m=modeleById(l.modeleId)||{},v=varById(l.varianteId)||{};const pu=(+l.prixHT||0);total+=pu*g.qte;return [m.fr||"",m.sku||"",v.taille||"",String(g.qte),eur(pu)];});
-  const jsPDF=window.jspdf.jsPDF;const doc=new jsPDF({unit:"mm",format:"a4"});
+  const jsPDF=window.jspdf.jsPDF;const doc=pdfSansCharabia(new jsPDF({unit:"mm",format:"a4"}));
   const W=210,M=18,ACC=[79,70,229];
   doc.setFillColor(ACC[0],ACC[1],ACC[2]);doc.rect(0,0,W,5,"F");
   doc.setFont("helvetica","bold");doc.setTextColor(20,20,20);doc.setFontSize(23);doc.text("Attestation de cession",M,26);
@@ -9062,7 +9130,7 @@ function shopInvoicePDF(factId,asCust){
   const shipAmt=()=>{if(isCust&&f.custShipping!=null)return +f.custShipping;return +(f.shipping||0);};
   const mny=v=>money((+v||0),cur)
   const s=socById(f.societeId)||{};
-  const jsPDF=window.jspdf.jsPDF;const doc=new jsPDF({unit:"mm",format:"a4"});
+  const jsPDF=window.jspdf.jsPDF;const doc=pdfSansCharabia(new jsPDF({unit:"mm",format:"a4"}));
   const W=210,M=18,ACC=[79,70,229];
   doc.setFillColor(ACC[0],ACC[1],ACC[2]);doc.rect(0,0,W,5,"F");
   doc.setFont("helvetica","bold");doc.setTextColor(20,20,20);doc.setFontSize(23);doc.text(f.type==="avoir"?"Avoir":"Facture",M,26);
