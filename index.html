@@ -4102,8 +4102,19 @@ function vbRecalcFacture(f){
 function factCorrectionsTxt(f){
   var c=(f&&f.corrections)||[];
   if(!c.length)return "";
+  /* Une correction peut porter sur un montant, un libellé ou le destinataire.
+     Les anciennes n'ont pas de champ « champ » : sans lui, c'était un prix. */
+  var val=function(x,v){
+    if(!x.champ||x.champ==="prix")return money(v,f.currency);
+    return '« '+String(v==null?"":v)+' »';
+  };
+  var quoi=function(x){
+    if(!x.champ||x.champ==="prix")return x.ref?(x.ref+" : "):"";
+    return (x.champ==="libelle"?"libellé":"destinataire")
+      +(x.ref?(" "+x.ref):"")+" : ";
+  };
   return "Facture corrigée — "+c.map(function(x){
-    return (x.ref?(x.ref+" : "):"")+money(x.avant,f.currency)+" → "+money(x.apres,f.currency)
+    return quoi(x)+val(x,x.avant)+" → "+val(x,x.apres)
       +" le "+(x.date||"")+(x.heure?(" à "+x.heure):"");
   }).join(" ; ")+".";
 }
@@ -4146,6 +4157,22 @@ function vbEditLine(ref,factId){
   var opt=function(sel){return REGLEMENTS.map(function(m){
     return '<option'+(m===sel?' selected':'')+'>'+m+'</option>';}).join("");};
 
+  /* LE LIBELLÉ suit la même règle que le prix : il décrit CE QUI A ÉTÉ VENDU.
+     Le changer après coup réécrirait la nature de la vente, pas une faute de
+     frappe. Le jour même, la facture n'a pas encore quitté la boutique.
+
+     LE DESTINATAIRE, lui, reste modifiable sans limite de date, et c'est
+     volontaire : « le client rappelle pour avoir la facture au nom de sa
+     société » est le cas de correction le plus courant, il ne change rien à
+     l'opération commerciale, et le refuser obligerait à faire un avoir pour
+     une raison purement administrative. Chaque changement est estampillé sur
+     la facture, donc rien ne se fait en douce. */
+  var titreModifiable=memeJour;
+  var clients=(DB.clients||[]).slice(-800).map(function(c){
+    return cliNomComplet(c); }).filter(Boolean);
+  var dejaVus={}; clients=clients.filter(function(n){
+    if(dejaVus[n])return false; dejaVus[n]=1; return true; }).sort();
+
   ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:430px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
     +'<div style="font-weight:800;font-size:17px;margin-bottom:2px">Corriger la vente</div>'
     +'<div class="sub" style="margin-bottom:14px">'+esc(l.title||"")+' · '+esc(ref)+' · facture '+esc(f.num||"")+'</div>'
@@ -4153,6 +4180,21 @@ function vbEditLine(ref,factId){
     +'<input id="_vbePv" type="number" step="0.01" min="0" value="'+(+l.puTTC||0)+'" '
       +(prixModifiable?'':'disabled ')+'style="'+champ+';width:140px;text-align:right">'
     +(prixModifiable?'':'<div class="muted" style="font-size:12px;margin-top:5px;color:#b45309">'+motifPrix+'</div>')
+    +'<label style="display:block;font-size:12px;font-weight:700;color:#475569;margin:14px 0 4px">'
+      +'Libellé sur la facture</label>'
+    +'<input id="_vbeTit" type="text" maxlength="120" value="'+esc(l.title||"")+'" '
+      +(titreModifiable?'':'disabled ')+'style="'+champ+';width:100%;box-sizing:border-box">'
+    +(titreModifiable?'':'<div class="muted" style="font-size:12px;margin-top:5px;color:#b45309">'
+      +'Le libellé décrit ce qui a été vendu : il ne se corrige que le jour même.</div>')
+    +'<label style="display:block;font-size:12px;font-weight:700;color:#475569;margin:14px 0 4px">'
+      +'Facturé à</label>'
+    +'<input id="_vbeBuy" type="text" maxlength="160" list="_vbeCli" value="'+esc(f.buyer||"")+'" '
+      +'style="'+champ+';width:100%;box-sizing:border-box">'
+    +'<datalist id="_vbeCli">'+clients.map(function(n){
+        return '<option value="'+esc(n)+'"></option>';}).join("")+'</datalist>'
+    +'<div class="muted" style="font-size:12px;margin-top:5px">'
+      +'Choisis un client existant pour reprendre son adresse, ou tape un nom libre. '
+      +'Modifiable à tout moment — le changement est écrit sur la facture.</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
       +'<div><label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px">Règlement</label>'
         +'<select id="_vbeM1" style="'+champ+';width:130px">'+opt(m1)+'</select></div>'
@@ -4180,6 +4222,51 @@ function vbEditLine(ref,factId){
     if(n2&&v2>pv+0.005){err.textContent="Le 2ᵉ montant dépasse le prix de vente.";return;}
     if(n2&&n2===n1){err.textContent="Les deux moyens de paiement sont identiques.";return;}
 
+    var _h0=new Date();
+    var _tampon=function(champNom,av,ap){
+      (f.corrections=f.corrections||[]).push({
+        champ:champNom, date:today(),
+        heure:String(_h0.getHours()).padStart(2,"0")+":"+String(_h0.getMinutes()).padStart(2,"0"),
+        ref:(champNom==="destinataire"?"":ref), avant:av, apres:ap});
+    };
+
+    /* TOUT VALIDER AVANT D'ÉCRIRE QUOI QUE CE SOIT. Première version : le
+       libellé était posé puis le destinataire validé — un destinataire vide
+       sortait de la fonction en laissant le libellé déjà modifié en mémoire
+       et une estampille de correction sur la facture, alors que rien n'était
+       enregistré. La prochaine sauvegarde venue d'ailleurs l'aurait figé. */
+    var titAv=String(l.title||"");
+    var titAp=titreModifiable?String(ov.querySelector("#_vbeTit").value||"").trim():titAv;
+    if(titreModifiable&&!titAp){err.textContent="Le libellé ne peut pas être vide.";return;}
+    var buyAv=String(f.buyer||"");
+    var buyAp=String(ov.querySelector("#_vbeBuy").value||"").trim();
+    if(!buyAp){err.textContent="Le destinataire ne peut pas être vide.";return;}
+
+    /* --- Le libellé ---------------------------------------------------- */
+    if(titAp!==titAv){ l.title=titAp; _tampon("libelle",titAv,titAp); }
+
+    /* --- Le destinataire ------------------------------------------------
+       Si le nom saisi correspond exactement à un client connu, on reprend sa
+       fiche entière : adresse, SIRET, TVA. Sinon on garde l'adresse déjà
+       présente et on n'en change que le nom — sans quoi corriger une faute de
+       frappe effacerait l'adresse du client. */
+    if(buyAp!==buyAv){
+      var trouve=(DB.clients||[]).filter(function(c){
+        return cliNomComplet(c)===buyAp; })[0]||null;
+      f.buyer=buyAp;
+      if(trouve){
+        f.clientId=trouve.id;
+        try{f.buyerAddr=cliAddr(trouve);}catch(_e){}
+        try{f.buyerMeta=cliMeta(trouve);}catch(_e){}
+      }else{
+        /* Nom libre : la fiche client ne correspond plus, on coupe le lien
+           plutôt que de laisser la facture pointer vers quelqu'un d'autre. */
+        f.clientId="";
+        if(f.buyerAddr&&typeof f.buyerAddr==="object")f.buyerAddr.name=buyAp;
+      }
+      _tampon("destinataire",buyAv,buyAp);
+    }
+
     var avant=(+l.puTTC||0);
     if(prixModifiable&&Math.abs(pv-avant)>0.004){
       l.puTTC=pv;
@@ -4187,10 +4274,7 @@ function vbEditLine(ref,factId){
       /* Estampille : une correction silencieuse est pire que pas de correction
          du tout. Elle s'écrit sur la facture, donc elle suivra le document
          partout — fiche à l'écran comme PDF. */
-      var _h=new Date();
-      (f.corrections=f.corrections||[]).push({
-        date:today(), heure:String(_h.getHours()).padStart(2,"0")+":"+String(_h.getMinutes()).padStart(2,"0"),
-        ref:ref, avant:r2(avant), apres:pv});
+      _tampon("prix",r2(avant),pv);
     }
     if(a){
       a.venteTTC=pv;
@@ -4198,8 +4282,14 @@ function vbEditLine(ref,factId){
       else{delete a.regSplit;a.regMode=n1;}
       a.maj=today();
     }
-    try{logAct("Modification","Vente boutique",ref+" · "+eur(avant)+" → "+eur(pv)
-      +" · règlement "+(a?(vbRegTxt(a).replace(/<[^>]*>/g,"")):n1));}catch(e){}
+    try{
+      var _quoi=[];
+      if(Math.abs(pv-avant)>0.004)_quoi.push(eur(avant)+" → "+eur(pv));
+      if(titAp!==titAv)_quoi.push("libellé « "+titAv+" » → « "+titAp+" »");
+      if(buyAp!==buyAv)_quoi.push("facturé à « "+buyAv+" » → « "+buyAp+" »");
+      _quoi.push("règlement "+(a?(vbRegTxt(a).replace(/<[^>]*>/g,"")):n1));
+      logAct("Modification","Vente boutique",ref+" · "+_quoi.join(" · "));
+    }catch(e){}
     await save();
     ov.remove();
     try{renderVBoutique();}catch(e){}
