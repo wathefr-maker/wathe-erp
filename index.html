@@ -4829,10 +4829,28 @@ function openArticle(id,mid,vid){editA=id;mATitle.textContent=id?"Modifier la pi
 saveArticle.onclick=async()=>{if(!a_taille.value)return alert("Choisis une taille.");
   const o={varianteId:+a_taille.value,societeId:+a_soc.value,prix:parseFloat(a_prix.value)||0,pv:parseFloat(a_pv.value)||0,tva:a_tva.value,etat:a_etat.value,statut:a_statut.value,date:a_date.value,fourId:a_four.value?+a_four.value:"",ville:a_ville.value,emplacement:a_emp.value,tag:a_tag.value||"Aucun",fact:a_fact.value,commentaire:a_comment.value,dispo:+a_dispo.value,depot:+a_depot.value,refDep:a_refdep.value,maj:today()};
   if(o.statut!=="En Stock")o.dispo=0;
+  /* Sans prix cible, la case « Dispo Shopify » se décoche d'elle-même : on ne
+     met pas en vente un produit dont on ne connaît pas le prix, et on ne
+     compte pas sur quelqu'un pour y penser à 19 h un samedi. */
+  var _decoche=(o.dispo&&(+o.pv||0)<=0);
+  if(_decoche)o.dispo=0;
   if(editA)Object.assign(DB.articles.find(x=>x.id==editA),o);else{o.id=newId(DB.articles);o.ref=newRef();o.archived=0;DB.articles.unshift(o);}
+  if(_decoche)alert("Pas de prix cible : « Dispo Shopify » a été décoché.\n\n"
+    +"La pièce reste en stock, mais elle ne part ni en ligne ni en caisse."
+    +"\nPose un prix et recoche la case pour la mettre en vente.");
   logAct(editA?"Modification":"Création","Pièce stock",(modeleById(varById(o.varianteId).modeleId).fr)+" "+(varById(o.varianteId).taille));await save();
-  // Répercuter le prix et le libellé sur la fiche caisse, si la pièce y est déjà.
-  try{var _pc=editA?DB.articles.find(function(x){return x.id==editA;}):null;if(_pc)await rzUpdatePieces([_pc]);}catch(_e){}ovA.classList.remove("show");const _aid=editA;renderAll();try{await shopResyncIds([varById(o.varianteId).modeleId]);}catch(_){}if(_aid&&!document.getElementById("view-articleD").classList.contains("hide"))openArticleDetail(_aid);};
+  /* Répercuter sur la caisse. Deux cas, et l'ancien code n'en traitait qu'un :
+     la pièce y est déjà -> on met sa fiche à jour ; elle n'y est pas encore
+     parce qu'elle n'avait pas de prix -> maintenant qu'elle en a un, elle doit
+     y entrer. Sans ça, une pièce prixée après coup n'arrivait jamais en caisse
+     et restait inscannable au comptoir. */
+  try{
+    var _pc=editA?DB.articles.find(function(x){return x.id==editA;}):null;
+    if(_pc&&!pvSansPrix(_pc)){
+      if(_pc.rzInCaisse&&!_pc.rzOutCaisse)await rzUpdatePieces([_pc]);
+      else if(typeof inStock==="function"&&inStock(_pc))await rzPush([_pc],{silent:true});
+    }
+  }catch(_e){}ovA.classList.remove("show");const _aid=editA;renderAll();try{await shopResyncIds([varById(o.varianteId).modeleId]);}catch(_){}if(_aid&&!document.getElementById("view-articleD").classList.contains("hide"))openArticleDetail(_aid);};
 sRows.onclick=async e=>{const va=e.target.closest("[data-va]"),ed=e.target.closest("[data-ea]"),dl=e.target.closest("[data-da]"),dp=e.target.closest("[data-d]"),ra=e.target.closest("[data-ra]"),lb=e.target.closest("[data-lbl]");
   if(lb)return printLabelOne(+lb.dataset.lbl);
   if(va)return openArticleDetail(+va.dataset.va);
@@ -4996,7 +5014,7 @@ importFileStock.onchange=e=>{const file=e.target.files[0];if(!file)return;
     impOpen("Import du stock",'Lecture de « '+file.name+' »…',0);
     await impYield();
     const wb=XLSX.read(ev.target.result,{type:"binary"});const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
-    let added=0,skipped=0,updated=0;const _touched=[];const _badSizes=[];
+    let added=0,skipped=0,updated=0,_impSansPrix=0;const _touched=[];const _badSizes=[];
     impOpen("Import du stock",rows.length+" ligne(s) détectée(s) dans « "+file.name+" »",rows.length);
     await impYield();
     for(let _i=0;_i<rows.length;_i++){
@@ -5056,6 +5074,13 @@ importFileStock.onchange=e=>{const file=e.target.files[0];if(!file)return;
         statut:resolveStatut(get("STATUT","Statut")),date:getDate("DATE ENTREE","DATE COMMANDE / ENTRÉE EN STOCK","ACHAT DATE","Date")||new Date().toISOString().slice(0,10),
         fourId:four?four.id:"",ville:String(get("VILLE","Ville"))||"",emplacement:String(get("EMPLACEMENT"))||"",
         fact:String(get("COMMANDE ACHAT","Facture")),dispo:(function(){var d=String(get("DISPO SHOPIFY","DISPO E-COMMERCE","DISPO. E-COMMERCE")).toLowerCase().trim();return (d==="1"||d.startsWith("o")||d==="true"||d==="vrai")?1:0;})(),commentaire:String(get("COMMENTAIRE","Commentaire"))};
+      /* Même règle qu'à la saisie : une ligne sans prix cible n'est pas mise en
+         vente. On ne refuse pas le fichier pour autant — bloquer 400 lignes
+         parce qu'une colonne est vide rendrait l'import inutilisable — on
+         décoche, on compte, et on le dit à la fin.
+         Posé AVANT la branche créer/mettre à jour pour couvrir les deux. */
+      if(o.dispo&&(+o.pv||0)<=0){o.dispo=0;_impSansPrix++;}
+
       // Si la RÉFÉRENCE INTERNE existe déjà -> on MET À JOUR la pièce (pas de doublon).
       // Ça permet d'exporter, corriger dans Excel, réimporter.
       var _rf=String(get("IDENTIFIANT INTERNE","Référence")).trim();
@@ -5074,6 +5099,11 @@ importFileStock.onchange=e=>{const file=e.target.files[0];if(!file)return;
     await save();fillSelects();page=1;renderAll();
     var _todo=(DB.modeles||[]).filter(mdNeedsGrille).length;
     var _msg=`${added} pièce(s) importée(s).`+(updated?` ${updated} pièce(s) mise(s) à jour (référence déjà connue).`:"")+(skipped?` ${skipped} ignorée(s) (SKU inconnu, taille manquante ou hors grille).`:"");
+    /* Les lignes décochées faute de prix : il faut le dire, sinon on croit que
+       l'import a tout mis en vente et on s'étonne de ne rien voir en ligne. */
+    if(_impSansPrix)_msg+="  ⚠️ "+_impSansPrix+" ligne(s) sans prix cible : « Dispo Shopify » "
+      +"a été décoché. Ces pièces sont en stock mais ne partent ni en ligne ni en caisse. "
+      +"Remplis la colonne PRIX CIBLE et réimporte, ou pose le prix sur la fiche.";
     // Tailles refusées : on les liste explicitement, c'est toujours une colonne
     // TAILLE au mauvais format (US là où la grille attend l'EU, ou l'inverse).
     if(_badSizes.length){var _bs=_badSizes.slice(0,12).join(", ");_msg+="  ⚠️ "+_badSizes.length+" ligne(s) refusée(s) — taille hors grille : "+_bs+(_badSizes.length>12?"…":"")+". Corrige la colonne TAILLE ou la grille du modèle, puis réimporte.";}
@@ -5928,32 +5958,34 @@ function achEditLine(i){var l=curAchat&&curAchat.lignes[i];if(!l)return;
 }
 function fillAchSizes(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.grille]||attrLabels("Taille");const vs=DB.variantes.filter(v=>v.modeleId==mid).slice().sort((x,y)=>{const ix=order.indexOf(String(x.taille)),iy=order.indexOf(String(y.taille));return (ix<0?9999:ix)-(iy<0?9999:iy);});al_size.innerHTML=vs.length?('<option value="">-- Taille --</option>'+vs.map(v=>`<option value="${v.id}">${esc(vSizeTxt(v))}</option>`).join("")):'<option value="">-- Aucune taille (génère les variantes du modèle) --</option>';}
 /* ============================================================================
-   LES DEUX PRIX OBLIGATOIRES, ET LE PRIX DE SÉCURITÉ
+   LE PRIX CIBLE : OBLIGATOIRE À LA SAISIE, BLOQUANT QUAND IL MANQUE
    ----------------------------------------------------------------------------
-   Une pièce sans prix cible (pv) ne reste pas inoffensive : rzPiece() l'envoie
-   en caisse avec « pvTTC:0 », et la paire SONNE À ZÉRO si on la scanne au
-   comptoir. Elle sort du stock, elle passe en vente, elle ne fait aucun
-   chiffre. Shopify, lui, l'ignore pour le prix — donc elle se retrouve en
-   ligne au prix d'une autre taille, ou pas en ligne du tout.
+   Une pièce sans prix cible n'est pas inoffensive : elle partait en caisse avec
+   « pvTTC:0 » et SONNAIT À ZÉRO si on la scannait au comptoir, et elle partait
+   sur Shopify à 0 € — 33 paires y étaient achetables pour rien.
 
-   D'où deux règles :
+   Trois règles, et plus aucun prix magique :
 
    1. On refuse la saisie d'une ligne d'achat ou de dépôt sans prix d'achat ET
       sans prix cible. Le refus est en AMONT parce que les pièces sont créées
-      dès la saisie de la ligne (apSyncAchat, statut « Approvisionnement ») :
-      une fois créées, il faut les retrouver une par une.
+      dès la saisie de la ligne (apSyncAchat, statut « Approvisionnement »).
 
-   2. Quand on ne connaît pas encore le prix de vente — import FlowStock,
-      rattrapage de l'existant — on pose PV_SECURITE au lieu de zéro. 999 €
-      n'est pas un prix de vente : c'est un prix qui ARRÊTE la vente. Le
-      vendeur le voit à l'écran, s'interrompt, et va chercher le vrai prix.
-      Mieux vaut une paire invendable une minute qu'une paire donnée.
+   2. Quand le prix de vente n'est pas connu mais le prix d'achat l'est —
+      import FlowStock, Sourcing Hub, facture lue par l'IA — on CALCULE le prix
+      au lieu de poser un montant arbitraire.
+
+   3. Quand on ne peut vraiment rien calculer, la pièce reste sans prix, et
+      c'est son ABSENCE DE PRIX qui la protège : pvSansPrix() la tient hors de
+      la vente en ligne et hors de la caisse. Une pièce sans prix existe en
+      stock, et nulle part ailleurs.
+
+   La règle 3 remplace l'ancien prix de sécurité à 999 €. Un montant sentinelle
+   oblige tout le code à connaître sa valeur, interdit de vendre à ce prix-là,
+   et se confond avec un vrai prix dès qu'on se trompe. Un état se teste.
    ========================================================================== */
-var PV_SECURITE=999;
 
 /* ----------------------------------------------------------------------------
-   LE PRIX AUTOMATIQUE — pour les achats dont on connaît le coût mais pas encore
-   le prix de vente : FlowStock et Sourcing Hub.
+   LE PRIX AUTOMATIQUE — quand on connaît le coût mais pas encore le prix.
 
    Coefficient sur le prix d'achat, puis arrondi AU-DESSUS sur la grille de prix
    de la boutique : ...94,90 · 99,90 · 104,90 · 109,90... Un palier tous les
@@ -5962,11 +5994,6 @@ var PV_SECURITE=999;
    Pourquoi arrondir au-dessus et jamais en dessous : un prix calculé trop bas
    part en ligne et se vend avant qu'on l'ait relu. Trop haut, il ne se vend pas
    et on le corrige. L'erreur coûteuse n'est pas symétrique.
-
-   Mieux que PV_SECURITE pour ces deux sources : la paire devient vendable
-   immédiatement au lieu d'être bloquée, et le prix reste cohérent avec le
-   reste de la boutique. PV_SECURITE ne sert plus que quand le prix d'achat
-   lui-même est inconnu — là, aucun calcul n'est possible.
    -------------------------------------------------------------------------- */
 var PV_COEF=1.8;
 
@@ -5981,6 +6008,19 @@ function pvArrondi(x){
 function pvAutomatique(pa,coef){
   pa=+pa||0; if(pa<=0)return 0;
   return pvArrondi(pa*((+coef>0)?+coef:PV_COEF));
+}
+
+/* Le test unique, utilisé partout. Une pièce sans prix cible ne part ni en
+   ligne ni en caisse — c'est ce qui remplace le prix sentinelle. */
+function pvSansPrix(a){ return !a || (+a.pv||0)<=0; }
+
+/* À appeler après toute écriture d'une pièce : sans prix, la case « Dispo
+   Shopify » se décoche d'elle-même. On ne met pas en vente un produit dont on
+   ne connaît pas le prix, et on ne compte pas sur l'utilisateur pour y penser.
+   Rend true si quelque chose a été décoché, pour pouvoir le dire. */
+function pvAjusterDispo(a){
+  if(a && a.dispo && pvSansPrix(a)){ a.dispo=0; return true; }
+  return false;
 }
 
 /* Les lignes fautives, nommées : un refus qui dit seulement « prix manquant »
@@ -6005,7 +6045,8 @@ function bloquerSiPrixManquants(lignes,quoi){
     +ko.slice(0,12).map(function(x){
       return "• "+x.nom+(x.taille?(" "+x.taille):"")+" — "+x.manque+" manquant";}).join("\n")
     +(ko.length>12?("\n… et "+(ko.length-12)+" autre(s)"):"")
-    +"\n\nUne paire sans prix cible part en caisse à 0 € et sonne à zéro au comptoir."
+    +"\n\nUne paire sans prix cible ne part ni en boutique ni en ligne : elle resterait"
+    +" en stock sans pouvoir être vendue."
     +"\nOuvre la commande, modifie ces lignes, puis recommence.");
   return true;
 }
@@ -6248,10 +6289,12 @@ function aiBuildAchatFromInvoice(j){
     const etat=(attrLabels("État du produit")[0]||"Used");
     /* Une facture fournisseur ne porte jamais le prix de VENTE : sans repli, la
        commande naissait avec des prix cibles à zéro et se faisait refuser à la
-       réception. PV_SECURITE la rend réceptionnable tout en restant invendable
-       par accident — le vrai prix se saisit en modifiant les lignes. */
+       réception. On applique le coefficient maison sur le prix d'achat lu sur
+       la facture : la commande est réceptionnable et la paire vendable, et le
+       vrai prix se saisit en modifiant les lignes. */
     const _pvFact=parseFloat(L.prix_vente_ttc)||0;
-    for(let k=0;k<qte;k++)a.lignes.push({modeleId:m.id,varianteId:v.id,qte:1,prixHT:parseFloat(L.prix_ht)||0,pv:(_pvFact>0?_pvFact:PV_SECURITE),tva,etat,tag:"Aucun",dispo:0});
+    const _paFact=parseFloat(L.prix_ht)||0;
+    for(let k=0;k<qte;k++)a.lignes.push({modeleId:m.id,varianteId:v.id,qte:1,prixHT:_paFact,pv:(_pvFact>0?_pvFact:pvAutomatique(_paFact)),tva,etat,tag:"Aucun",dispo:0});
   });
   if(!a.lignes.length)return {ok:false,reason:"no_match",miss};
   return {ok:true,a,fourId,miss};
@@ -6541,11 +6584,15 @@ function addAchatLine(){const mid=+selMod||0,vid=+al_size.value,qte=parseInt(al_
      achetée 0 € ou vendue 0 € se saisit par un avoir ou un geste commercial,
      pas par une ligne de commande. */
   if(parseFloat(al_prix.value)<=0)return alert("Le prix d'achat HT doit être supérieur à 0.");
-  if(al_pv.value===""||isNaN(parseFloat(al_pv.value))||parseFloat(al_pv.value)<=0)
-    return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire part en caisse à 0 €"
-      +" et sonne à zéro si on la scanne.\n\nSi tu ne connais pas encore le prix de vente,"
-      +" mets "+PV_SECURITE+" € : c'est le prix de sécurité, il bloque la vente au comptoir"
-      +" le temps que tu fixes le vrai prix.");
+  if(al_pv.value===""||isNaN(parseFloat(al_pv.value))||parseFloat(al_pv.value)<=0){
+    /* On propose le prix calculé plutôt que de renvoyer l'utilisateur chercher
+       une calculatrice : c'est la même règle que pour les imports. */
+    var _sg=pvAutomatique(parseFloat(al_prix.value));
+    return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire ne part ni en"
+      +" boutique ni en ligne : elle reste en stock sans pouvoir être vendue."
+      +(_sg>0?("\n\nSuggestion d'après ton coefficient : "+_sg.toFixed(2).replace(".",",")
+        +" €  (prix d'achat × "+String(PV_COEF).replace(".",",")+", arrondi au palier)"):""));
+  }
   if(!al_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
   curAchat.lignes=curAchat.lignes||[];
@@ -6712,11 +6759,13 @@ function addDepotLine(){const mid=+selDepMod||0,vid=+dl_size.value,qte=parseInt(
      exactement comme les autres : le prix cible n'est pas facultatif sous
      prétexte que la paire ne nous appartient pas. */
   if(parseFloat(dl_prix.value)<=0)return alert("Le prix dépôt doit être supérieur à 0.");
-  if(dl_pv.value===""||isNaN(parseFloat(dl_pv.value))||parseFloat(dl_pv.value)<=0)
-    return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire part en caisse à 0 €"
-      +" et sonne à zéro si on la scanne.\n\nSi tu ne connais pas encore le prix de vente,"
-      +" mets "+PV_SECURITE+" € : c'est le prix de sécurité, il bloque la vente au comptoir"
-      +" le temps que tu fixes le vrai prix.");
+  if(dl_pv.value===""||isNaN(parseFloat(dl_pv.value))||parseFloat(dl_pv.value)<=0){
+    var _sgd=pvAutomatique(parseFloat(dl_prix.value));
+    return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire ne part ni en"
+      +" boutique ni en ligne : elle reste en stock sans pouvoir être vendue."
+      +(_sgd>0?("\n\nSuggestion d'après ton coefficient : "+_sgd.toFixed(2).replace(".",",")
+        +" €  (prix dépôt × "+String(PV_COEF).replace(".",",")+", arrondi au palier)"):""));
+  }
   if(!dl_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
   curDepot.lignes.push({modeleId:mid,varianteId:vid,qte,prixHT:parseFloat(dl_prix.value),pv:parseFloat(dl_pv.value)||0,tva:dl_tva.value,etat:dl_etat.value,refDep:dl_ref.value,tag:dl_tag.value||"Aucun",dispo:+dl_dispo.value});
@@ -7080,12 +7129,10 @@ function varsSorted(m){
 
    Deux valeurs ne sont PAS des prix de vente et ne doivent jamais s'afficher
    sur la boutique :
-     · le zéro      — prix cible jamais saisi ;
-     · PV_SECURITE  — prix posé exprès pour arrêter la vente au comptoir le
-                      temps qu'on fixe le vrai prix.
-   Le zéro était déjà écarté. PV_SECURITE ne l'était pas : depuis qu'il
-   remplace le zéro sur les imports FlowStock, une taille dont toutes les
-   paires sortent de FlowStock afficherait 999 € en ligne.
+     · le zéro, c'est-à-dire l'absence de prix cible.
+   Une paire sans prix est désormais écartée DEUX fois : elle ne compte pas
+   dans le prix, et elle ne compte pas non plus dans le stock affiché — sa case
+   « Dispo » est décochée à l'enregistrement par pvAjusterDispo().
 
    L'ordre de préférence :
      1. le plus bas des VRAIS prix cibles des paires en ligne de cette taille ;
@@ -7096,10 +7143,10 @@ function varsSorted(m){
    ========================================================================== */
 function shopPrixVitrine(arts, v){
   var vrais = (arts || []).map(function(a){ return +a.pv || 0; })
-    .filter(function(x){ return x > 0 && x !== PV_SECURITE; });
+    .filter(function(x){ return x > 0; });
   if(vrais.length) return Math.min.apply(null, vrais);
   var ancien = +((v && v.shopifyPrice) || 0);
-  if(ancien > 0 && ancien !== PV_SECURITE) return ancien;
+  if(ancien > 0) return ancien;
   return null;                       // aucun prix publiable
 }
 
@@ -7111,7 +7158,10 @@ function shopModelSyncPayload(modeleId){
     /* Pièces Wathe uniquement : une pièce SBT a son propre produit sur l'autre
        boutique, elle ne doit ni gonfler la quantité affichée ici ni tirer le
        prix vitrine vers le bas. */
-    const arts=DB.articles.filter(a=>a.varianteId===v.id&&!a.archived&&inStock(a)&&a.dispo&&!shopIsSbtPiece(a));
+    /* !pvSansPrix : une paire sans prix n'est pas une paire en vente. L'exclure
+       ici l'écarte du prix ET du stock affiché — sinon le site annoncerait du
+       stock pour une paire qu'on refuse de vendre. */
+    const arts=DB.articles.filter(a=>a.varianteId===v.id&&!a.archived&&inStock(a)&&a.dispo&&!pvSansPrix(a)&&!shopIsSbtPiece(a));
     const published=!!v.shopifyVariantId;
     if(!arts.length&&!published)return;                 // taille jamais publiée et sans stock → ignorée
     let price, qty=arts.length;
@@ -7149,12 +7199,10 @@ async function shopSyncPieceSbt(a){
   // Prix : prix cible de la pièce (sinon 0).
   var price=(+a.pv||0)>0?(+a.pv):((+m.prixCible||0)>0?(+m.prixCible):0);
   /* Ici une pièce = un produit : il n'existe aucune autre paire pour fournir
-     le prix, et aucun « dernier prix de la taille » à reprendre. Publier au
-     prix de sécurité mettrait 999 € en vitrine, publier à 0 € offrirait la
-     paire. On ne publie donc pas, et on le dit. */
-  if(price===PV_SECURITE||price<=0){
-    console.warn("[Shopify SBT] "+(a.ref||"")+" non publiée : prix cible "
-      +(price===PV_SECURITE?("de sécurité ("+PV_SECURITE+" €)"):"absent"));
+     le prix, et aucun « dernier prix de la taille » à reprendre. Publier à 0 €
+     offrirait la paire. On ne publie donc pas, et on le dit. */
+  if(price<=0){
+    console.warn("[Shopify SBT] "+(a.ref||"")+" non publiée : prix cible absent");
     return {skipped:true,reason:"prix cible manquant"};
   }
   // SKU UNIQUE par pièce : base SKU + taille + réf pièce (évite tout regroupement Shopify).
@@ -7372,8 +7420,16 @@ function rzPiece(a){
    une réception de marchandise, il est seulement tracé dans le journal. */
 async function rzPush(pieces,opts){
   opts=opts||{};
-  var list=(pieces||[]).filter(function(a){return a&&a.ref&&!a.archived;});
-  if(!list.length)return {ok:true,total:0};
+  /* Une pièce sans prix cible n'entre PAS dans la caisse. C'était le danger
+     d'origine : créée à 0 €, elle sonnait à zéro au comptoir et sortait du
+     stock sans chiffre d'affaires. Elle y entrera le jour où elle aura un
+     prix — c'est ce que fait rzPoserPrix() depuis la fiche de la pièce. */
+  var _sansPrix=(pieces||[]).filter(function(a){return a&&a.ref&&!a.archived&&pvSansPrix(a);});
+  var list=(pieces||[]).filter(function(a){return a&&a.ref&&!a.archived&&!pvSansPrix(a);});
+  if(_sansPrix.length)console.warn("[Rezomatic] "+_sansPrix.length
+    +" pièce(s) non envoyées : pas de prix cible — "
+    +_sansPrix.slice(0,8).map(function(a){return a.ref;}).join(", "));
+  if(!list.length)return {ok:true,total:0,sansPrix:_sansPrix.length};
   if(!opts.force&&!rzEnabled())return {ok:true,total:0,ignore:"synchro caisse désactivée"};
   var payload=list.map(rzPiece).filter(Boolean);
   try{
@@ -9730,15 +9786,15 @@ function flowstockImport(txt,silent){
       if(m&&!v){const cs=fsCleanSize(it.size);const vid=fsVarianteId(m.id,cs);v={id:vid,modeleId:m.id,taille:cs,eu:cs,barcode:""};DB.variantes.push(v);}
       const qte=Math.max(1,+it.quantity||1);
       const _paFs=(+it.unit_price||((p.price||{}).amount)||0);
-      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:_paFs,pv:(pvAutomatique(_paFs)||PV_SECURITE),tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};
+      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:_paFs,pv:pvAutomatique(_paFs),tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};
       /* FlowStock et Sourcing Hub (même chemin d'import) ne donnent aucun prix
          de vente : on ne le connaît qu'une fois la paire en main. Elles
          partaient donc en caisse à 0 € et sonnaient à zéro au comptoir.
          On applique le coefficient maison sur le prix d'achat, arrondi au
          palier du dessus : la paire est vendable tout de suite, à un prix
          cohérent, et reste corrigeable à la main.
-         Prix d'achat inconnu (0) : aucun calcul possible, on retombe sur
-         PV_SECURITE, qui bloque la vente plutôt que de la brader.
+         Prix d'achat inconnu (0) : aucun calcul possible, la pièce reste sans
+         prix — et sans prix elle ne part ni en ligne ni en caisse.
          dispo reste à 0 : rien ne part sur Shopify sans décision humaine. */
       a.lignes.push(line);
       if(!cancelled&&v){for(let k=0;k<qte;k++){makePiece(a,line);const piece=DB.articles[0];
