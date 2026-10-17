@@ -7653,14 +7653,68 @@ window.rzPush=rzPush;
    marchandise repart du point de vente vers le fournisseur. Sans ça, une paire
    vendue sur Shopify resterait scannable en caisse et pourrait être vendue deux
    fois. */
+/* Ce que la caisse dit VRAIMENT avoir en stock pour un code article.
+   Rend null quand la réponse ne porte aucune quantité, et -1 quand l'article
+   n'existe pas chez elle. Même lecture que la fonction de régularisation :
+   la quantité du point de vente si la caisse le nomme, la somme sinon. */
+async function rzStockReel(codeArt){
+  try{
+    var r=await sb.functions.invoke("rezomatic-call",{body:{
+      method:"getArticleFromCode", args:{codeArt:codeArt}, maxValeurs:400}});
+    var d=r.data||{};
+    if(r.error||!d.ok)return -1;                 // fiche absente ou illisible
+    var vals=d.premieresValeurs||[];
+    var aUneFiche=false,total=null,pdvCourant=null,parPdv={};
+    vals.forEach(function(v){
+      var f=String(v.chemin||"").split(" > ").pop()||"";
+      if(/^des$/i.test(f))aUneFiche=true;
+      if(/^idPdv$/i.test(f)){pdvCourant=String(v.valeur||"").trim();return;}
+      if(/^(stock|qteStock|qte)$/i.test(f)){
+        var n=parseFloat(v.valeur);
+        if(!isNaN(n)){
+          total=(total===null?0:total)+n;
+          if(pdvCourant)parPdv[pdvCourant]=(parPdv[pdvCourant]||0)+n;
+          pdvCourant=null;
+        }
+      }
+    });
+    if(!aUneFiche)return -1;
+    if(Object.prototype.hasOwnProperty.call(parPdv,RZ_PDV))return parPdv[RZ_PDV];
+    return total;
+  }catch(_e){ return -1; }
+}
+
 async function rzRemoveStock(pieces,opts){
   opts=opts||{};
   var list=(pieces||[]).filter(function(a){return a&&a.ref;});
   if(!list.length)return {ok:true,total:0};
   if(!opts.force&&!rzEnabled())return {ok:true,total:0,ignore:"synchro caisse désactivée"};
-  var lignes=list.map(function(a){
-    return {codeArt:rzCodeArt(a.ref),qte:1,puHT:Math.round((+a.prix||0)*100)/100};
-  });
+
+  /* ON NE RETIRE QUE CE QUI EST RÉELLEMENT LÀ.
+     L'ancienne version envoyait « qte:1 » pour chaque pièce portant le
+     marqueur rzInCaisse, sans rien vérifier. Or ce marqueur n'est pas fiable :
+     une sauvegarde concurrente a pu l'écrire alors que l'article n'a jamais
+     été créé en caisse, ou la paire a pu être encaissée au comptoir depuis.
+     TWS refuse alors de décompter — et comme validationLivraison porte sur le
+     BON ENTIER, une seule ligne fautive faisait échouer le retrait de toutes
+     les autres. D'où le message « impossible de supprimer la quantité » sur
+     une suppression de commande Shopify parfaitement ordinaire.
+     On lit donc la quantité réelle de chaque article, exactement comme la
+     fonction de régularisation, et on n'envoie que les lignes qui ont
+     vraiment quelque chose à rendre. */
+  var lignes=[],absents=[],aZero=[];
+  for(var i=0;i<list.length;i++){
+    var a=list[i], code=rzCodeArt(a.ref);
+    var reel=await rzStockReel(code);
+    if(reel===-1){absents.push(a.ref);continue;}        // pas de fiche en caisse
+    if(reel===null||reel<=0){aZero.push(a.ref);continue;} // déjà à zéro
+    lignes.push({codeArt:code,qte:Math.min(1,reel),puHT:Math.round((+a.prix||0)*100)/100});
+  }
+  /* Rien à retirer n'est pas un échec : la caisse est déjà dans l'état voulu.
+     Le dire comme une erreur poussait à corriger à la main quelque chose de
+     déjà correct. */
+  if(!lignes.length)return {ok:true,total:0,absents:absents,aZero:aZero,
+    rienAFaire:"la caisse n'avait aucune de ces paires en stock"};
   try{
     var r=await sb.functions.invoke("rezomatic-stock",{body:{
       action:"entree", apply:true,
@@ -7674,7 +7728,10 @@ async function rzRemoveStock(pieces,opts){
       try{logAct("Caisse Rezomatic","Sortie non appliquée",det);}catch(_){}
       return {ok:false,erreur:det};
     }
-    try{logAct("Caisse Rezomatic","Stock retiré","bon "+d.numBonCommande+" · "+(d.lignesAcceptees||0)+" pièce(s)");}catch(_){}
+    try{logAct("Caisse Rezomatic","Stock retiré","bon "+d.numBonCommande+" · "+(d.lignesAcceptees||0)+" pièce(s)"
+      +(absents.length?(" · "+absents.length+" sans fiche"):"")
+      +(aZero.length?(" · "+aZero.length+" déjà à zéro"):""));}catch(_){}
+    d.absents=absents;d.aZero=aZero;
     return d;
   }catch(e){
     console.warn("[Rezomatic] sortie de stock impossible :",e);
@@ -8988,9 +9045,26 @@ async function shopCancelPurgeFlowstock(pieces,orderName){
   if(enCaisse.length){
     try{
       var rr=await rzRemoveStock(enCaisse);
-      if(rr&&rr.ok===false)alert("⚠️ Retrait du stock caisse refusé : "+(rr.erreur||"motif inconnu")
-        +"\n\nLes paires vont être supprimées de l'ERP ; pense à corriger la quantité dans Rezomatic.");
-      else enCaisse.forEach(function(p){p.rzOutCaisse=today();});
+      if(rr&&rr.ok===false){
+        /* La pièce va disparaître de l'ERP : plus personne ne saura qu'elle
+           traîne encore en caisse, et la régularisation ne la verra pas non
+           plus puisqu'elle parcourt les pièces de l'ERP. On écrit donc les
+           références dans le journal AVANT de les perdre — c'est le seul
+           endroit où elles survivront à la suppression. */
+        var _refs=enCaisse.map(function(p){return p.ref;});
+        try{logAct("Caisse Rezomatic","Quantité non retirée — à corriger à la main",
+          (rr.erreur||"motif inconnu")+" · "+_refs.join(", "));}catch(_e){}
+        alert("⚠️ Retrait du stock caisse refusé : "+(rr.erreur||"motif inconnu")
+          +"\n\nLes "+_refs.length+" paire(s) vont être supprimées de l'ERP mais restent"
+          +" comptées dans Rezomatic.\n\nLeurs références sont enregistrées dans le"
+          +" Journal d'activité : corrige leur quantité dans la caisse à partir de là.");
+      }else{
+        enCaisse.forEach(function(p){p.rzOutCaisse=today();});
+        /* Rien à retirer n'est pas un incident : la caisse était déjà à jour.
+           On le note sans déranger, pour pouvoir le retrouver si besoin. */
+        if(rr&&rr.rienAFaire){try{logAct("Caisse Rezomatic","Rien à retirer",
+          rr.rienAFaire+" · "+enCaisse.length+" pièce(s)");}catch(_e){}}
+      }
     }catch(_){}
   }
 
