@@ -7354,6 +7354,21 @@ async function shopSyncPieceSbt(a){
   var _pid=a.shopifyProductIdSbt||null;
   // Quantité vitrine : 1 si dispo & en stock, sinon 0 (produit reste en ligne, en rupture).
   var _qty=(a.dispo&&inStock(a))?1:0;
+  /* JAMAIS DE FICHE POUR UNE PIÈCE QUI N'EST PAS À VENDRE.
+     Sur la boutique seconde main, une pièce = un produit. Toute pièce de la
+     société SBT qui passe par la synchro atterrit ici, y compris une pièce qui
+     vient d'être VENDUE : son statut change, la routine de maintenance la
+     resynchronise, et comme elle n'avait pas de fiche — pièce arrivée puis
+     partie sans jamais avoir été mise en ligne, ou vendue depuis une autre
+     paire que celle publiée — l'appel en créait une. D'où des fiches produit
+     qui apparaissent sur le site au moment d'une vente.
+     Une fiche déjà en ligne, elle, doit continuer d'être mise à jour : c'est
+     ainsi qu'elle passe en rupture. On ne bloque donc que la CRÉATION. */
+  if(!_pid&&_qty<=0){
+    console.warn("[Shopify SBT] "+(a.ref||"")+" : aucune fiche créée — la pièce n'est pas"
+      +" en vente (statut « "+(a.statut||"?")+" »"+(a.dispo?"":", non cochée dispo")+").");
+    return {skipped:true,reason:"pièce non vendable et jamais publiée"};
+  }
   // Prix : prix cible de la pièce (sinon 0).
   var price=(+a.pv||0)>0?(+a.pv):((+m.prixCible||0)>0?(+m.prixCible):0);
   /* Ici une pièce = un produit : il n'existe aucune autre paire pour fournir
