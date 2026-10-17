@@ -8539,8 +8539,11 @@ function _pwords(s){return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g," "
 
    On remonte donc au modèle, dans l'ordre du plus sûr au moins sûr :
      1. une paire déjà assignée à la ligne — c'est un choix humain, il tranche ;
-     2. un SKU de modèle reconnu dans le SKU ou le titre de la ligne ;
-     3. le titre, par recouvrement de mots, et seulement si la correspondance
+     2. une CLÉ EXACTE : identifiant de variante Shopify, SKU publié par l'ERP,
+        ou code-barres. Là il n'y a pas de doute possible, c'est le même objet
+        des deux côtés ;
+     3. un SKU de modèle reconnu dans le SKU ou le titre de la ligne ;
+     4. le titre, par recouvrement de mots, et seulement si la correspondance
         est franche et sans ambiguïté — deux modèles aussi proches l'un que
         l'autre ne donnent rien plutôt qu'un mauvais SKU.
    ========================================================================== */
@@ -8555,8 +8558,36 @@ function shopSkuMarque(o,i,l){
       if(m&&m.sku)return {sku:String(m.sku),sur:"assignée"};
     }
   }catch(_e){}
+  /* 2. LES CLÉS EXACTES. Quand l'ERP a publié la taille sur Shopify, il a
+     gardé l'identifiant de variante et le SKU qu'il lui a envoyés. Si la
+     ligne de commande porte l'un ou l'autre, la correspondance n'est plus une
+     ressemblance : c'est le même objet des deux côtés. Le code-barres joue le
+     même rôle quand il est renseigné.
+     Shopify nomme son identifiant tantôt variantId, tantôt variant_id, et
+     parfois en GID (« gid://shopify/ProductVariant/123 ») : on compare sur la
+     partie numérique, sinon deux écritures du même identifiant ne se
+     reconnaîtraient pas. */
+  var nums=function(x){var t=String(x==null?"":x).match(/\d+/g);return t?t[t.length-1]:"";};
+  var lVar=nums((l&&(l.variantId!=null?l.variantId
+    :(l.variant_id!=null?l.variant_id:l.variantGid)))||"");
+  var lSku=String((l&&l.sku)||"").trim().toLowerCase();
+  var lBar=String((l&&l.barcode)||"").trim();
+  if(lVar||lSku||lBar){
+    var exact=null;
+    (DB.variantes||[]).forEach(function(v){
+      if(exact||!v)return;
+      var ok=(lVar&&v.shopifyVariantId&&nums(v.shopifyVariantId)===lVar)
+        ||(lSku&&v.shopifySku&&String(v.shopifySku).trim().toLowerCase()===lSku)
+        ||(lBar&&v.barcode&&String(v.barcode).trim()===lBar);
+      if(ok)exact=v;
+    });
+    if(exact){
+      var mx=(exact.modeleId!=null)?modeleById(exact.modeleId):null;
+      if(mx&&mx.sku)return {sku:String(mx.sku),sur:"exact"};
+    }
+  }
   var hay=norm(l&&l.sku)+"#"+norm(l&&l.title);
-  /* 2. Un SKU marque reconnu dans la ligne. On prend le plus long : « IH6561 »
+  /* 3. Un SKU marque reconnu dans la ligne. On prend le plus long : « IH6561 »
      ne doit pas être évincé par un SKU court qui en serait un fragment. */
   var trouve=null;
   (DB.modeles||[]).forEach(function(m){
@@ -8564,7 +8595,7 @@ function shopSkuMarque(o,i,l){
     if(sk.length>=4&&hay.indexOf(sk)>=0&&(!trouve||sk.length>norm(trouve.sku).length))trouve=m;
   });
   if(trouve)return {sku:String(trouve.sku),sur:"reconnu"};
-  /* 3. Le titre. On exige un recouvrement net ET un écart avec le deuxième
+  /* 4. Le titre. On exige un recouvrement net ET un écart avec le deuxième
      meilleur : sans cet écart, « Dunk Low Panda » et « Dunk Low Panda (GS) »
      se départagent au hasard. */
   var B=_pwords(l&&l.title);
