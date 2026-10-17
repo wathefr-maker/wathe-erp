@@ -8527,6 +8527,64 @@ function shopReturnPiecesCore(silentEmpty){
 }
 function shopReturnPieces(){if(shopReturnPiecesCore(false))shopRefresh();}
 function _pwords(s){return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").split(" ").filter(function(w){return w.length>2&&["the","and","women","womens","wmns","men","mens","kids","enfant","femme","homme"].indexOf(w)<0;});}
+/* ============================================================================
+   LE SKU À AFFICHER SUR UNE LIGNE DE COMMANDE SHOPIFY
+
+   Le SKU que Shopify renvoie sur la ligne est souvent un identifiant numérique
+   de son cru — « 56900783472975 » — qui ne correspond à rien de cherchable :
+   ni la référence marque, ni une réf interne. Le code le savait déjà
+   (fsLineMatch le dit en commentaire) mais la fenêtre d'assignation
+   l'affichait quand même, et c'est précisément là qu'on a besoin d'un SKU
+   utile : c'est le moment où l'on va chercher la paire dans le stock.
+
+   On remonte donc au modèle, dans l'ordre du plus sûr au moins sûr :
+     1. une paire déjà assignée à la ligne — c'est un choix humain, il tranche ;
+     2. un SKU de modèle reconnu dans le SKU ou le titre de la ligne ;
+     3. le titre, par recouvrement de mots, et seulement si la correspondance
+        est franche et sans ambiguïté — deux modèles aussi proches l'un que
+        l'autre ne donnent rien plutôt qu'un mauvais SKU.
+   ========================================================================== */
+function shopSkuMarque(o,i,l){
+  var norm=function(x){return String(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");};
+  /* 1. La paire assignée. */
+  try{
+    var as=shopAssignedFor(o&&o.id,i)||[];
+    if(as.length){
+      var v=varById(as[0].varianteId)||{};
+      var m=(v.modeleId!=null)?modeleById(v.modeleId):null;
+      if(m&&m.sku)return {sku:String(m.sku),sur:"assignée"};
+    }
+  }catch(_e){}
+  var hay=norm(l&&l.sku)+"#"+norm(l&&l.title);
+  /* 2. Un SKU marque reconnu dans la ligne. On prend le plus long : « IH6561 »
+     ne doit pas être évincé par un SKU court qui en serait un fragment. */
+  var trouve=null;
+  (DB.modeles||[]).forEach(function(m){
+    var sk=norm(m.sku);
+    if(sk.length>=4&&hay.indexOf(sk)>=0&&(!trouve||sk.length>norm(trouve.sku).length))trouve=m;
+  });
+  if(trouve)return {sku:String(trouve.sku),sur:"reconnu"};
+  /* 3. Le titre. On exige un recouvrement net ET un écart avec le deuxième
+     meilleur : sans cet écart, « Dunk Low Panda » et « Dunk Low Panda (GS) »
+     se départagent au hasard. */
+  var B=_pwords(l&&l.title);
+  if(B.length>=2){
+    var sB=new Set(B),best=null,bestScore=0,second=0;
+    (DB.modeles||[]).forEach(function(m){
+      if(!m||!m.sku)return;
+      var A=_pwords(m.fr);
+      if(A.length<2)return;
+      var common=A.filter(function(w){return sB.has(w);}).length;
+      var score=common/Math.max(A.length,B.length);
+      if(score>bestScore){second=bestScore;bestScore=score;best=m;}
+      else if(score>second)second=score;
+    });
+    if(best&&bestScore>=0.7&&(bestScore-second)>=0.08)
+      return {sku:String(best.sku),sur:"titre"};
+  }
+  return null;
+}
+
 function assignMismatch(l,v){var m=modeleById(v.modeleId)||{};var A=_pwords(m.fr),B=_pwords(l&&l.title);if(A.length<2||B.length<2)return false;var sB=new Set(B),sA=new Set(A);var common=A.filter(function(w){return sB.has(w);}).length;var aExtra=A.filter(function(w){return !sB.has(w);}).length,bExtra=B.filter(function(w){return !sA.has(w);}).length;var ratio=common/Math.max(A.length,B.length);return ratio<0.7&&aExtra>=1&&bExtra>=1;}
 /* ============================================================================
    ALERTE MARGE FAIBLE — commandes Shopify
@@ -8622,7 +8680,17 @@ function shopAssignSection(o){
     }).join("");
     const canAdd=assigned.length<need;
     const box=canAdd?('<div style="margin-top:6px"><div style="display:flex;gap:8px"><input id="shopAsg'+i+'" autocomplete="off" placeholder="Réf. interne ou SKU de la paire en stock…" style="flex:1;padding:8px 11px;border:1px solid var(--line);border-radius:9px;font:inherit" oninput="shopAssignType('+i+')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();shopAssignSearch('+i+');}"><button class="btn v" onclick="shopAssignSearch('+i+')">Assigner</button></div><div id="shopAsgRes'+i+'"></div></div>'):'<div class="muted" style="margin-top:6px;font-size:12.5px">✓ Paire(s) assignée(s).</div>';
-    return '<tr><td style="vertical-align:top"><b>'+esc(l.title)+'</b>'+(l.variantTitle?' <b style="color:var(--violet)">'+esc(l.variantTitle)+'</b>':'')+'<br><span class="muted" style="font-size:12px">SKU '+esc(l.sku||"—")+'</span></td><td style="vertical-align:top">'+money(l.price,o.currency)+'</td><td style="vertical-align:top">'+need+'</td><td style="vertical-align:top"><b>'+money((l.price||0)*need,o.currency)+'</b></td><td style="min-width:320px">'+chips+box+'</td></tr>';
+    /* On montre la référence marque quand on sait la retrouver. Sinon on
+       montre la référence Shopify en la NOMMANT, pour qu'elle ne soit pas
+       prise pour un SKU marque — c'est ce malentendu qui faisait chercher
+       « 56900783472975 » dans le stock. */
+    var _sk=shopSkuMarque(o,i,l);
+    var _skHtml=_sk
+      ? ('SKU '+esc(_sk.sku)
+         +(_sk.sur==="titre"?' <span style="color:#b45309" title="Déduit du nom du produit : à confirmer">(probable)</span>':''))
+      : ('<span title="Shopify ne donne pas de référence marque sur cette ligne">réf. Shopify '
+         +esc(l.sku||"—")+'</span>');
+    return '<tr><td style="vertical-align:top"><b>'+esc(l.title)+'</b>'+(l.variantTitle?' <b style="color:var(--violet)">'+esc(l.variantTitle)+'</b>':'')+'<br><span class="muted" style="font-size:12px">'+_skHtml+'</span></td><td style="vertical-align:top">'+money(l.price,o.currency)+'</td><td style="vertical-align:top">'+need+'</td><td style="vertical-align:top"><b>'+money((l.price||0)*need,o.currency)+'</b></td><td style="min-width:320px">'+chips+box+'</td></tr>';
   }).join("");
   return '<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Produits de la vente — assignation des paires du stock</h3>'+
     shopReturnedBanner(o)+
