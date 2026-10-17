@@ -8542,10 +8542,10 @@ function _pwords(s){return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g," "
      2. une CLÉ EXACTE : identifiant de variante Shopify, SKU publié par l'ERP,
         ou code-barres. Là il n'y a pas de doute possible, c'est le même objet
         des deux côtés ;
-     3. un SKU de modèle reconnu dans le SKU ou le titre de la ligne ;
-     4. le titre, par recouvrement de mots, et seulement si la correspondance
-        est franche et sans ambiguïté — deux modèles aussi proches l'un que
-        l'autre ne donnent rien plutôt qu'un mauvais SKU.
+     3. un SKU de modèle littéralement présent dans le SKU ou le titre.
+
+   Et rien d'autre. Si aucune de ces trois pistes n'aboutit, la fonction rend
+   null et la ligne n'affiche aucun SKU.
    ========================================================================== */
 function shopSkuMarque(o,i,l){
   var norm=function(x){return String(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");};
@@ -8595,24 +8595,11 @@ function shopSkuMarque(o,i,l){
     if(sk.length>=4&&hay.indexOf(sk)>=0&&(!trouve||sk.length>norm(trouve.sku).length))trouve=m;
   });
   if(trouve)return {sku:String(trouve.sku),sur:"reconnu"};
-  /* 4. Le titre. On exige un recouvrement net ET un écart avec le deuxième
-     meilleur : sans cet écart, « Dunk Low Panda » et « Dunk Low Panda (GS) »
-     se départagent au hasard. */
-  var B=_pwords(l&&l.title);
-  if(B.length>=2){
-    var sB=new Set(B),best=null,bestScore=0,second=0;
-    (DB.modeles||[]).forEach(function(m){
-      if(!m||!m.sku)return;
-      var A=_pwords(m.fr);
-      if(A.length<2)return;
-      var common=A.filter(function(w){return sB.has(w);}).length;
-      var score=common/Math.max(A.length,B.length);
-      if(score>bestScore){second=bestScore;bestScore=score;best=m;}
-      else if(score>second)second=score;
-    });
-    if(best&&bestScore>=0.7&&(bestScore-second)>=0.08)
-      return {sku:String(best.sku),sur:"titre"};
-  }
+  /* Rien de sûr : on ne montre pas de SKU. On avait essayé de deviner à
+     partir du titre — c'est faisable, mais un SKU approximatif affiché sous
+     un nom de produit se lit comme un SKU tout court, et envoie chercher la
+     mauvaise paire en rayon. Pas de réponse vaut mieux qu'une réponse à
+     vérifier. */
   return null;
 }
 
@@ -8711,17 +8698,12 @@ function shopAssignSection(o){
     }).join("");
     const canAdd=assigned.length<need;
     const box=canAdd?('<div style="margin-top:6px"><div style="display:flex;gap:8px"><input id="shopAsg'+i+'" autocomplete="off" placeholder="Réf. interne ou SKU de la paire en stock…" style="flex:1;padding:8px 11px;border:1px solid var(--line);border-radius:9px;font:inherit" oninput="shopAssignType('+i+')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();shopAssignSearch('+i+');}"><button class="btn v" onclick="shopAssignSearch('+i+')">Assigner</button></div><div id="shopAsgRes'+i+'"></div></div>'):'<div class="muted" style="margin-top:6px;font-size:12.5px">✓ Paire(s) assignée(s).</div>';
-    /* On montre la référence marque quand on sait la retrouver. Sinon on
-       montre la référence Shopify en la NOMMANT, pour qu'elle ne soit pas
-       prise pour un SKU marque — c'est ce malentendu qui faisait chercher
-       « 56900783472975 » dans le stock. */
+    /* Le SKU marque, ou rien. L'identifiant que Shopify renvoie sur la ligne
+       n'est pas une référence cherchable — l'afficher, même nommé, ne faisait
+       qu'occuper la place sous le titre. */
     var _sk=shopSkuMarque(o,i,l);
-    var _skHtml=_sk
-      ? ('SKU '+esc(_sk.sku)
-         +(_sk.sur==="titre"?' <span style="color:#b45309" title="Déduit du nom du produit : à confirmer">(probable)</span>':''))
-      : ('<span title="Shopify ne donne pas de référence marque sur cette ligne">réf. Shopify '
-         +esc(l.sku||"—")+'</span>');
-    return '<tr><td style="vertical-align:top"><b>'+esc(l.title)+'</b>'+(l.variantTitle?' <b style="color:var(--violet)">'+esc(l.variantTitle)+'</b>':'')+'<br><span class="muted" style="font-size:12px">'+_skHtml+'</span></td><td style="vertical-align:top">'+money(l.price,o.currency)+'</td><td style="vertical-align:top">'+need+'</td><td style="vertical-align:top"><b>'+money((l.price||0)*need,o.currency)+'</b></td><td style="min-width:320px">'+chips+box+'</td></tr>';
+    var _skHtml=_sk?('<br><span class="muted" style="font-size:12px">SKU '+esc(_sk.sku)+'</span>'):'';
+    return '<tr><td style="vertical-align:top"><b>'+esc(l.title)+'</b>'+(l.variantTitle?' <b style="color:var(--violet)">'+esc(l.variantTitle)+'</b>':'')+_skHtml+'</td><td style="vertical-align:top">'+money(l.price,o.currency)+'</td><td style="vertical-align:top">'+need+'</td><td style="vertical-align:top"><b>'+money((l.price||0)*need,o.currency)+'</b></td><td style="min-width:320px">'+chips+box+'</td></tr>';
   }).join("");
   return '<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Produits de la vente — assignation des paires du stock</h3>'+
     shopReturnedBanner(o)+
