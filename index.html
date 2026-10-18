@@ -9034,12 +9034,21 @@ function mergeDupOrders(){try{if(!Array.isArray(DB.shopDupOrders))DB.shopDupOrde
   // les annulations sont mémorisées EN BASE (le cache Shopify est écrasé à chaque resynchro)
   DB.shopCancelled.forEach(function(id){_shopCancelledIds.add(id);});
   var _chg=false;
-  // RÉPARATION : une paire rattachée à une commande SANS numéro de ligne n'est comptée nulle part
-  // et devient impossible à réassigner. On lui rend sa ligne.
+  /* RÉPARATION : une paire rattachée à une commande SANS numéro de ligne n'est
+     comptée nulle part et devient impossible à réassigner. On lui rend sa ligne.
+
+     ON NE SUPPRIME PLUS LE LIEN QUAND LA COMMANDE EST ABSENTE.
+     _shopOrders ne contient que la PAGE de commandes chargée — c'est écrit
+     dans son chargement, qui garde un drapeau « il y en a d'autres ». Une
+     commande un peu ancienne n'y est donc pas, et cette réparation effaçait
+     son lien : la paire se retrouvait détachée d'une vente pourtant facturée,
+     sans que rien ne le signale, et son retour devenait impossible.
+     Absente de la page chargée ne veut pas dire inexistante. On passe, et la
+     réparation se fera le jour où la commande sera sous les yeux. */
   (DB.articles||[]).forEach(function(a){
     if(a.archived||!a.shopifyOrderId||a.shopifyLineIdx!=null)return;
     var o=_shopOrders.find(function(x){return x&&x.id===a.shopifyOrderId;});
-    if(!o){delete a.shopifyOrderId;delete a.shopifyOrderName;a.autoLinked=0;return;}
+    if(!o)return;                       // commande hors de la page chargée : on n'y touche pas
     var li=(typeof fsPickLine==="function")?fsPickLine(o,null,null):0;
     a.shopifyLineIdx=(li>=0?li:0);
   });
