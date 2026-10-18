@@ -10337,14 +10337,33 @@ function flowstockReconcile(silent){
   const stripCopy=s2=>String(s2||"").replace(/\s*\(copie\)\s*$/i,"");
   const normNum=s2=>stripCopy(s2).replace(/^#/,"").replace(/[^0-9a-z]/gi,"").trim();
   let n=0;
-  // 0) AUTO-RÉPARATION : détache toute pièce FlowStock dont le n° ne correspond PAS à la commande assignée
+  /* 0) AUTO-RÉPARATION : détache une pièce FlowStock dont le n° CONTREDIT la
+     commande assignée.
+
+     Deux resserrages, pour la même raison que partout ailleurs : ne détacher
+     que sur une contradiction PROUVÉE, jamais sur une absence d'information.
+
+     · Le test était « !onum || onum!==asn ». Le premier terme détachait toute
+       pièce FlowStock SANS numéro de commande client — c'est-à-dire le stock
+       acheté sans commande en face, le cas le plus courant. Rattachée à une
+       vente puis facturée, elle se faisait détacher au chargement suivant :
+       la facture restait, le lien disparaissait, et le retour devenait
+       impossible. Ne pas avoir de numéro n'est pas se tromper de commande.
+
+     · Une pièce DÉJÀ FACTURÉE sur cette commande n'est plus détachée du tout.
+       La facture est la preuve que le rattachement a eu lieu et qu'il a servi.
+       Si un numéro la contredit, c'est le numéro qui est douteux, pas la
+       facture — et seul un retour doit défaire une vente facturée. */
   DB.articles.forEach(function(a){
     if(a.archived||!a.flowstockId||!a.shopifyOrderId)return;
     if(a.manualLink)return;            // assignée à la main : on n'y touche pas
+    if(a.shopifyInvoiced||a.shopifyInvoiceNum)return;   // facturée : seul un retour la défait
     const onum=normNum(a.flowstockOrderNumber);
+    if(!onum)return;                   // pas de numéro : aucune contradiction à constater
     const _o=(_shopOrders||[]).find(function(x){return x&&x.id===a.shopifyOrderId;});
     const asn=normNum((_o&&_o.duplicated&&_o.sourceName)?_o.sourceName:(_o?_o.name:a.shopifyOrderName));
-    if(!onum||onum!==asn){a.shopifyOrderId=null;a.shopifyOrderName=null;a.shopifyLineIdx=null;a.autoLinked=0;a.maj=today();n++;}
+    if(!asn)return;                    // commande inconnue des deux côtés : on ne conclut rien
+    if(onum!==asn){a.shopifyOrderId=null;a.shopifyOrderName=null;a.shopifyLineIdx=null;a.autoLinked=0;a.maj=today();n++;}
   });
   // 1) RATTACHEMENT — UNIQUEMENT par le numéro de commande Shopify
   DB.articles.forEach(function(a){
