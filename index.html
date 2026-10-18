@@ -10258,7 +10258,20 @@ function flowstockReconcile(silent){
   });
   // 1) RATTACHEMENT — UNIQUEMENT par le numéro de commande Shopify
   DB.articles.forEach(function(a){
-    if(a.archived||!a.flowstockId||a.shopifyOrderId||a.statut!=="En Stock")return;
+    if(a.archived||!a.flowstockId||a.shopifyOrderId)return;
+    /* LE STATUT NE DOIT PAS BLOQUER LE RATTACHEMENT.
+       On exigeait « En Stock », pour ne pas coller à une commande une paire
+       qui n'était plus disponible. Mais une paire achetée sur FlowStock POUR
+       cette commande, puis expédiée et facturée, n'est justement plus en
+       stock : elle était donc écartée pour toujours et n'apparaissait jamais
+       dans sa ligne de vente, alors que c'est elle qui est partie.
+       Le numéro de commande FlowStock, lui, dit pour QUELLE commande la paire
+       a été achetée — il ne devient pas faux parce que la paire est sortie.
+       On ne garde donc qu'une exclusion : une paire perdue n'a servi aucune
+       vente et n'a rien à faire sur une ligne. Les autres garde-fous restent
+       entiers : pas de commande annulée, pas de paire retournée, et une ligne
+       déjà servie n'en reprend pas. */
+    if(a.statut==="Perdu")return;
     const onum=normNum(a.flowstockOrderNumber);if(!onum)return;
     /* Une paire qui vient d'être retournée est exactement dans l'état que ce
        rattachement cherche : « En Stock », sans commande, et portant encore le
