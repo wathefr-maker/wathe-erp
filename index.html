@@ -7945,6 +7945,60 @@ async function loadShopifyOrdersSbt(force){
     console.warn("loadShopifyOrdersSbt:",e&&e.message?e.message:e);
   }finally{_shopLoadingSbt=false;}
 }
+/* ============================================================================
+   LE CACHE DES COMMANDES S'ACCUMULE AU LIEU DE SE REMPLACER
+
+   Shopify sert ses commandes par paquets. Jusqu'ici, « Actualiser » écrasait
+   la liste par les 250 dernières : les commandes plus anciennes, chargées à la
+   main avec « Charger plus », disparaissaient au rafraîchissement suivant. Et
+   « Charger plus » n'enregistrait même pas le cache, donc son travail était
+   perdu au rechargement de la page.
+
+   Maintenant on fusionne : une commande vue une fois reste connue. On garde
+   les SHOP_CACHE_MAX plus récentes ; au-delà, l'archivage existant prend le
+   relais (_shopMinOrder masque les commandes sous un certain numéro).
+
+   Un point de prudence : fusionner, c'est aussi ne jamais oublier. Si une
+   commande est supprimée côté Shopify, une fusion naïve en garderait une copie
+   fantôme pour toujours. On purge donc, dans la TRANCHE que Shopify vient de
+   couvrir, ce qu'il ne renvoie plus — et seulement là. En dessous de cette
+   tranche, on n'a rien appris, donc on ne touche à rien.
+   ========================================================================== */
+var SHOP_CACHE_MAX=1000;
+function shopNumCmd(o){
+  var t=String((o&&o.name)||"").match(/\d+/);
+  return t?+t[0]:0;
+}
+function shopFusionnerOrders(nouvelles,purgerTranche){
+  nouvelles=(nouvelles||[]).filter(function(o){return o&&o.id!=null;})
+    .map(function(o){if(!o._shop)o._shop="wathe";return o;});
+  var parId={};
+  (_shopOrders||[]).forEach(function(o){if(o&&o.id!=null)parId[String(o.id)]=o;});
+
+  if(purgerTranche&&nouvelles.length){
+    /* La tranche couverte va de la plus récente au plus petit numéro reçu.
+       Une commande du cache dans cette tranche et absente de la réponse a été
+       supprimée chez Shopify. */
+    var bas=nouvelles.reduce(function(n,o){var x=shopNumCmd(o);return (x&&x<n)?x:n;},Infinity);
+    var recus={};nouvelles.forEach(function(o){recus[String(o.id)]=1;});
+    Object.keys(parId).forEach(function(k){
+      var n=shopNumCmd(parId[k]);
+      if(n&&n>=bas&&!recus[k])delete parId[k];
+    });
+  }
+  nouvelles.forEach(function(o){parId[String(o.id)]=o;});   // la version fraîche gagne
+
+  var tout=Object.keys(parId).map(function(k){return parId[k];});
+  tout.sort(function(a,b){
+    var na=shopNumCmd(a),nb=shopNumCmd(b);
+    if(na!==nb)return nb-na;                                 // numéro décroissant
+    return String(b.date||"").localeCompare(String(a.date||""));
+  });
+  var coupees=Math.max(0,tout.length-SHOP_CACHE_MAX);
+  _shopOrders=coupees?tout.slice(0,SHOP_CACHE_MAX):tout;
+  return coupees;
+}
+
 async function shopCacheSave(){
   try{
     await sb.from("shopify_orders_cache").upsert([{id:1,data:{orders:_shopOrders,hasNextPage:_shopMore,endCursor:_shopCursor,minOrder:_shopMinOrder,fsHideBefore:_fsHideBeforeDate,dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),savedAt:new Date().toISOString()}}]);
@@ -7971,7 +8025,8 @@ async function loadShopifyOrders(force){
     const {data,error}=await sb.functions.invoke("shopify-orders",{body:{limit:250}});
     if(error)throw new Error(error.message||error);
     if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
-    _shopOrders=(data.orders||[]).map(function(o){if(!o._shop)o._shop="wathe";return o;});_shopMore=!!(data.pageInfo&&data.pageInfo.hasNextPage);_shopCursor=data.pageInfo&&data.pageInfo.endCursor;_shopPage=1;mergeDupOrders();try{fxSyncOrders().then(function(ch){if(ch){try{renderShopRows();}catch(_){}try{var _v=localStorage.getItem("erp_view")||"";if(typeof renderDash==="function"&&(_v==="dash"||_v==="stats"))renderAll();}catch(_){}}});}catch(_){}try{flowstockReconcile(true);}catch(e){}
+    /* Fusion, et purge de la seule tranche que Shopify vient de couvrir. */
+    shopFusionnerOrders(data.orders||[],true);_shopMore=!!(data.pageInfo&&data.pageInfo.hasNextPage);_shopCursor=data.pageInfo&&data.pageInfo.endCursor;_shopPage=1;mergeDupOrders();try{fxSyncOrders().then(function(ch){if(ch){try{renderShopRows();}catch(_){}try{var _v=localStorage.getItem("erp_view")||"";if(typeof renderDash==="function"&&(_v==="dash"||_v==="stats"))renderAll();}catch(_){}}});}catch(_){}try{flowstockReconcile(true);}catch(e){}
     try{renderShopRows();}catch(_){}
     shopCacheSave();
   }catch(e){
@@ -7986,8 +8041,13 @@ async function shopLoadMore(){
     const {data,error}=await sb.functions.invoke("shopify-orders",{body:{limit:250,cursor:_shopCursor}});
     if(error)throw new Error(error.message||error);
     if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
-    _shopOrders=_shopOrders.concat(data.orders||[]);
+    /* Pas de purge ici : cette page descend vers les commandes PLUS ANCIENNES,
+       elle n'apprend rien sur celles qu'on a déjà. */
+    shopFusionnerOrders(data.orders||[],false);
     _shopMore=!!(data.pageInfo&&data.pageInfo.hasNextPage);_shopCursor=data.pageInfo&&data.pageInfo.endCursor;
+    /* Et on enregistre : sans ça, le travail de « Charger plus » était perdu
+       au rechargement suivant de la page. */
+    try{shopCacheSave();}catch(_){}
     renderShopRows();try{fxSyncOrders().then(function(ch){if(ch){try{renderShopRows();}catch(_){}}});}catch(_){}
   }catch(e){alert("Erreur : "+(e&&e.message?e.message:e));}
   if(mb){mb.textContent="Charger plus de commandes";mb.disabled=false;}
