@@ -8839,15 +8839,28 @@ function shopWhyNotAssignable(q){
   if(!inStock(a))return "La paire "+esc(a.ref||"")+" n'est pas disponible : statut <b>"+esc(a.statut||"?")+"</b>. Seules les paires « En Stock » peuvent être assignées.";
   return "Cette paire ne remplit pas les conditions d'assignation.";
 }
+/* LA RECHERCHE D'ASSIGNATION NE SE LIMITE PAS AU STOCK.
+   Elle exigeait inStock(a), ce qui se défend pour une vente à servir. Mais
+   elle sert aussi à RÉPARER : une paire déjà expédiée et facturée, dont le
+   lien vers la commande n'a jamais été posé ou a été perdu, n'était trouvable
+   nulle part — ni par le rattachement automatique, ni ici. Impossible alors
+   de la remettre sur sa ligne, donc impossible de traiter son retour.
+   On laisse donc chercher les paires sorties, en affichant leur statut pour
+   qu'on voie ce qu'on prend. Restent exclues : les archivées, et celles déjà
+   rattachées à une commande — les déplacer se fait en les détachant d'abord. */
 function shopMatchPieces(q){q=(q||"").trim().toLowerCase();if(!q)return[];return DB.articles.filter(function(a){
-    if(!inStock(a)||a.archived||a.shopifyOrderId)return false;
+    if(a.archived||a.shopifyOrderId)return false;
     const v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};
     const ref=(a.ref||"").toLowerCase(),sku=(m.sku||"").toLowerCase();
     return ref===q||ref.includes(q)||(sku&&(sku===q||sku.includes(q)));
   }).slice(0,12);}
 function shopRenderMatches(idx,found){const res=document.getElementById("shopAsgRes"+idx);if(!res)return;
   res.innerHTML='<div style="margin-top:6px;border:1px solid var(--line);border-radius:9px;overflow:hidden">'+found.map(function(a){const v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};
-    return '<div style="padding:8px 11px;border-top:1px solid var(--line);cursor:pointer;font-size:13px" onmousedown="event.preventDefault()" onclick="shopAssignPick('+idx+','+a.id+')"><b>'+esc(a.ref)+'</b> · '+esc(m.fr||"")+' '+szcellV(v)+' · <span class="muted">'+esc(m.sku||"")+' · '+esc(a.emplacement||"")+'</span></div>';
+    /* Le statut est affiché sur les paires qui ne sont PLUS en stock : sans
+       lui, on assignerait sans s'en rendre compte une paire déjà partie
+       ailleurs. En stock, rien ne s'affiche — c'est le cas normal. */
+    var _st=inStock(a)?"":(' <span style="color:#b45309;font-weight:700">'+esc(a.statut||"sortie")+'</span>');
+    return '<div style="padding:8px 11px;border-top:1px solid var(--line);cursor:pointer;font-size:13px" onmousedown="event.preventDefault()" onclick="shopAssignPick('+idx+','+a.id+')">'+_st+' <b>'+esc(a.ref)+'</b> · '+esc(m.fr||"")+' '+szcellV(v)+' · <span class="muted">'+esc(m.sku||"")+' · '+esc(a.emplacement||"")+'</span></div>';
   }).join("")+'</div>';}
 function shopAssignType(idx){const inp=document.getElementById("shopAsg"+idx),res=document.getElementById("shopAsgRes"+idx);if(!inp||!res)return;
   const q=(inp.value||"").trim();if(!q){res.innerHTML="";return;}
@@ -8865,8 +8878,16 @@ function shopAssignPick(idx,aid){
   // Assignation MANUELLE : on la marque pour que l'auto-réparation FlowStock
   // ne la défasse pas. Une paire retournée puis réassignée à une autre commande
   // a un n° FlowStock qui ne correspond plus — c'est normal, pas une erreur.
+  /* Assigner une paire DÉJÀ SORTIE est légitime — c'est ainsi qu'on répare un
+     lien manquant — mais ce n'est pas le geste courant : on demande
+     confirmation plutôt que de le faire en silence. */
+  if(!inStock(a)&&!confirm("La paire "+a.ref+" n'est plus en stock (statut « "
+    +(a.statut||"?")+" »).\n\nL'assigner quand même à "+(o?o.name:"cette commande")
+    +" ?\n\nÀ faire quand la paire est bien celle qui est partie pour cette commande"
+    +" et que le lien manque — par exemple pour pouvoir traiter son retour."))return;
   a.shopifyOrderId=_shopCurOrderId;a.shopifyOrderName=o?o.name:"";a.shopifyLineIdx=idx;a.manualLink=1;a.autoLinked=0;a.maj=today();
-  logAct("Assignation Shopify","Pièce stock",a.ref+" → "+(o?o.name:""));
+  logAct("Assignation Shopify","Pièce stock",a.ref+" → "+(o?o.name:"")
+    +(inStock(a)?"":" (paire déjà sortie, statut « "+(a.statut||"?")+" »)"));
   save();shopRefresh();
 }
 function shopUnassign(aid){
