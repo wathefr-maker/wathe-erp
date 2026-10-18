@@ -7465,6 +7465,41 @@ async function enforceDispoStock(doSync){
   try{renderStock();}catch(e){}
   return chg.length;
 }
+/* ============================================================================
+   TRADUIRE LES REFUS DE SHOPIFY
+
+   L'ERP recopiait tel quel le JSON renvoyé par l'API. Un message comme
+   « [{"field":["variants","0","optionValues","0"],"message":"Cannot set name
+   for an option value linked to a metafield"}] » ne dit pas à celui qui le lit
+   ce qui s'est passé, ni quoi faire — alors que le cas est identifiable et la
+   marche à suivre connue.
+
+   On traduit les refus qu'on sait reconnaître, et on garde le texte d'origine
+   pour les autres : un message inconnu mal résumé serait pire que brut.
+   ========================================================================== */
+function shopTraduireErreur(e){
+  var brut=(typeof e==="string")?e:JSON.stringify(e||"");
+  var t=brut.toLowerCase();
+  if(t.indexOf("option value linked to a metafield")>=0){
+    return "la taille de ce produit est reliée à un métachamp dans Shopify "
+      +"(option « connectée » au catalogue Shopify). Tant qu'elle l'est, l'ERP ne "
+      +"peut plus écrire les tailles : Shopify exige un identifiant de métachamp "
+      +"là où nous envoyons « 40 ».\n  → Dans l'admin Shopify, ouvre le produit, "
+      +"supprime l'option de taille connectée et recrée-la en option simple.";
+  }
+  if(t.indexOf("write_publications")>=0||t.indexOf("not approved to access")>=0){
+    return "l'application Shopify n'a pas le droit de publier (write_publications). "
+      +"Le produit est à jour dans l'admin mais pas sur la vitrine.";
+  }
+  if(t.indexOf("exceeded")>=0&&t.indexOf("variant")>=0){
+    return "ce produit dépasse le nombre de variantes autorisé par Shopify.";
+  }
+  if(t.indexOf("throttled")>=0||t.indexOf("too many requests")>=0){
+    return "Shopify a limité le débit : réessaie dans une minute.";
+  }
+  return brut;
+}
+
 async function shopSyncModelsForArticles(list,btn){
   // Séparer les pièces SBT (synchro PIÈCE par pièce) des pièces Wathe (par modèle).
   var _sbtPieces=[],_wathePieces=[];
@@ -7476,7 +7511,7 @@ async function shopSyncModelsForArticles(list,btn){
   // 1) SBT : une pièce = un produit
   for(const a of _sbtPieces){try{const r=await shopSyncPieceSbt(a);if(r&&r.ok)okN++;}catch(e){errs.push((a.ref||"")+" : "+(e.message||e));}}
   // 2) Wathe : par modèle (inchangé)
-  for(const id of ids){try{const r=await shopSyncModel(id);if(r&&r.ok){okN++;if(r.mode==="grafted"||r.mode==="linked")grafted++;if(r.createErr){const mm=modeleById(id)||{};warns.push((mm.fr||("modèle "+id))+" : "+(typeof r.createErr==="string"?r.createErr:JSON.stringify(r.createErr)));}}}catch(e){const mm=modeleById(id)||{};errs.push((mm.fr||("modèle "+id))+" : "+(e.message||e));}}
+  for(const id of ids){try{const r=await shopSyncModel(id);if(r&&r.ok){okN++;if(r.mode==="grafted"||r.mode==="linked")grafted++;if(r.createErr){const mm=modeleById(id)||{};warns.push((mm.fr||("modèle "+id))+" : "+shopTraduireErreur(r.createErr));}}}catch(e){const mm=modeleById(id)||{};errs.push((mm.fr||("modèle "+id))+" : "+(e.message||e));}}
   await save();
   if(btn){btn.disabled=false;btn.textContent=_t;}
   let msg="";
