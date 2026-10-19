@@ -8000,9 +8000,27 @@ async function loadShopifyOrdersSbt(force){
    « Charger plus » n'enregistrait même pas le cache, donc son travail était
    perdu au rechargement de la page.
 
-   Maintenant on fusionne : une commande vue une fois reste connue. On garde
-   les SHOP_CACHE_MAX plus récentes ; au-delà, l'archivage existant prend le
-   relais : au-delà, les commandes passent dans l'onglet Archives.
+   Maintenant on fusionne : une commande vue une fois reste connue.
+
+   DEUX PLAFONDS QU'IL NE FAUT SURTOUT PAS CONFONDRE — c'est l'erreur qui a
+   vidé l'onglet Archives, et elle mérite d'être écrite noir sur blanc :
+
+     · SHOP_ACTIVES_MAX (1000) est la frontière d'AFFICHAGE. Au-delà, une
+       commande quitte la liste courante et apparaît dans l'onglet Archives.
+       Elle est toujours là, simplement rangée ailleurs.
+     · SHOP_CACHE_MAX est la frontière de MÉMOIRE. Au-delà, une commande est
+       réellement OUBLIÉE : elle sort du cache et il faut la recharger depuis
+       Shopify pour la revoir.
+
+   Les deux valaient 1000. Une commande atteignait donc l'oubli à l'instant
+   précis où elle aurait dû basculer en Archives : jetée au lieu d'être rangée,
+   et l'onglet Archives ne pouvait structurellement jamais se remplir.
+
+   SHOP_CACHE_MAX doit donc rester STRICTEMENT SUPÉRIEUR à SHOP_ACTIVES_MAX,
+   et l'écart entre les deux est exactement la profondeur d'historique
+   consultable dans Archives. 3000 couvre plusieurs années au rythme actuel,
+   pour un cache de l'ordre de quelques mégaoctets. Un garde-fou plus bas
+   prévient en console si quelqu'un rapproche les deux valeurs.
 
    Un point de prudence : fusionner, c'est aussi ne jamais oublier. Si une
    commande est supprimée côté Shopify, une fusion naïve en garderait une copie
@@ -8010,7 +8028,7 @@ async function loadShopifyOrdersSbt(force){
    couvrir, ce qu'il ne renvoie plus — et seulement là. En dessous de cette
    tranche, on n'a rien appris, donc on ne touche à rien.
    ========================================================================== */
-var SHOP_CACHE_MAX=1000;
+var SHOP_CACHE_MAX=3000;
 function shopNumCmd(o){
   var t=String((o&&o.name)||"").match(/\d+/);
   return t?+t[0]:0;
@@ -8040,6 +8058,15 @@ function shopFusionnerOrders(nouvelles,purgerTranche){
     if(na!==nb)return nb-na;                                 // numéro décroissant
     return String(b.date||"").localeCompare(String(a.date||""));
   });
+  /* Le garde-fou : si le plafond de mémoire rejoint la frontière d'affichage,
+     les commandes sont oubliées au lieu d'être archivées et l'onglet Archives
+     reste vide sans que rien ne le signale. On refuse de le faire en silence. */
+  var seuilVue=(typeof SHOP_ACTIVES_MAX!=="undefined")?SHOP_ACTIVES_MAX:0;
+  if(seuilVue&&SHOP_CACHE_MAX<=seuilVue)
+    console.warn("[Shopify] SHOP_CACHE_MAX ("+SHOP_CACHE_MAX+") n'est pas supérieur à"
+      +" SHOP_ACTIVES_MAX ("+seuilVue+") : l'onglet Archives ne pourra jamais se remplir,"
+      +" les commandes au-delà de "+seuilVue+" seront oubliées au lieu d'être archivées.");
+
   var coupees=Math.max(0,tout.length-SHOP_CACHE_MAX);
   _shopOrders=coupees?tout.slice(0,SHOP_CACHE_MAX):tout;
   return coupees;
