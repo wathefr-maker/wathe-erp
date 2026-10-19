@@ -689,7 +689,7 @@
       <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
         <div style="flex:1"><h1>FlowStock</h1><div class="sub">Commande fournisseur FlowStock → commande d'achat + mise en stock + rattachement automatique à la vente Shopify</div></div>
         <button class="btn" onclick="flowstockReconcile(false)" style="align-self:center">Rattacher aux ventes Shopify</button>
-        <button class="btn" onclick="shopCleanupBefore()" style="align-self:center" title="Masquer l'ancien historique (par numéro de commande et/ou date)">🗓 Masquer l'historique</button>
+        
         <button class="btn v" onclick="flowstockPull()" style="align-self:center">Importer depuis FlowStock</button><button class="btn" id="fsSyncBtn" onclick="fsToggleSync()" style="align-self:center">Synchro auto</button>
       </div>
       <div class="tablecard" style="padding:12px 14px;margin:10px 0"><div class="muted" id="fsMeta" style="font-size:13px"></div>
@@ -5059,7 +5059,6 @@ function pieceProtected(a){if(!a)return false;
   var onum=nn(a.shopifyOrderName||a.flowstockOrderNumber||"");
   var onumN=parseInt(onum.replace(/[^0-9]/g,""),10)||0;
   // commande sous le seuil (ancienne, masquée) -> on la purge, donc pas de protection
-  if(_shopMinOrder>0&&onumN>0&&onumN<_shopMinOrder)return false;
   if(a.statut==="Vendu")return true;
   if(a.shopifyOrderId)return true;
   if(a.flowstockOrderNumber&&onum&&(window._shopOrders||[]).some(function(o){return nn(o.name)===onum;}))return true;
@@ -7136,12 +7135,24 @@ document.addEventListener("click",e=>{const rmp=e.target.closest&&e.target.close
 /* ===== Vente Shopify ===== */
 let _shopOrdersSbt=[],_shopLoadingSbt=false,_shopWired=false,_shopLoaded=false,_shopLoading=false,_shopOrders=[],_shopCurOrderId=null,_shopMore=false,_shopCursor=null,_shopPage=1,_shopModalStep=null,_shopMinOrder=0,_shopInModal=false,_fsHideBeforeDate="";
 function shopOrderNum(o){return parseInt(String((o&&o.name)||"").replace(/[^0-9]/g,""),10)||0;}
+/* ============================================================================
+   LE SEUIL DE MASQUAGE A ÉTÉ RETIRÉ
+
+   Il cachait, dans TOUT l'ERP, les commandes sous un numéro donné et le stock
+   FlowStock acheté avant une date. Il avait servi à une reprise d'historique,
+   puis il n'a plus eu d'utilité : il masquait des ventes réelles et rendait
+   introuvables des pièces qui existaient toujours.
+
+   cutoffHides rend désormais toujours false. On garde la fonction plutôt que
+   de retirer ses quinze appels : un point unique se relit d'un coup d'œil, et
+   si un masquage est un jour nécessaire, c'est ici et nulle part ailleurs.
+
+   Rien n'avait été supprimé : ces seuils ne filtraient que l'affichage. Les
+   remettre à zéro suffit à tout faire réapparaître.
+   ========================================================================== */
+function cutoffHides(){ return false; }
+
 function cutoffNum(x){var v=x&&(x.flowstockOrderNumber!=null?x.flowstockOrderNumber:x.customerOrderNumber);if((v==null||v==="")&&x&&x.achatId!=null){var a=(DB.achats||[]).find(function(z){return z.id===x.achatId;});if(a)v=a.customerOrderNumber;}return parseInt(String(v||"").replace(/[^0-9]/g,""),10)||0;}
-function cutoffHides(x){
-  if(_shopMinOrder>0){var n=cutoffNum(x);if(n>0&&n<_shopMinOrder)return true;}
-  if(_fsHideBeforeDate&&x){var isFs=(x.source==="flowstock")||x.flowstockId||x.flowstockOrderNumber;var d=String(x.date||"").slice(0,10);if(isFs&&d&&d<_fsHideBeforeDate)return true;}
-  return false;
-}
 /* ----- Écriture Shopify : publication des pièces + synchro inventaire ----- */
 let _lastPubReason="";
 function shopTailleEU(taille,grille){
@@ -7991,7 +8002,7 @@ async function loadShopifyOrdersSbt(force){
 
    Maintenant on fusionne : une commande vue une fois reste connue. On garde
    les SHOP_CACHE_MAX plus récentes ; au-delà, l'archivage existant prend le
-   relais (_shopMinOrder masque les commandes sous un certain numéro).
+   relais : au-delà, les commandes passent dans l'onglet Archives.
 
    Un point de prudence : fusionner, c'est aussi ne jamais oublier. Si une
    commande est supprimée côté Shopify, une fusion naïve en garderait une copie
@@ -8036,7 +8047,7 @@ function shopFusionnerOrders(nouvelles,purgerTranche){
 
 async function shopCacheSave(){
   try{
-    await sb.from("shopify_orders_cache").upsert([{id:1,data:{orders:_shopOrders,hasNextPage:_shopMore,endCursor:_shopCursor,minOrder:_shopMinOrder,fsHideBefore:_fsHideBeforeDate,dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),savedAt:new Date().toISOString()}}]);
+    await sb.from("shopify_orders_cache").upsert([{id:1,data:{orders:_shopOrders,hasNextPage:_shopMore,endCursor:_shopCursor,minOrder:0,fsHideBefore:"",dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),savedAt:new Date().toISOString()}}]);
   }catch(_){}
 }
 async function loadShopifyOrders(force){
@@ -8047,7 +8058,7 @@ async function loadShopifyOrders(force){
   if(!force){
     const c=await shopCacheLoad();
     if(c&&c.orders&&c.orders.length){
-      _shopOrders=c.orders;_shopMore=!!c.hasNextPage;_shopCursor=c.endCursor||null;_shopPage=1;_shopMinOrder=+(c.minOrder||0)||0;_fsHideBeforeDate=c.fsHideBefore||"";if(Array.isArray(c.dupOrders)&&c.dupOrders.length)DB.shopDupOrders=c.dupOrders;if(Array.isArray(c.cancelled)&&c.cancelled.length)DB.shopCancelled=c.cancelled;mergeDupOrders();
+      _shopOrders=c.orders;_shopMore=!!c.hasNextPage;_shopCursor=c.endCursor||null;_shopPage=1;_shopMinOrder=0;_fsHideBeforeDate="";   /* seuils retirés : on ignore ce que le cache en garde */if(Array.isArray(c.dupOrders)&&c.dupOrders.length)DB.shopDupOrders=c.dupOrders;if(Array.isArray(c.cancelled)&&c.cancelled.length)DB.shopCancelled=c.cancelled;mergeDupOrders();
       try{flowstockReconcile(true);}catch(e){}
       try{renderShopRows();}catch(e){}
       _shopLoading=false;return;
@@ -8995,21 +9006,6 @@ const SHOP_SVG_FACT='<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 const SHOP_SVG_RET='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.7 2.7L3 13"/></svg>';
 const SHOP_SVG_X='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>';
 function shopOrderClient(o){return o.customer?((o.customer.firstName||"")+" "+(o.customer.lastName||"")).trim():"";}
-async function shopCleanupBefore(){
-  var defN=_shopMinOrder>0?_shopMinOrder:6272;
-  var s=prompt("Masquer tout ce qui est AVANT ce numéro de commande Shopify (commandes, achats FlowStock et stock rattachés). Mets 0 pour ne rien masquer par numéro.",String(defN));
-  if(s===null)return;
-  var cut=parseInt(String(s).replace(/[^0-9]/g,""),10);if(isNaN(cut))cut=0;
-  var defD=_fsHideBeforeDate||"2026-07-06";
-  var d=prompt("Masquer aussi le stock FlowStock SANS commande (« Stock propre ») acheté AVANT cette date (AAAA-MM-JJ). Laisse vide pour ne pas filtrer par date.",defD);
-  if(d===null)return;
-  d=String(d).trim();if(d&&!/^\d{4}-\d{2}-\d{2}$/.test(d)){alert("Date invalide. Format attendu : AAAA-MM-JJ (ex. 2026-07-06).");return;}
-  _shopMinOrder=cut;_fsHideBeforeDate=d;
-  logAct("Historique","Seuil","n°<"+cut+(d?(" · FlowStock avant "+d):""));
-  try{await shopCacheSave();}catch(e){}
-  try{renderShopRows();}catch(e){}try{renderAll();}catch(e){}
-  alert("C'est appliqué (rien n'est supprimé, réversible) :\n• Tout ce qui est avant #"+cut+" est masqué.\n"+(d?("• Le stock FlowStock acheté avant "+d+" est masqué."):"• (pas de filtre par date)"));
-}
 /* Au-delà de ce rang, une commande passe dans l'onglet Archives. Le découpage se
    fait sur le RANG et non sur une date : la liste courante garde toujours la
    même taille, quel que soit le rythme des ventes. */
@@ -9036,7 +9032,7 @@ function shopTriDate(a,b){
    anciennes au lieu de chercher dans les 1 000 récentes. */
 function shopVisibles(){
   return shopSource().filter(function(o){
-    return !(_shopMinOrder>0&&!o.duplicated&&shopOrderNum(o)>0&&shopOrderNum(o)<_shopMinOrder);
+    return true;      // plus aucun masquage : toutes les commandes connues
   }).sort(shopTriDate);
 }
 function shopCompteArchives(){return Math.max(0,shopVisibles().length-SHOP_ACTIVES_MAX);}
@@ -10200,7 +10196,6 @@ function flowstockImport(txt,silent){
     if(_seenThisRun.has(String(p.purchase_id))){nDup++;return;}
     _seenThisRun.add(String(p.purchase_id));
     var _pn=parseInt(String((p.customer_order||{}).number||"").replace(/[^0-9]/g,""),10)||0;
-    if(_shopMinOrder>0&&_pn>0&&_pn<_shopMinOrder){nDup++;return;}
     {if(_fsKnown.has(String(p.purchase_id))&&!DB.achats.some(a=>a.flowstockId===p.purchase_id)){nDup++;return;}
       const _ex=DB.achats.find(a=>a.flowstockId===p.purchase_id);if(_ex){nDup++;return;}}
     // Le flux FlowStock renvoie parfois LA MÊME commande avec un purchase_id différent.
