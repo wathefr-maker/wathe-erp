@@ -611,7 +611,7 @@
         <thead><tr><th>Commande</th><th>Date</th><th>Client</th><th>Statut</th><th>Produits</th><th>Pièces</th><th>Total TTC</th><th>Actions</th></tr></thead>
         <tbody id="shopRows"></tbody></table></div>
         <div id="shopPager"></div>
-        <div id="shopMoreWrap" style="text-align:center;padding:0 14px 14px;display:none"><button class="btn" id="shopMoreBtn">Charger plus de commandes depuis Shopify</button></div>
+        <div id="shopMoreWrap" style="text-align:center;padding:0 14px 14px;display:none"><button class="btn" id="shopMoreBtn">Charger plus de commandes depuis Shopify</button> <button class="btn" id="shopAllBtn">Charger TOUT l'historique</button><div id="shopAllMsg" class="muted" style="font-size:12px;margin-top:8px"></div></div>
       </div>
     </div>
 
@@ -1334,7 +1334,7 @@ try{
   });
   // Puis retirer les pièces appro restées en double sur les commandes déjà livrées.
   try{apPurgeApproOrphelins();}catch(e){}
-}catch(e){}/* Chargement instantané : lit les caches (commandes Shopify + achats FlowStock), importe les pièces et les relie AVANT le premier rendu -> pastilles justes tout de suite, sans attendre les 14s de FlowStock. */try{const _c=await shopCacheLoad();if(_c&&_c.orders&&_c.orders.length){_shopOrders=_c.orders;_shopMore=!!_c.hasNextPage;_shopCursor=_c.endCursor||null;_shopPage=1;_shopMinOrder=+((_c||{}).minOrder||0)||0;_fsHideBeforeDate=(_c||{}).fsHideBefore||"";_shopPartiel=+((_c||{}).partiel||0)||0;}if(_c){if(Array.isArray(_c.dupOrders)&&_c.dupOrders.length)DB.shopDupOrders=_c.dupOrders;if(Array.isArray(_c.cancelled)&&_c.cancelled.length)DB.shopCancelled=_c.cancelled;}try{const _ov=await shopOverridesLoad();if(_ov){if(Array.isArray(_ov.dupOrders))DB.shopDupOrders=_ov.dupOrders;if(Array.isArray(_ov.cancelled))DB.shopCancelled=_ov.cancelled;}}catch(e){}try{mergeDupOrders();}catch(e){}}catch(e){}if(fsEnabled()){try{await flowstockKnownLoad();}catch(e){}try{const _fc=await flowstockCacheLoad();if(_fc&&_fc.purchases&&_fc.purchases.length){try{flowstockImport(JSON.stringify({purchases:_fc.purchases}),true);}catch(e){}}}catch(e){}}try{flowstockReconcile(true);}catch(e){}try{fsRepair();}catch(e){}try{fsDedupeAchats();}catch(e){}try{fixSocietes();}catch(e){}await save();fillSelects();renderAll();restoreView();
+}catch(e){}/* Chargement instantané : lit les caches (commandes Shopify + achats FlowStock), importe les pièces et les relie AVANT le premier rendu -> pastilles justes tout de suite, sans attendre les 14s de FlowStock. */try{const _c=await shopCacheLoad();if(_c&&_c.orders&&_c.orders.length){_shopOrders=_c.orders;_shopMore=!!_c.hasNextPage;_shopCursor=_c.endCursor||null;_shopPage=1;_shopMinOrder=+((_c||{}).minOrder||0)||0;_fsHideBeforeDate=(_c||{}).fsHideBefore||"";_shopPartiel=+((_c||{}).partiel||0)||0;_shopFond=(_c||{}).fondCursor||null;_shopFini=!!((_c||{}).fini);}if(_c){if(Array.isArray(_c.dupOrders)&&_c.dupOrders.length)DB.shopDupOrders=_c.dupOrders;if(Array.isArray(_c.cancelled)&&_c.cancelled.length)DB.shopCancelled=_c.cancelled;}try{const _ov=await shopOverridesLoad();if(_ov){if(Array.isArray(_ov.dupOrders))DB.shopDupOrders=_ov.dupOrders;if(Array.isArray(_ov.cancelled))DB.shopCancelled=_ov.cancelled;}}catch(e){}try{mergeDupOrders();}catch(e){}}catch(e){}if(fsEnabled()){try{await flowstockKnownLoad();}catch(e){}try{const _fc=await flowstockCacheLoad();if(_fc&&_fc.purchases&&_fc.purchases.length){try{flowstockImport(JSON.stringify({purchases:_fc.purchases}),true);}catch(e){}}}catch(e){}}try{flowstockReconcile(true);}catch(e){}try{fsRepair();}catch(e){}try{fsDedupeAchats();}catch(e){}try{fixSocietes();}catch(e){}await save();fillSelects();renderAll();restoreView();
   // Toute sizechart assignée doit contenir TOUTES ses tailles.
   // Fait en arrière-plan APRÈS l'affichage : sur un gros catalogue cela crée
   // des milliers de variantes, hors de question de bloquer l'écran.
@@ -7134,6 +7134,13 @@ document.addEventListener("click",e=>{const rmp=e.target.closest&&e.target.close
 
 /* ===== Vente Shopify ===== */
 let _shopPartiel=0;   /* paquets d'archives introuvables au dernier chargement : 0 = historique complet */
+/* La position de DESCENTE dans l'historique, distincte du curseur de tête.
+   « Actualiser » ne recharge que les 250 dernières commandes et remettait le
+   curseur au sommet : « Charger plus » rejouait alors des pages déjà connues,
+   et l'historique profond devenait inatteignable. On retient donc séparément
+   jusqu'où on est descendu, et un rafraîchissement de tête n'y touche pas.
+   _shopFini : Shopify a dit qu'il n'y avait plus rien en dessous. */
+let _shopFond=null,_shopFini=false;
 let _shopOrdersSbt=[],_shopLoadingSbt=false,_shopWired=false,_shopLoaded=false,_shopLoading=false,_shopOrders=[],_shopCurOrderId=null,_shopMore=false,_shopCursor=null,_shopPage=1,_shopModalStep=null,_shopMinOrder=0,_shopInModal=false,_fsHideBeforeDate="";
 function shopOrderNum(o){return parseInt(String((o&&o.name)||"").replace(/[^0-9]/g,""),10)||0;}
 /* ============================================================================
@@ -8147,7 +8154,7 @@ async function shopCacheSave(){
     /* 2. Le manifeste. « chunks » = nombre de lignes de débordement à relire. */
     var r2=await sb.from("shopify_orders_cache").upsert([{id:1,data:{
       orders:lots[0],chunks:lots.length-1,total:tout.length,
-      hasNextPage:_shopMore,endCursor:_shopCursor,minOrder:0,fsHideBefore:"",
+      hasNextPage:_shopMore,endCursor:_shopCursor,fondCursor:_shopFond,fini:_shopFini,minOrder:0,fsHideBefore:"",
       dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),savedAt:quand}}]);
     if(r2.error)throw r2.error;
 
@@ -8171,7 +8178,7 @@ async function loadShopifyOrders(force){
   if(!force){
     const c=await shopCacheLoad();
     if(c&&c.orders&&c.orders.length){
-      _shopOrders=c.orders;_shopMore=!!c.hasNextPage;_shopCursor=c.endCursor||null;_shopPage=1;_shopMinOrder=0;_fsHideBeforeDate="";_shopPartiel=+(c.partiel||0)||0;   /* seuils retirés : on ignore ce que le cache en garde */if(Array.isArray(c.dupOrders)&&c.dupOrders.length)DB.shopDupOrders=c.dupOrders;if(Array.isArray(c.cancelled)&&c.cancelled.length)DB.shopCancelled=c.cancelled;mergeDupOrders();
+      _shopOrders=c.orders;_shopMore=!!c.hasNextPage;_shopCursor=c.endCursor||null;_shopPage=1;_shopMinOrder=0;_fsHideBeforeDate="";_shopPartiel=+(c.partiel||0)||0;_shopFond=c.fondCursor||null;_shopFini=!!c.fini;   /* seuils retirés : on ignore ce que le cache en garde */if(Array.isArray(c.dupOrders)&&c.dupOrders.length)DB.shopDupOrders=c.dupOrders;if(Array.isArray(c.cancelled)&&c.cancelled.length)DB.shopCancelled=c.cancelled;mergeDupOrders();
       try{flowstockReconcile(true);}catch(e){}
       try{renderShopRows();}catch(e){}
       _shopLoading=false;return;
@@ -8185,7 +8192,11 @@ async function loadShopifyOrders(force){
     if(error)throw new Error(error.message||error);
     if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
     /* Fusion, et purge de la seule tranche que Shopify vient de couvrir. */
-    shopFusionnerOrders(data.orders||[],true);_shopMore=!!(data.pageInfo&&data.pageInfo.hasNextPage);_shopCursor=data.pageInfo&&data.pageInfo.endCursor;_shopPage=1;mergeDupOrders();try{fxSyncOrders().then(function(ch){if(ch){try{renderShopRows();}catch(_){}try{var _v=localStorage.getItem("erp_view")||"";if(typeof renderDash==="function"&&(_v==="dash"||_v==="stats"))renderAll();}catch(_){}}});}catch(_){}try{flowstockReconcile(true);}catch(e){}
+    shopFusionnerOrders(data.orders||[],true);_shopMore=!!(data.pageInfo&&data.pageInfo.hasNextPage);_shopCursor=data.pageInfo&&data.pageInfo.endCursor;
+    /* On ne touche NI à _shopFond NI à _shopFini : ce rafraîchissement n'a vu
+       que la tête de la liste, il n'apprend rien sur le fond de l'historique.
+       Les écraser ici est exactement ce qui rendait l'historique inatteignable. */
+    _shopPage=1;mergeDupOrders();try{fxSyncOrders().then(function(ch){if(ch){try{renderShopRows();}catch(_){}try{var _v=localStorage.getItem("erp_view")||"";if(typeof renderDash==="function"&&(_v==="dash"||_v==="stats"))renderAll();}catch(_){}}});}catch(_){}try{flowstockReconcile(true);}catch(e){}
     try{renderShopRows();}catch(_){}
     shopCacheSave();
   }catch(e){
@@ -8194,16 +8205,26 @@ async function loadShopifyOrders(force){
   _shopLoading=false;
 }
 async function shopLoadMore(){
-  if(_shopLoading||!_shopMore)return;_shopLoading=true;
+  if(_shopLoading||_shopFini)return;_shopLoading=true;
   const mb=document.getElementById("shopMoreBtn");if(mb){mb.textContent="Chargement…";mb.disabled=true;}
   try{
-    const {data,error}=await sb.functions.invoke("shopify-orders",{body:{limit:250,cursor:_shopCursor}});
+    /* On reprend la descente où elle s'était arrêtée, pas au sommet. À défaut
+       de position profonde, le curseur de tête vaut mieux que rien : il place
+       au moins au bout de la première page au lieu de la rejouer.
+
+       MAIS seulement si des commandes sont déjà connues : avec une liste vide,
+       ce curseur ferait SAUTER la première page — les commandes les plus
+       récentes — et personne ne verrait qu'elles manquent. */
+    const depart=_shopFond||(((_shopOrders||[]).length)?_shopCursor:null)||null;
+    const corps={limit:250};if(depart)corps.cursor=depart;
+    const {data,error}=await sb.functions.invoke("shopify-orders",{body:corps});
     if(error)throw new Error(error.message||error);
     if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
     /* Pas de purge ici : cette page descend vers les commandes PLUS ANCIENNES,
        elle n'apprend rien sur celles qu'on a déjà. */
     shopFusionnerOrders(data.orders||[],false);
-    _shopMore=!!(data.pageInfo&&data.pageInfo.hasNextPage);_shopCursor=data.pageInfo&&data.pageInfo.endCursor;
+    var _pi=data.pageInfo||{};
+    _shopMore=!!_pi.hasNextPage;_shopFini=!_pi.hasNextPage;_shopFond=_pi.endCursor||_shopFond;
     /* Et on enregistre : sans ça, le travail de « Charger plus » était perdu
        au rechargement suivant de la page. */
     try{shopCacheSave();}catch(_){}
@@ -8212,13 +8233,86 @@ async function shopLoadMore(){
   if(mb){mb.textContent="Charger plus de commandes";mb.disabled=false;}
   _shopLoading=false;
 }
+/* ============================================================================
+   CHARGER TOUT L'HISTORIQUE, EN UN CLIC
+
+   Pourquoi ce bouton existe : « Charger plus » avance de 250 et dépend d'une
+   position mémorisée. Une position, ça se perd — c'est précisément ce qui
+   rendait l'historique profond inatteignable. Cette boucle, elle, ne dépend de
+   rien : elle descend page après page jusqu'à ce que Shopify dise qu'il n'y a
+   plus rien, et elle le redit à chaque fois qu'on la relance.
+
+   Trois précautions qui comptent :
+     · on enregistre toutes les SHOP_ALL_SAVE pages, pas seulement à la fin :
+       une coupure au bout de dix minutes ne doit pas tout annuler ;
+     · une pause entre deux appels, parce que Shopify limite le débit et qu'une
+       rafale se fait refuser (le message est alors traduit, pas brut) ;
+     · une borne dure sur le nombre de pages : si la pagination se mettait à
+       tourner en rond, mieux vaut s'arrêter que boucler sans fin.
+   ========================================================================== */
+var SHOP_ALL_MAX_PAGES=400;      // 100 000 commandes : une sécurité, pas une limite d'usage
+var SHOP_ALL_SAVE=4;             // on enregistre tous les 4 paquets
+var SHOP_ALL_PAUSE=400;          // ms entre deux appels
+async function shopChargerTout(){
+  if(_shopLoading)return;
+  if(_shopFini){
+    alert("Tout l'historique que Shopify expose est déjà chargé ("+(_shopOrders||[]).length+" commandes).");
+    return; }
+  _shopLoading=true;
+  const ab=document.getElementById("shopAllBtn"),mb=document.getElementById("shopMoreBtn"),
+        msg=document.getElementById("shopAllMsg");
+  const dire=function(t){if(msg)msg.textContent=t;};
+  if(ab){ab.disabled=true;ab.textContent="Chargement…";}
+  if(mb)mb.disabled=true;
+  var pages=0,avant=(_shopOrders||[]).length,arret="";
+  try{
+    while(!_shopFini&&pages<SHOP_ALL_MAX_PAGES){
+      /* Même prudence que dans « Charger plus » : le curseur de tête n'amorce
+         la descente que si l'on connaît déjà les commandes qu'il a dépassées. */
+      var depart=_shopFond||(((_shopOrders||[]).length)?_shopCursor:null)||null;
+      var corps={limit:250};if(depart)corps.cursor=depart;
+      const {data,error}=await sb.functions.invoke("shopify-orders",{body:corps});
+      if(error)throw new Error(error.message||error);
+      if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
+      shopFusionnerOrders(data.orders||[],false);
+      var pi=data.pageInfo||{};
+      pages++;
+      _shopMore=!!pi.hasNextPage;_shopFini=!pi.hasNextPage;
+      /* Sans curseur qui avance, la boucle rejouerait la même page sans fin. */
+      if(pi.endCursor&&pi.endCursor!==depart)_shopFond=pi.endCursor;
+      else if(!_shopFini){arret="Shopify n'a pas renvoyé de position suivante.";break;}
+      dire(pages+" paquet(s) chargé(s) · "+(_shopOrders||[]).length+" commandes connues"
+        +(_shopFini?" · historique complet":"…"));
+      try{renderShopRows();}catch(_){}
+      if(pages%SHOP_ALL_SAVE===0){try{await shopCacheSave();}catch(_){}}
+      if(!_shopFini)await new Promise(function(r){setTimeout(r,SHOP_ALL_PAUSE);});
+    }
+    if(pages>=SHOP_ALL_MAX_PAGES&&!_shopFini)
+      arret="Arrêt de sécurité après "+SHOP_ALL_MAX_PAGES+" paquets. Reclique pour continuer.";
+  }catch(e){
+    /* Un refus de Shopify se dit en français quand on sait le traduire. */
+    var t=(typeof shopTraduireErreur==="function")?shopTraduireErreur(e):String(e&&e.message?e.message:e);
+    arret="Interrompu : "+t+" — ce qui est chargé est conservé, reclique pour reprendre.";
+  }
+  /* L'enregistrement final a lieu quoi qu'il arrive : même interrompue, la
+     descente ne doit pas être à refaire. */
+  try{await shopCacheSave();}catch(_){}
+  var gagne=(_shopOrders||[]).length-avant;
+  dire((_shopFini?"Historique complet : ":"")+(_shopOrders||[]).length+" commandes connues"
+    +(gagne?" (+"+gagne+")":"")+(arret?(" · "+arret):""));
+  if(ab){ab.disabled=false;ab.textContent="Charger TOUT l'historique";}
+  if(mb)mb.disabled=false;
+  _shopLoading=false;
+  try{renderShopRows();}catch(_){}
+  try{flowstockReconcile(true);}catch(_){}
+}
 function renderShopify(){
   if(!_shopWired){
     document.getElementById("shopRefresh").onclick=function(){loadShopifyOrders(true);};
     ["shopF_q","shopF_stage","shopF_from","shopF_to"].forEach(function(id){const el=document.getElementById(id);if(el){el.addEventListener("input",shopFilterChanged);el.addEventListener("change",shopFilterChanged);}});
     const cl=document.getElementById("shopF_clear");if(cl)cl.onclick=function(){["shopF_q","shopF_stage","shopF_from","shopF_to"].forEach(function(id){const e=document.getElementById(id);if(e)e.value="";});shopFilterChanged();};
     const ab=document.getElementById("shopArchBtn");if(ab)ab.onclick=shopToggleArchives;
-    const mb=document.getElementById("shopMoreBtn");if(mb)mb.onclick=shopLoadMore;
+    const mb=document.getElementById("shopMoreBtn");if(mb)mb.onclick=shopLoadMore;var _btnTout=document.getElementById("shopAllBtn");if(_btnTout)_btnTout.onclick=shopChargerTout;
     _shopWired=true;
   }
   if(!_shopLoaded){_shopLoaded=true;loadShopifyOrders();loadShopifyOrdersSbt();}
@@ -9184,9 +9278,28 @@ function renderShopRows(){
   var _w=watheSocId();
   if(socFilter&&_w!=null&&socFilter!=_w&&(sbtSocId()==null||socFilter!=sbtSocId())){if(meta)meta.textContent="Aucune vente Shopify pour cette société.";rows.innerHTML="";if(wrap)wrap.style.display="none";var _pg=document.getElementById("shopPager");if(_pg)_pg.innerHTML="";return;}
   // « Charger plus » n'a de sens que sur la vue courante : les archives sont déjà là.
-  if(wrap)wrap.style.display=(_shopMore&&!_shopArchives)?"":"none";
+  /* Visible AUSSI dans les Archives : c'est l'onglet où l'on constate qu'il
+     manque de l'historique, donc l'endroit où l'on veut agir. Le critère est
+     « l'historique n'est pas complet », pas « il reste une page à la position
+     courante » : une position se perd, l'état du fond non. */
+  if(wrap)wrap.style.display=_shopFini?"none":"";
   const list=shopFilteredOrders();
-  if(!list.length){if(meta)meta.textContent=_shopArchives?"Aucune commande archivée.":"Aucune commande.";rows.innerHTML="";const pg=document.getElementById("shopPager");if(pg)pg.innerHTML="";if(wrap)wrap.style.display="none";return;}
+  if(!list.length){
+    /* Une liste vide ne doit PAS cacher le bouton : l'onglet Archives vide est
+       justement le cas où l'on veut charger plus d'historique. Le cacher là,
+       c'était condamner l'utilisateur à chercher un bouton qui n'existait pas. */
+    if(meta){
+      if(_shopArchives){
+        var _reste=Math.max(0,SHOP_ACTIVES_MAX-shopVisibles().length);
+        meta.textContent=_shopFini
+          ? "Aucune commande archivée : tout l'historique tient dans la liste courante."
+          : "Aucune commande archivée — il manque "+_reste+" commande(s) chargée(s) pour"
+            +" dépasser les "+SHOP_ACTIVES_MAX+" plus récentes. Charge l'historique ci-dessous.";
+      }else meta.textContent="Aucune commande.";
+    }
+    rows.innerHTML="";const pg=document.getElementById("shopPager");if(pg)pg.innerHTML="";
+    if(wrap)wrap.style.display=_shopFini?"none":"";
+    return;}
   const PS=50,totalPages=Math.max(1,Math.ceil(list.length/PS));
   if(_shopPage>totalPages)_shopPage=totalPages;if(_shopPage<1)_shopPage=1;
   const pageList=list.slice((_shopPage-1)*PS,_shopPage*PS);
