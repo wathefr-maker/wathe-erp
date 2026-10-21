@@ -2691,10 +2691,31 @@ async function rzSorties(blocs){
        aurait proposé de vendre tout le stock d'un coup.
        Le cas vaut aussi hors migration : une entrée de stock refusée laisse
        l'article à 0 en caisse, et ce n'est pas une vente non plus. */
-    if(!a.rzInCaisse||a.rzOutCaisse)return;
+    if(a.rzOutCaisse)return;                     // déjà sortie par l'ERP
+    /* LE STOCK NÉGATIF EST UNE VENTE, ET RIEN D'AUTRE.
+
+       Le garde-fou rzInCaisse existe pour ne pas prendre un stock à ZÉRO pour
+       une vente : à zéro, « on n'a rien » veut souvent dire « pas encore
+       approvisionnée ». Mais il s'appliquait aussi au NÉGATIF, et là le
+       raisonnement ne tient plus : à -1, la caisse a vendu ce qu'elle n'avait
+       pas. Aucune autre cause ne produit un stock négatif.
+
+       Ce que ça faisait disparaître : toute paire vendue au comptoir sans que
+       l'ERP l'ait envoyée en caisse. Le cas n'est pas théorique — l'ERP refuse
+       exprès d'envoyer les pièces SANS PRIX CIBLE (elles sonneraient à 0 €),
+       et rien n'empêche de les vendre au comptoir malgré tout. La vente était
+       alors invisible pour toujours : encaissée à la caisse, absente de l'ERP,
+       pièce restée « En Stock ».
+
+       On ne lève le garde-fou que sur le négatif strict : à zéro, il reste
+       entier. */
+    if(!a.rzInCaisse&&!(st<0))return;
     var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
     out.push({piece:a,codeArt:b.codeArt,titre:(m.fr||m.sku||a.ref),taille:vSizeTxt(v),
-      prixSuggere:(+a.pv||0),achat:(+a.prix||0)});
+      prixSuggere:(+a.pv||0),achat:(+a.prix||0),
+      /* Signalé au pop-up : cette vente mérite un avertissement, puisque la
+         paire n'aurait jamais dû pouvoir être vendue au comptoir. */
+      horsCaisse:!a.rzInCaisse,stockCaisse:st});
   });
   return out;
 }
@@ -3098,7 +3119,14 @@ function rzOpenPop(list){
         +(list.length>1?('<input type="checkbox" class="_rzPick" data-i="'+i+'" onchange="rzTicketPick()" style="margin-top:3px">'):'')
         +'<div style="flex:1">'
         +'<div style="font-weight:700;font-size:14px">'+esc(x.titre)+(x.taille?(' · '+esc(x.taille)):'')+'</div>'
-        +'<div class="muted" style="font-size:12px;margin-bottom:10px">'+esc(x.piece.ref)+' · achat '+eur(x.achat)+'</div>'
+        +'<div class="muted" style="font-size:12px;margin-bottom:'+(x.horsCaisse?'6':'10')+'px">'+esc(x.piece.ref)+' · achat '+eur(x.achat)+'</div>'
+        /* Une paire jamais entrée en caisse et pourtant vendue : on le dit, et
+           on dit pourquoi, sinon le prix vide passe pour un bug. */
+        +(x.horsCaisse?('<div style="font-size:12px;margin-bottom:10px;padding:7px 9px;border-radius:8px;'
+          +'background:#fef3c7;color:#92400e;border:1px solid #fde68a">'
+          +'<b>Vendue sans être entrée en caisse</b> — stock caisse '+esc(String(x.stockCaisse))
+          +'. Cette paire n\'a pas de prix cible, donc l\'ERP ne l\'avait jamais envoyée '
+          +'à la caisse. Saisis le prix réellement encaissé.</div>'):'')
         +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
           +'<div><label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:3px">Prix encaissé TTC</label>'
             +'<input class="_rzPv" data-i="'+i+'" type="number" step="0.01" min="0" value="'+(x.prixSuggere||"")+'" style="'+css+'"></div>'
