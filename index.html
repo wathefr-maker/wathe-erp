@@ -6020,24 +6020,47 @@ function buildAttestationDoc(achatId){
   doc.setFont("helvetica","normal");doc.setTextColor(40,40,40);doc.setFontSize(10);
   const intro=doc.splitTextToSize("Je soussigne(e) "+sellerName+", certifie ceder les articles suivants a la societe "+(s.nom||"")+", pour les montants specifies :",W-2*M);
   doc.text(intro,M,yb);yb+=intro.length*5+3;
-  doc.autoTable({startY:yb,head:[["Produit","SKU","Taille","Qte","Prix TTC"]],body:body,margin:{left:M,right:M},
+  /* Marge basse : sans elle, les dernières lignes du tableau passent sous le
+     pied de page sur une attestation longue. Elle vaut la bande réservée
+     plus bas pour les totaux et la signature. */
+  doc.autoTable({startY:yb,head:[["Produit","SKU","Taille","Qte","Prix TTC"]],body:body,margin:{left:M,right:M,top:20,bottom:14},
     styles:{font:"helvetica",fontSize:9.5,cellPadding:2.6,textColor:[35,35,35],lineColor:[235,235,235],lineWidth:0.1},
     headStyles:{fillColor:ACC,textColor:[255,255,255],fontStyle:"bold",halign:"left"},
     alternateRowStyles:{fillColor:[246,246,251]},
     columnStyles:{2:{halign:"center"},3:{halign:"center"},4:{halign:"right"}}});
   let yt=doc.lastAutoTable.finalY+9;
+  /* Le pied est à une hauteur FIXE, le bloc des totaux et de la signature
+     descend avec le nombre de lignes : sur une longue attestation, la
+     signature passait sous le bord de la page et le pied s'imprimait
+     par-dessus le texte. On réserve donc une bande en bas, et le bloc de
+     signature — qui ne doit jamais être coupé en deux — part en entier sur une
+     page neuve s'il n'y tient plus. */
+  var PDF_PIED=289, PDF_BAS=PDF_PIED-6, PDF_HAUT=20;
+  var placer=function(h){if(yt+(+h||0)>PDF_BAS){doc.addPage();yt=PDF_HAUT;}return yt;};
+  placer(11);
   doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setTextColor(20,20,20);
   doc.text("Total TTC : "+eur(total),W-M,yt,{align:"right"});yt+=11;
   doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(70,70,70);
-  if(f.reg){doc.text("Mode de reglement : "+f.reg,M,yt);yt+=7;}
+  if(f.reg){placer(7);doc.text("Mode de reglement : "+f.reg,M,yt);yt+=7;}
+  /* 31 mm : la phrase, l'espace de signature et les libellés sous les traits.
+     Réservés d'un bloc, sinon les traits se retrouvent sur l'autre page. */
+  placer(31);
   doc.setTextColor(35,35,35);doc.text("Pour faire valoir ce que de droit.",M,yt);yt+=26;
   doc.setDrawColor(160,160,160);doc.line(M,yt,M+62,yt);doc.line(W-M-62,yt,W-M,yt);
   // Signature de l'entreprise (enregistree dans la fiche Societe) apposee automatiquement
   if(s&&s.signature){try{doc.addImage(s.signature,"PNG",W-M-58,yt-17,52,15);}catch(e){}}
   doc.setFontSize(9);doc.setTextColor(130,130,130);
   doc.text("Le vendeur",M,yt+5);doc.text("La societe acheteuse",W-M-62,yt+5);
-  doc.setFontSize(8);doc.setTextColor(175,175,175);
-  doc.text("Document genere par Wathe ERP",W/2,289,{align:"center"});
+  /* Le pied sur chaque page : dessiné une seule fois, il manquait sur toutes
+     celles que le tableau avait ajoutées. */
+  var _np=doc.getNumberOfPages();
+  for(var _pg=1;_pg<=_np;_pg++){
+    doc.setPage(_pg);
+    doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(175,175,175);
+    doc.text("Document genere par Wathe ERP",W/2,PDF_PIED,{align:"center"});
+    if(_np>1)doc.text(_pg+" / "+_np,W-M,PDF_PIED,{align:"right"});
+  }
+  doc.setPage(_np);
   return {doc:doc,ref:ref,f:f,s:s,yt:yt,M:M,W:W};
 }
 function printAttestation(achatId){var r=buildAttestationDoc(achatId);if(r&&r.doc)r.doc.save("Attestation-"+r.ref+".pdf");}
@@ -9708,17 +9731,34 @@ function shopInvoicePDF(factId,asCust){
   var _ship=shipAmt();
   if(_ship>0)bodyRows.push(_marge?["Frais de livraison","1",mny(_ship)]
     :["Frais de livraison","1",mny(_ht(_ship)),mny(_ship)]);
+  /* ----- LE BAS DE PAGE NE DOIT JAMAIS ÉCRASER LE PIED -------------------
+     Le pied (« Document généré par… ») est à une hauteur FIXE. Le bloc des
+     totaux, des coordonnées bancaires et des mentions, lui, descend avec le
+     nombre de lignes de la facture. À une douzaine de lignes il arrivait à la
+     hauteur du pied : celui-ci s'imprimait PAR-DESSUS les coordonnées
+     bancaires, et la mention légale tombait sous le bord de la page.
+
+     On réserve donc une bande en bas, et tout bloc qui n'y tient plus part sur
+     une page neuve. Le tableau reçoit la même réserve, sinon ses dernières
+     lignes passeraient sous le pied sur une facture longue. */
+  var PDF_PIED=289,                 // hauteur du pied, en mm (page A4 = 297)
+      PDF_BAS=PDF_PIED-6,           // plancher du contenu : 6 mm de dégagement
+      PDF_HAUT=20;                  // haut de page après un saut
+  function placer(h){               // réserve h mm, saute de page si besoin
+    if(yt+(+h||0)>PDF_BAS){doc.addPage();yt=PDF_HAUT;}
+    return yt;
+  }
   doc.autoTable({startY:yb,
     head:[_marge?["Désignation","Qté","Prix"]
                 :["Désignation","Qté","PU HT","PU TTC"]],
-    body:bodyRows,margin:{left:M,right:M},
+    body:bodyRows,margin:{left:M,right:M,top:PDF_HAUT,bottom:297-PDF_BAS},
     styles:{font:"helvetica",fontSize:9.5,cellPadding:2.6,textColor:[35,35,35],lineColor:[235,235,235],lineWidth:0.1},
     headStyles:{fillColor:ACC,textColor:[255,255,255],fontStyle:"bold"},
     alternateRowStyles:{fillColor:[246,246,251]},
     columnStyles:_marge?{1:{halign:"center",cellWidth:14},2:{halign:"right",cellWidth:30}}
       :{1:{halign:"center",cellWidth:14},2:{halign:"right",cellWidth:28},3:{halign:"right",cellWidth:28}}});
   let yt=doc.lastAutoTable.finalY+8;const tx=W-M-72;
-  function totRow(label,val,bold,big){doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(big?13:10);doc.setTextColor(big?20:70,big?20:70,big?20:70);doc.text(label,tx,yt);doc.text(val,W-M,yt,{align:"right"});yt+=big?8:6;}
+  function totRow(label,val,bold,big){placer(big?8:6);doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(big?13:10);doc.setTextColor(big?20:70,big?20:70,big?20:70);doc.text(label,tx,yt);doc.text(val,W-M,yt,{align:"right"});yt+=big?8:6;}
   // En EUR : on affiche les totaux compta stockes tels quels.
   // En devise client : ces totaux EUR n'ont pas de sens -> on reconstruit HT/TVA/TTC
   //   a partir des montants client des lignes (meme regime de TVA), sans aucun taux.
@@ -9741,17 +9781,27 @@ function shopInvoicePDF(factId,asCust){
     Object.keys(tvaBy).forEach(function(tv){if(Math.abs(tvaBy[tv])>0.005)totRow("TVA "+tv,mny(tvaBy[tv]),false,false);});
     yt+=2;totRow("Total TTC",mny(cTTC),true,true);
   }
-  if(f.reg){yt+=4;doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(70,70,70);doc.text("Mode de règlement : "+f.reg,M,yt);yt+=2;}
+  if(f.reg){yt+=4;placer(6);doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(70,70,70);doc.text("Mode de règlement : "+f.reg,M,yt);yt+=2;}
   yt+=8;doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(120,120,120);
-  if(f.banque){const bq=doc.splitTextToSize("Coordonnées bancaires : "+f.banque,W-2*M);doc.text(bq,M,yt);yt+=bq.length*4+3;}
-  if(isCust){const cn=doc.splitTextToSize("Facture établie dans la devise de règlement du client ("+cur+"), telle qu'encaissée sur la commande "+(f.orderName||f.num)+". Montants issus de Shopify.",W-2*M);doc.setTextColor(120,120,120);doc.text(cn,M,yt);yt+=cn.length*4+3;}
+  if(f.banque){const bq=doc.splitTextToSize("Coordonnées bancaires : "+f.banque,W-2*M);placer(bq.length*4+3);doc.text(bq,M,yt);yt+=bq.length*4+3;}
+  if(isCust){const cn=doc.splitTextToSize("Facture établie dans la devise de règlement du client ("+cur+"), telle qu'encaissée sur la commande "+(f.orderName||f.num)+". Montants issus de Shopify.",W-2*M);placer(cn.length*4+3);doc.setTextColor(120,120,120);doc.text(cn,M,yt);yt+=cn.length*4+3;}
   // L'estampille passe AVANT les mentions légales et en plus sombre : c'est une
   // information sur le document lui-même, elle ne doit pas se noyer dans le pied.
   const _corr=factCorrectionsTxt(f);
-  if(_corr){doc.setTextColor(146,64,14);const cc=doc.splitTextToSize(_corr,W-2*M);doc.text(cc,M,yt);yt+=cc.length*4+3;doc.setTextColor(120,120,120);}
+  if(_corr){const cc=doc.splitTextToSize(_corr,W-2*M);placer(cc.length*4+3);doc.setTextColor(146,64,14);doc.text(cc,M,yt);yt+=cc.length*4+3;doc.setTextColor(120,120,120);}
   const _mtext=(f.mentions||"").trim();
-  if(_mtext){const mention=doc.splitTextToSize(_mtext,W-2*M);doc.text(mention,M,yt);}
-  doc.setFontSize(8);doc.setTextColor(175,175,175);doc.text("Document généré par Wathe ERP",W/2,289,{align:"center"});
+  if(_mtext){const mention=doc.splitTextToSize(_mtext,W-2*M);placer(mention.length*4);doc.setFontSize(8.5);doc.setTextColor(120,120,120);doc.text(mention,M,yt);}
+  /* Le pied sur TOUTES les pages, à la fin : dessiné une seule fois comme
+     avant, il manquait sur chaque page ajoutée par le tableau. La pagination
+     n'apparaît qu'à partir de deux pages — sur une facture d'une page, un
+     « 1 / 1 » n'apprend rien. */
+  var _nbPages=doc.getNumberOfPages();
+  for(var _p=1;_p<=_nbPages;_p++){
+    doc.setPage(_p);
+    doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(175,175,175);
+    doc.text("Document généré par Wathe ERP",W/2,PDF_PIED,{align:"center"});
+    if(_nbPages>1)doc.text(_p+" / "+_nbPages,W-M,PDF_PIED,{align:"right"});
+  }
   doc.save((f.type==="avoir"?"Avoir-":"Facture-")+f.num+(isCust?("-"+cur):"")+".pdf");
 }
 function buildSaleFactures(opts){
