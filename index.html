@@ -2457,6 +2457,41 @@ function cliMeta(c){
   return m.length?m:null;
 }
 
+/* Mentions du client à l'impression, avec repli.
+
+   cliMeta ne sert qu'aux ventes boutique : la saisie manuelle de facture ne
+   l'appelait pas, et une facture à un professionnel sortait donc SANS son
+   numéro de TVA intracommunautaire — une mention pourtant obligatoire.
+
+   On le recalcule donc au moment d'imprimer plutôt qu'à la seule création :
+   les factures DÉJÀ enregistrées sans mentions ressortent correctes, au lieu
+   de rester fausses jusqu'à ce qu'on les refasse à la main.
+
+   Deux sources, dans cet ordre : la fiche client rattachée à la facture, puis
+   — si l'acheteur est une autre de tes sociétés — sa propre fiche. */
+function factBuyerMeta(f){
+  if(!f)return null;
+  if(f.buyerMeta&&f.buyerMeta.length)return f.buyerMeta;
+  if(f.clientId!=null&&f.clientId!==""){
+    var c=(typeof clientById==="function")?clientById(f.clientId):null;
+    if(c&&c.id!=null){var m=cliMeta(c);if(m&&m.length)return m;}
+  }
+  /* Facture inter-sociétés : l'acheteur n'est pas un client mais une société.
+     On la retrouve par son nom, le seul lien conservé sur la facture. */
+  var nom=String(f.buyer||"").trim().toLowerCase();
+  if(nom){
+    var so=(DB.societes||[]).filter(function(x){
+      return x&&String(x.nom||"").trim().toLowerCase()===nom; })[0];
+    if(so){
+      var ms=[];
+      if(so.siret)ms.push("SIRET : "+so.siret);
+      if(so.tva)ms.push("N TVA : "+so.tva);
+      if(ms.length)return ms;
+    }
+  }
+  return null;
+}
+
 function cliNomComplet(c){
   if(!c)return "";
   var n=((c.nom||"")+" "+(c.prenom||"")).trim();
@@ -9711,8 +9746,10 @@ function shopInvoicePDF(factId,asCust){
   doc.setFontSize(10.5);
   buyerLines.forEach(function(ln,i){doc.setFont("helvetica",i===0?"bold":"normal");doc.setTextColor(i===0?30:90,i===0?30:90,i===0?30:90);doc.text(String(ln),colR,yr);yr+=5.2;});
   // Mentions légales du client (SIRET, TVA intra) : obligatoires en B2B.
-  if(f.buyerMeta&&f.buyerMeta.length){doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(110,110,110);
-    f.buyerMeta.forEach(function(ln){doc.text(String(ln),colR,yr);yr+=4.8;});}
+  // Recalculées si la facture n'en porte pas : voir factBuyerMeta.
+  var _bmeta=(typeof factBuyerMeta==="function")?factBuyerMeta(f):(f.buyerMeta||null);
+  if(_bmeta&&_bmeta.length){doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(110,110,110);
+    _bmeta.forEach(function(ln){doc.text(String(ln),colR,yr);yr+=4.8;});}
   if(f.tracking){doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(110,110,110);doc.text("Suivi : "+f.tracking,colR,yr);yr+=4.8;}
   let yb=Math.max(yl,yr)+6;
   /* Régime de la marge : pas de HT ligne à ligne — la TVA n'y est pas déductible
@@ -11109,13 +11146,20 @@ function saveFactureNew(){
   if(!fn_mentions.value.trim()&&legalMention(fn_tva.value))miss.push("Mentions légales pour facture");
   if(miss.length){alert("Champs obligatoires manquants :\n\n• "+miss.join("\n• "));return;}
   if(!curFactNew.lines.length){alert("Ajoute au moins une ligne de produit/service.");return;}
-  const bv=fn_cli.value;let buyer="Client",clientId="";
-  if(bv.indexOf("c:")===0){const c=clientById(+bv.slice(2));clientId=+bv.slice(2);buyer=(c.societe||((c.prenom?c.prenom+" ":"")+(c.nom||"")).trim())||c.email||"Client";}
-  else if(bv.indexOf("s:")===0){const s=socById(+bv.slice(2))||{};buyer=s.nom||"Société";}
+  const bv=fn_cli.value;let buyer="Client",clientId="",buyerAddr=null,buyerMeta=null;
+  if(bv.indexOf("c:")===0){const c=clientById(+bv.slice(2));clientId=+bv.slice(2);buyer=(c.societe||((c.prenom?c.prenom+" ":"")+(c.nom||"")).trim())||c.email||"Client";
+    /* Adresse et mentions légales reprises de la fiche : sans elles, une
+       facture à un professionnel part sans son numéro de TVA intra. */
+    try{buyerAddr=cliAddr(c);}catch(_e){}
+    try{buyerMeta=cliMeta(c);}catch(_e){}}
+  else if(bv.indexOf("s:")===0){const s=socById(+bv.slice(2))||{};buyer=s.nom||"Société";
+    buyerAddr={address1:s.adr||"",zip:s.cp||"",city:s.ville||"",country:s.pays||""};
+    buyerMeta=[s.siret?("SIRET : "+s.siret):"",s.tva?("N TVA : "+s.tva):""].filter(Boolean);
+    if(!buyerMeta.length)buyerMeta=null;}
   let ht=0,ttcSum=0;curFactNew.lines.forEach(function(l){const lineTTC=(l.puTTC||0)*(l.qty||1);ttcSum+=lineTTC;ht+=htFromTtc(lineTTC,l.tva);});
   const id=newId(DB.factures);
   const fact={id:id,num:fn_num.value.trim(),date:fn_date.value,source:"manuelle",
-    societeId:+fn_soc.value,clientId:clientId,buyer:buyer,orderName:"",reg:fn_reg.value.trim(),
+    societeId:+fn_soc.value,clientId:clientId,buyer:buyer,buyerAddr:buyerAddr,buyerMeta:buyerMeta,orderName:"",reg:fn_reg.value.trim(),
     tvaHeader:fn_tva.value,banque:fn_banque.value.trim(),mentions:fn_mentions.value.trim(),
     lines:curFactNew.lines.map(l=>({title:l.title,qty:l.qty,puTTC:l.puTTC,tva:l.tva})),
     subtotal:r2(ttcSum),shipping:0,totalHT:r2(ht),totalTTC:r2(ttcSum),currency:"EUR",statut:"Validée",paiement:"En attente"};
