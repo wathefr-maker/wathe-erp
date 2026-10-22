@@ -2453,7 +2453,9 @@ function cliMeta(c){
   var m=[];
   if(c.siret)m.push("SIRET : "+c.siret);
   if(c.tvaIntra||c.tva)m.push("N TVA : "+(c.tvaIntra||c.tva));
-  if(c.email)m.push(c.email);
+  /* L'e-mail ne figure PAS ici : ce bloc porte les mentions légales de
+     l'acheteur, et une adresse de contact n'en est pas une. Elle alourdissait
+     le pavé « Facturé à » sans rien apporter à la facture. */
   return m.length?m:null;
 }
 
@@ -5519,7 +5521,12 @@ detailCli.onclick=async e=>{const back=e.target.closest("[data-back]"),ed=e.targ
   if(back)return goBack("cli");
   if(ed)openCli(+ed.dataset.edit);
   if(del){const id=+del.dataset.del;if(confirm("Supprimer ce client ?")){const _c=DB.clients.find(c=>c.id==id);DB.clients=DB.clients.filter(c=>c.id!=id);logAct("Suppression","Client",fourLabel(_c));await save();show("cli");}}};
-function toggleCproFields(){const pro=c_type.value==="Professionnel";document.querySelectorAll("#ovC .cpro").forEach(el=>el.classList.toggle("hide",!pro));}
+function toggleCproFields(){const pro=c_type.value==="Professionnel";
+  document.querySelectorAll("#ovC .cpro").forEach(el=>el.classList.toggle("hide",!pro));
+  /* L'astérisque suit la règle de validation : un champ marqué obligatoire
+     qui ne l'est pas — ou l'inverse — fait perdre plus de temps que de place. */
+  const lbl=(inp,t)=>{const l=inp&&inp.parentElement&&inp.parentElement.querySelector("label");if(l)l.textContent=t;};
+  lbl(c_nom,pro?"Nom":"Nom *");lbl(c_prenom,pro?"Prénom":"Prénom *");}
 c_type.onchange=toggleCproFields;
 addCli.onclick=()=>openCli(null);
 function openCli(id){editC=id;mCTitle.textContent=id?"Modifier le client":"Nouveau client";
@@ -5529,7 +5536,13 @@ function openCli(id){editC=id;mCTitle.textContent=id?"Modifier le client":"Nouve
   c_adr.value=c.adr||"";c_adr2.value=c.adr2||"";c_cp.value=c.cp||"";c_ville.value=c.ville||"";c_pays.value=c.pays||"France";
   toggleCproFields();ovC.classList.add("show");}
 saveCli.onclick=async()=>{const miss=[],pro=c_type.value==="Professionnel";
-  if(!c_email.value.trim())miss.push("E-mail");if(!c_nom.value.trim())miss.push("Nom");if(!c_prenom.value.trim())miss.push("Prénom");
+  if(!c_email.value.trim())miss.push("E-mail");
+  /* Nom et prénom ne sont exigés que d'un PARTICULIER : une société n'en a
+     pas, et les réclamer obligeait à inventer un contact qui n'existe pas.
+     C'est la raison sociale qui identifie un professionnel — elle est déjà
+     obligatoire plus bas, avec le SIRET et le numéro de TVA. Même règle que
+     côté fournisseur, où elle était déjà en place. */
+  if(!pro){if(!c_nom.value.trim())miss.push("Nom");if(!c_prenom.value.trim())miss.push("Prénom");}
   if(!c_adr.value.trim())miss.push("Adresse");if(!c_cp.value.trim())miss.push("Code postal");if(!c_ville.value.trim())miss.push("Ville");if(!c_pays.value)miss.push("Pays");
   if(pro){if(!c_soc.value.trim())miss.push("Société");if(!c_siret.value.trim())miss.push("SIRET");if(!c_tva.value.trim())miss.push("N° TVA");}
   if(miss.length)return alert("Champs obligatoires manquants : "+miss.join(", "));
