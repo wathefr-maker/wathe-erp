@@ -9914,7 +9914,15 @@ function createFactureFromExped(e){
     buyerAddr:(_viSoc
       ? ((_viSoc.adr||_viSoc.ville||_viSoc.cp)?{address1:_viSoc.adr||"",city:_viSoc.ville||"",zip:_viSoc.cp||"",country:_viSoc.pays||""}:null)
       : ((cli.adr||cli.ville||cli.cp)?{address1:cli.adr||"",city:cli.ville||"",zip:cli.cp||"",country:cli.pays||""}:null)),
-    buyerMeta:(_viSoc?[(_viSoc.siret?("SIRET : "+_viSoc.siret):""),(_viSoc.tva?("N TVA : "+_viSoc.tva):"")].filter(Boolean):null),tracking:e.tracking||"",shipping:(+e.shipping||+e.fraisPort||0),saleLines:saleLines});
+    /* Mentions légales de l'acheteur. La branche société existait seule : pour
+       un CLIENT, même professionnel, on passait null et la facture sortait sans
+       son numéro de TVA intracommunautaire — mention pourtant obligatoire en
+       B2B. cliMeta() sait les composer depuis la fiche client, elle n'était
+       simplement jamais appelée ici. */
+    buyerMeta:(_viSoc
+      ? [(_viSoc.siret?("SIRET : "+_viSoc.siret):""),(_viSoc.tva?("N TVA : "+_viSoc.tva):"")].filter(Boolean)
+      : ((typeof cliMeta==="function"&&cli&&cli.id!=null)?cliMeta(cli):null)),
+    tracking:e.tracking||"",shipping:(+e.shipping||+e.fraisPort||0),saleLines:saleLines});
 }
 function factTogglePay(id){const f=(DB.factures||[]).find(x=>x.id==id);if(!f)return;f.paiement=(f.paiement==="Payée")?"En attente":"Payée";logAct("Modification","Facture",f.num+" · "+f.paiement);save();renderFactures();}
 function flowstockPieces(a){return DB.articles.filter(p=>p.achatId===a.id&&!p.archived);}
