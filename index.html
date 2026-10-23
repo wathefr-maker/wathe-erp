@@ -8296,9 +8296,19 @@ async function loadShopifyOrders(force){
     if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
     /* Fusion, et purge de la seule tranche que Shopify vient de couvrir. */
     shopFusionnerOrders(data.orders||[],true);_shopMore=!!(data.pageInfo&&data.pageInfo.hasNextPage);_shopCursor=data.pageInfo&&data.pageInfo.endCursor;
-    /* On ne touche NI à _shopFond NI à _shopFini : ce rafraîchissement n'a vu
-       que la tête de la liste, il n'apprend rien sur le fond de l'historique.
-       Les écraser ici est exactement ce qui rendait l'historique inatteignable. */
+    /* On ne touche pas à _shopFond : ce rafraîchissement n'a vu que la TÊTE de
+       la liste, il n'apprend rien sur la position atteinte au fond, et
+       l'écraser est exactement ce qui rendait l'historique inatteignable.
+
+       _shopFini, en revanche, est REMIS À ZÉRO. C'était un verrou à sens
+       unique : posé une fois, relu du cache à chaque ouverture, jamais effacé.
+       Il suffisait que Shopify réponde « plus rien » une seule fois — à tort,
+       ou parce que sa pagination s'arrête — pour que l'historique devienne
+       définitivement inatteignable, d'autant qu'il n'y a plus de bouton pour
+       forcer. « Actualiser » est une demande explicite d'aller chercher : elle
+       rouvre donc la descente, qui repart de _shopFond et s'arrêtera d'elle-
+       même au premier paquet vide si l'historique est réellement complet. */
+    _shopFini=false;
     _shopPage=1;mergeDupOrders();try{fxSyncOrders().then(function(ch){if(ch){try{renderShopRows();}catch(_){}try{var _v=localStorage.getItem("erp_view")||"";if(typeof renderDash==="function"&&(_v==="dash"||_v==="stats"))renderAll();}catch(_){}}});}catch(_){}try{flowstockReconcile(true);}catch(e){}
     try{renderShopRows();}catch(_){}
     shopCacheSave();
@@ -8334,6 +8344,18 @@ function shopDescenteAuto(){
   if(_shopFini||_shopLoading||_shopDescente)return;
   shopChargerTout();
 }
+/* Porte de sortie, appelable depuis la console :  shopRechargerHistorique()
+
+   Elle oublie TOUT ce que l'ERP croit savoir sur sa position — l'état « c'est
+   complet » et le curseur de descente — et repart du sommet. À garder pour le
+   jour où la pagination de Shopify a menti, ou après un changement de boutique
+   qui rend l'ancien curseur caduc. Les commandes déjà connues sont conservées :
+   la fusion ne jette rien, elle dédoublonne. */
+window.shopRechargerHistorique=function(){
+  _shopFini=false;_shopFond=null;_shopMore=true;
+  console.log("%cHistorique rouvert : descente depuis le début…","font-weight:bold");
+  return shopChargerTout();
+};
 async function shopChargerTout(){
   if(_shopLoading||_shopDescente||_shopFini)return;
   _shopDescente=true;_shopLoading=true;
