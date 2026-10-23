@@ -8313,9 +8313,25 @@ async function loadShopifyOrders(force){
     try{renderShopRows();}catch(_){}
     shopCacheSave();
   }catch(e){
-    if(!_shopOrders.length&&meta)meta.innerHTML='<span style="color:#dc2626">Erreur : '+esc(String(e&&e.message?e.message:e))+'</span>';
+    /* Une erreur de rafraîchissement ne doit pas rester muette quand des
+       commandes sont déjà affichées : sans ça, « Actualiser » semble ne rien
+       faire alors que la caisse ou Shopify a refusé l'appel. */
+    var _msgErr=String(e&&e.message?e.message:e);
+    if(!_shopOrders.length&&meta)meta.innerHTML='<span style="color:#dc2626">Erreur : '+esc(_msgErr)+'</span>';
+    else{
+      console.error("[Shopify] Actualisation impossible :",e);
+      var _am=document.getElementById("shopAllMsg");
+      if(_am)_am.innerHTML='<span style="color:#dc2626">Actualisation impossible : '+esc(_msgErr)+'</span>';
+      var _w=document.getElementById("shopMoreWrap");if(_w)_w.style.display="";
+    }
   }
   _shopLoading=false;
+  /* Et on relance la descente. « Actualiser » rouvrait le verrou sans que rien
+     ne reparte : la descente n'est déclenchée qu'à l'ENTRÉE dans l'écran, donc
+     en restant dessus on ne voyait aucun changement. Appelé ici, à la fin et
+     hors du try, il repart quoi qu'il arrive — et ne fait rien si l'historique
+     est réellement complet. */
+  try{shopDescenteAuto();}catch(_){}
 }
 /* ============================================================================
    CHARGER TOUT L'HISTORIQUE, EN UN CLIC
