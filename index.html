@@ -6689,7 +6689,18 @@ function aiMatchTaille(m,tval){
     return {v:null,raison:"le modèle « "+(m.fr||m.sku||"?")+" » n'a pas de grille de tailles"};
   var eu="";
   try{eu=(typeof taille2EU==="function")?taille2EU(m,t):"";}catch(_){eu="";}
-  if(!eu)return {v:null,raison:"taille « "+t+" » hors de la grille « "+m.grille+" »"};
+  if(!eu){
+    /* Distinguer les deux causes : une grille SANS table de correspondance US
+       ne peut convertir aucune pointure américaine, et dire « hors grille »
+       envoie corriger la facture alors que c'est la grille qu'il faut
+       compléter — ou la fiche qu'il faut rattacher à la bonne grille. */
+    var _us=((DB.grilles||{})["__us"]||{})[m.grille];
+    var _sansUs=!_us||!Object.keys(_us).length;
+    if(_sansUs&&/^\d+([.,]\d+)?w?$/i.test(t))
+      return {v:null,raison:"la grille « "+m.grille+" » n'a pas de correspondance US :"
+        +" « "+t+" » ne peut pas être convertie. Choisis la taille à droite."};
+    return {v:null,raison:"taille « "+t+" » hors de la grille « "+m.grille+" »"};
+  }
   var v=(DB.variantes||[]).filter(function(x){
     return x&&x.modeleId==m.id&&szNorm(x.taille)===szNorm(eu);})[0];
   if(!v)return {v:null,eu:eu,aCreer:true,
@@ -6788,15 +6799,38 @@ function aiOptionsModele(l){
   }
   return opts;
 }
+/* Le menu liste TOUTE LA GRILLE du modèle, pas seulement les variantes qui
+   existent déjà. Sans ça, une fiche qui n'a que trois pointures en stock
+   offrait un menu quasi vide : impossible de choisir le 42.5 qu'on voulait,
+   alors que la grille le prévoit. Les pointures pas encore créées sont
+   proposées avec la mention « à créer » — elles ne naîtront qu'à la
+   validation. */
 function aiOptionsTaille(l){
   var m=l.modeleId?modeleById(l.modeleId):null;
   if(!m)return '<option value="">—</option>';
-  var vs=(DB.variantes||[]).filter(function(v){return v&&v.modeleId==m.id;})
-    .sort(function(a,b){return szSortNum(a.taille)-szSortNum(b.taille);});
+  var vsParTaille={};
+  (DB.variantes||[]).forEach(function(v){
+    if(v&&v.modeleId==m.id)vsParTaille[szNorm(v.taille)]=v;});
+
+  var grille=(m.grille&&(DB.grilles||{})[m.grille])?DB.grilles[m.grille]:null;
+  var tailles=grille?grille.slice():[];
+  /* Une variante hors grille existe parfois (import ancien) : on la garde,
+     sinon elle deviendrait inatteignable depuis cet écran. */
+  Object.keys(vsParTaille).forEach(function(k){
+    if(!tailles.some(function(t){return szNorm(t)===k;}))
+      tailles.push(vsParTaille[k].taille);});
+  tailles.sort(function(a,b){return szSortNum(a)-szSortNum(b);});
+
+  var usMap=((DB.grilles||{})["__us"]||{})[m.grille]||{};
   var o='<option value="">— taille —</option>';
-  vs.forEach(function(v){
-    o+='<option value="'+v.id+'"'+(String(l.varianteId)===String(v.id)?" selected":"")+'>'
-      +esc(String(v.taille))+'</option>';});
+  tailles.forEach(function(t){
+    var v=vsParTaille[szNorm(t)];
+    var val=v?String(v.id):("new:"+t);
+    var sel=v?(String(l.varianteId)===String(v.id))
+             :(!l.varianteId&&szNorm(l.eu||"")===szNorm(t));
+    var us=usMap[t]?(" · US "+usMap[t]):"";
+    o+='<option value="'+esc(val)+'"'+(sel?" selected":"")+'>'
+      +esc(String(t))+esc(us)+(v?"":"  (à créer)")+'</option>';});
   return o;
 }
 
@@ -6903,9 +6937,24 @@ function aiOpenRevue(res){
       l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));
       aiRevueRepeindre();return;
     }
-    if(t.classList.contains("_aiVar")){l.varianteId=t.value||"";
-      if(l.varianteId){l.tailleACreer=false;l.tailleNote="";}
-      l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));}
+    if(t.classList.contains("_aiVar")){
+      var val=String(t.value||"");
+      if(val.indexOf("new:")===0){
+        /* Taille de la grille pas encore créée : on retient la pointure, la
+           variante naîtra à la validation. */
+        l.varianteId="";l.eu=val.slice(4);l.tailleACreer=true;
+        l.tailleNote="taille "+l.eu+" (EU) à créer sur ce modèle";
+      }else{
+        l.varianteId=val;
+        if(l.varianteId){
+          l.tailleACreer=false;l.tailleNote="";
+          var _v=(DB.variantes||[]).filter(function(x){
+            return x&&String(x.id)===val;})[0];
+          if(_v)l.eu=String(_v.taille);
+        }else{l.tailleACreer=false;}
+      }
+      l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));
+      aiRevueCompter();return;}
     if(t.classList.contains("_aiPv"))l.pv=parseFloat(t.value)||0;
     if(t.classList.contains("_aiGarde"))l._garde=!!t.checked;
     aiRevueCompter();
