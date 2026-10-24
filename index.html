@@ -6791,7 +6791,11 @@ function aiBuildAchatFromInvoice(j){
   var entete={
     date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:today(),
     fournId:fourId||"", nFacture:j.numero||"",
-    societeId:(socFilter||((DB.societes[0]||{}).id)||""),
+    /* Pas de repli sur la première société de la liste : un achat rangé dans
+       la mauvaise entité se découvre à la compta, des mois plus tard. Le
+       filtre société en cours est un choix explicite, on le reprend ; sinon
+       on laisse vide et l'écran de vérification réclame le choix. */
+    societeId:(socFilter||""),
     ville:(attrLabels("Ville")[0]||"Vichy"),
     emplacement:(attrLabels("Emplacement")[0]||"")};
 
@@ -7107,6 +7111,69 @@ function aiOptionsTaille(l){
   return o;
 }
 
+/* Les états possibles viennent de l'attribut « État du produit », comme
+   partout ailleurs dans l'ERP : ajouter un état dans Outils › Attributs doit
+   le faire apparaître ici aussi, sans retoucher ce fichier. Le repli
+   Neuf/Used n'existe que pour une base où l'attribut n'aurait pas été créé. */
+function aiEtats(){
+  var l=[];
+  try{l=(attrLabels("État du produit")||[]).filter(Boolean);}catch(_){l=[];}
+  return l.length?l:["Neuf","Used"];
+}
+function aiOptionsEtat(l){
+  var etats=aiEtats();
+  /* Un état lu sur la facture mais absent de l'attribut est quand même
+     proposé : le perdre en silence changerait la TVA de la pièce. */
+  if(l.etat&&etats.indexOf(l.etat)<0)etats=[l.etat].concat(etats);
+  /* Assez large pour « Neuf avec défaut », qui est une vraie valeur de
+     l'attribut : tronquée, elle se confondrait avec « Neuf » à l'œil. */
+  return '<select class="_aiEtat" data-i="'+l.i+'" title="État du produit" '
+    +'style="width:118px;padding:4px;border:1px solid var(--line);border-radius:7px;'
+    +'font-size:11px">'
+    +etats.map(function(e){
+      return '<option'+(String(l.etat)===String(e)?" selected":"")+'>'+esc(e)+'</option>';
+    }).join("")+'</select>';
+}
+
+/* ---------------------------------------------------------------------------
+   CHERCHER UN MODÈLE DEPUIS LA BARRE DE RECHERCHE DE LA REVUE
+
+   Le geste visé : la facture n'a pas de référence, mais on connaît le SKU et
+   la fiche existe. On le tape, on veut la fiche.
+
+   Ça marchait mal. La comparaison passait par aiNorm, qui remplace la
+   ponctuation par des espaces : « HQ1966-002 » y devient « hq1966 002 ».
+   Taper le SKU sans tiret — comme il est imprimé sur la boîte — ne trouvait
+   donc rien.
+
+   On compare désormais AUSSI sur la référence dépouillée de toute
+   ponctuation, et les correspondances de référence passent devant celles de
+   libellé : qui tape une référence cherche cette référence.
+
+   « exact » n'est rendu que si la saisie EST la référence complète d'un seul
+   modèle. C'est une égalité, pas une ressemblance : c'est ce qui autorise
+   l'appelant à poser le modèle sans rien demander.
+   ------------------------------------------------------------------------- */
+function aiChercherModeles(saisie,max){
+  var brut=String(saisie==null?"":saisie);
+  var q=aiNorm(brut), qs=aiNormSku(brut);
+  /* Sous deux caractères, tout ressemble à tout : on ne propose rien plutôt
+     que les huit premiers modèles du catalogue. */
+  if(q.length<2&&qs.length<2)return null;
+
+  var parRef=[],parTitre=[],exacts=[];
+  (DB.modeles||[]).forEach(function(m){
+    if(!m||m.id==null)return;
+    var ms=aiNormSku(m.sku);
+    if(qs&&ms&&ms===qs)exacts.push(m);
+    if(qs&&ms&&ms.indexOf(qs)>=0){parRef.push(m);return;}
+    if(q&&aiNorm((m.fr||"")+" "+(m.sku||"")).indexOf(q)>=0)parTitre.push(m);
+  });
+  return {trouves:parRef.concat(parTitre).slice(0,max||8),
+          parRef:parRef.length,
+          exact:(exacts.length===1?exacts[0]:null)};
+}
+
 function aiRevueLigne(l){
   var pb=(l.certitude!=="sku"&&l.certitude!=="sur"&&l.certitude!=="choisi")
     ||!(l.varianteId||l.tailleACreer);
@@ -7146,7 +7213,12 @@ function aiRevueLigne(l){
       +'<input class="_aiPv" data-i="'+l.i+'" type="number" step="0.01" min="0" value="'+(l.pv||"")+'" '
         +'style="width:92px;padding:5px;border:1px solid var(--line);border-radius:7px;'
         +'font-size:12px;text-align:right">'
-      +(l.pvDeduit?'<div class="muted" style="font-size:10px;margin-top:2px">déduit ×1,8</div>':'')+'</td>'
+      +(l.pvDeduit?'<div class="muted" style="font-size:10px;margin-top:2px">déduit ×1,8</div>':'')
+      /* L'état se choisit LIGNE PAR LIGNE, et à côté du prix parce que c'est
+         là qu'il se décide : une même facture mêle souvent du neuf et du
+         seconde main, et l'état fixe la TVA comme le prix de vente. Avant, une
+         seule valeur par défaut s'appliquait à toute la facture. */
+      +'<div style="margin-top:4px">'+aiOptionsEtat(l)+'</div></td>'
     +'<td style="padding:8px 6px;vertical-align:top;text-align:center">'
       +'<input class="_aiGarde" data-i="'+l.i+'" type="checkbox"'
       +((l.modeleId&&(l.varianteId||l.tailleACreer))?" checked":"")+'></td></tr>';
@@ -7183,8 +7255,24 @@ function aiOpenRevue(res){
     +'<div style="font-weight:800;font-size:18px">Facture lue — à vérifier avant création</div>'
     +'<div class="sub" style="margin:3px 0 12px">Rien n\'est enregistré tant que tu n\'as pas validé. '
       +'Les lignes en jaune demandent une confirmation.</div>'
-    +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:12px;'
-      +'padding:10px 12px;background:#f8fafc;border-radius:10px">'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px;'
+      +'margin-bottom:12px;padding:10px 12px;background:#f8fafc;border-radius:10px">'
+      /* LA SOCIÉTÉ SE DEMANDE, elle ne se devine plus.
+         Elle était prise dans le filtre en cours, ou à défaut la première de
+         la liste. Sur deux entités juridiques, se tromper range un achat dans
+         la mauvaise compta — et rien à l'écran ne le signalait. On préremplit
+         quand un filtre société est actif (c'est un choix explicite), sinon
+         on laisse vide et la validation bloque. */
+      +'<div style="display:flex;align-items:center;gap:6px"><b>Société</b> : '
+        +'<select id="_aiSoc" style="padding:5px 8px;border:1px solid var(--line);'
+        +'border-radius:7px;font-size:13px;font-weight:600'
+        +(res.entete.societeId?'':';border-color:#b3261e;background:#fef2f2')+'">'
+        +'<option value="">— choisir —</option>'
+        +(DB.societes||[]).map(function(s){
+          return '<option value="'+s.id+'"'
+            +(String(res.entete.societeId)===String(s.id)?" selected":"")+'>'
+            +esc(s.nom||("société "+s.id))+'</option>';}).join("")
+        +'</select></div>'
       +'<div><b>Fournisseur</b> : '+(f?esc(fourLabel(f)):'<span style="color:#b3261e">non reconnu — à choisir après création</span>')+'</div>'
       +'<div><b>Facture</b> : '+esc(res.entete.nFacture||"—")+'</div>'
       +'<div><b>Date</b> : '+esc(res.entete.date)+'</div></div>'
@@ -7250,21 +7338,64 @@ function aiOpenRevue(res){
       l.pv=pvArrondi(parseFloat(t.value)||0);
       t.value=l.pv||"";
     }
+    /* L'état ne change ni le modèle ni la taille : on l'enregistre sans
+       redessiner la ligne, pour ne pas faire sauter l'écran sous le doigt. */
+    if(t.classList.contains("_aiEtat")){l.etat=t.value;return;}
     if(t.classList.contains("_aiGarde"))l._garde=!!t.checked;
     aiRevueCompter();
   });
-  /* Recherche libre : le score a pu manquer un modèle, il faut pouvoir aller
-     le chercher soi-même sans quitter l'écran. */
+  /* La société est hors du tableau : son écouteur lui est propre. */
+  var selSoc=document.getElementById("_aiSoc");
+  if(selSoc)selSoc.onchange=function(){
+    _aiRevue.entete.societeId=this.value||"";
+    var manque=!_aiRevue.entete.societeId;
+    this.style.borderColor=manque?"#b3261e":"var(--line)";
+    this.style.background=manque?"#fef2f2":"";
+  };
+  /* RECHERCHE LIBRE, ET SURTOUT RECHERCHE PAR SKU.
+
+     C'est le geste naturel quand la facture n'a pas de référence : on connaît
+     le SKU, la fiche existe, on veut la retrouver en le tapant. Ça marchait
+     mal — la comparaison passait par aiNorm, qui transforme « HQ1966-002 » en
+     « hq1966 002 », si bien qu'un SKU tapé sans tiret ne trouvait rien.
+
+     On compare donc AUSSI sur le SKU dépouillé de toute ponctuation, et les
+     correspondances de référence passent devant celles de libellé : qui tape
+     une référence cherche cette référence.
+
+     Et quand ce qui est tapé EST le SKU exact d'un seul modèle, on applique
+     le choix tout de suite. Pas de devinette là-dedans : c'est une égalité de
+     référence, et c'est le seul cas où elle peut survenir en cours de frappe.
+     La ligne est mise à jour SUR PLACE, sans redessiner le tableau, sinon le
+     champ perdrait le focus et le texte au premier caractère. */
   ov.addEventListener("input",function(e){
     var t=e.target;if(!t||!t.classList||!t.classList.contains("_aiCherche"))return;
     var i=+t.getAttribute("data-i");var l=_aiRevue.lignes[i];if(!l)return;
-    var q=aiNorm(t.value);if(q.length<2)return;
-    var trouves=(DB.modeles||[]).filter(function(m){
-      return aiNorm((m.fr||"")+" "+(m.sku||"")).indexOf(q)>=0;}).slice(0,8);
+    var r=aiChercherModeles(t.value);
+    if(!r)return;
+
     var sel=t.parentElement.querySelector("._aiMod");if(!sel)return;
     sel.innerHTML='<option value="">— choisir un modèle —</option>'
-      +trouves.map(function(m){return '<option value="'+m.id+'">'
+      +r.trouves.map(function(m){return '<option value="'+m.id+'">'
         +esc((m.fr||m.sku||"")+"  ["+(m.sku||"")+"]")+'</option>';}).join("");
+
+    /* Référence exacte et unique : on pose le modèle sans attendre. */
+    if(!r.exact)return;
+    var m=r.exact;
+    sel.value=String(m.id);
+    l.modeleId=m.id;l.certitude="choisi";l.note="";
+    var tt=aiMatchTaille(m,l.taille);
+    l.varianteId=tt.v?tt.v.id:"";l.eu=tt.eu||"";
+    l.tailleNote=tt.raison||"";l.tailleACreer=!!tt.aCreer;
+    l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));
+    /* Mise à jour ciblée : la taille et la case à cocher de CETTE ligne. */
+    var tr=t.closest("tr");
+    if(tr){
+      var sv=tr.querySelector("._aiVar");if(sv)sv.innerHTML=aiOptionsTaille(l);
+      var gd=tr.querySelector("._aiGarde");if(gd)gd.checked=!!l._garde;
+      tr.style.background=l._garde?"":"#fffbeb";
+    }
+    aiRevueCompter();
   });
   /* Un seul écouteur de clic pour tout le tableau, comme pour les « change » :
      les lignes sont redessinées à chaque correction, des écouteurs posés par
@@ -7284,6 +7415,19 @@ function aiRevueFermer(){
 
 async function aiRevueValider(){
   if(!_aiRevue)return;
+  /* Sans société, on ne crée rien. Ce n'est pas un détail de saisie : la
+     commande part dans la comptabilité d'une entité ou de l'autre, et se
+     tromper ne se voit qu'au bilan. On le demande AVANT, pas après. */
+  var selSoc=document.getElementById("_aiSoc");
+  if(selSoc)_aiRevue.entete.societeId=selSoc.value||"";
+  if(!_aiRevue.entete.societeId){
+    alert("Choisis d'abord la société de cette commande, en haut de l'écran.\n\n"
+      +"L'achat est rattaché à sa comptabilité : le corriger après coup oblige "
+      +"à refaire la commande.");
+    if(selSoc){try{selSoc.focus();}catch(_){}}
+    return;
+  }
+
   var gardees=_aiRevue.lignes.filter(function(l){
     return l._garde!==false&&l.modeleId&&(l.varianteId||l.tailleACreer);});
   if(!gardees.length){alert("Aucune ligne retenue.");return;}
