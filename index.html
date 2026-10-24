@@ -6772,6 +6772,174 @@ function aiBuildAchatFromInvoice(j){
    ------------------------------------------------------------------------- */
 var _aiRevue=null;
 
+/* ---------------------------------------------------------------------------
+   CRÉER LA FICHE MANQUANTE SANS QUITTER LA VÉRIFICATION
+
+   Un SKU absent du catalogue bloquait la ligne : il fallait sortir, créer le
+   modèle dans Catalogue, puis tout relancer — et refaire les corrections déjà
+   faites sur les autres lignes. La fiche se crée donc ici, et la ligne reprend
+   aussitôt son cours.
+
+   Même fiche que celle produite par l'import Excel (impAskModele) : mêmes
+   champs, même génération de la grille complète de variantes. Une pièce
+   importée par facture est ainsi indiscernable d'une pièce importée par Excel.
+   ------------------------------------------------------------------------- */
+function aiCreerFiche(i){
+  if(!_aiRevue)return;
+  var l=_aiRevue.lignes[i];if(!l)return;
+  var tr=document.querySelector('#_aiRows tr[data-i="'+i+'"]');if(!tr)return;
+  if(tr.querySelector("._aiForm"))return;            // déjà ouverte
+
+  var grilles=Object.keys(DB.grilles||{}).filter(function(k){return k!=="__us";}).sort();
+  var marques=(typeof attrLabels==="function"?(attrLabels("Marque")||[]):[]);
+  /* La grille est proposée d'après la marque et le genre lus dans le libellé :
+     c'est le champ le plus souvent mal rempli, et celui dont dépendent toutes
+     les tailles de la fiche. */
+  var suggestion=aiGrilleProbable(l.titre);
+
+  var css='width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:7px;'
+    +'font-size:12px;box-sizing:border-box';
+  var box=document.createElement("td");
+  box.className="_aiForm";box.colSpan=5;
+  box.style.cssText="padding:12px;background:#eff6ff;border-top:1px solid #bfdbfe";
+  box.innerHTML='<div style="font-weight:700;margin-bottom:8px">Créer la fiche produit '
+      +esc(l.sku||"")+'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div style="flex:2;min-width:220px"><label style="display:block;font-size:11px;font-weight:700;color:#475569">Titre *</label>'
+        +'<input class="_afFr" value="'+esc(l.titre||"")+'" style="'+css+'"></div>'
+      +'<div style="width:130px"><label style="display:block;font-size:11px;font-weight:700;color:#475569">SKU *</label>'
+        +'<input class="_afSku" value="'+esc(l.sku||"")+'" style="'+css+'"></div>'
+      +'<div style="width:130px"><label style="display:block;font-size:11px;font-weight:700;color:#475569">Marque</label>'
+        +'<input class="_afMarque" list="_afMarqueList" value="'+esc(suggestion.marque||"")+'" style="'+css+'">'
+        +'<datalist id="_afMarqueList">'+marques.map(function(x){
+          return '<option value="'+esc(x)+'">';}).join("")+'</datalist></div>'
+      +'<div style="flex:1;min-width:200px"><label style="display:block;font-size:11px;font-weight:700;color:#475569">Grille de tailles *</label>'
+        +'<select class="_afGrille" style="'+css+'"><option value="">— choisir —</option>'
+        +grilles.map(function(g){return '<option value="'+esc(g)+'"'
+          +(g===suggestion.grille?" selected":"")+'>'+esc(g)+'</option>';}).join("")+'</select></div>'
+      +'<button class="btn v _afKicks" style="padding:6px 10px;font-size:12px">KicksDB</button>'
+      +'<button class="btn _afAnnule" style="padding:6px 10px;font-size:12px">Annuler</button>'
+      +'<button class="btn g _afOk" style="padding:6px 14px;font-size:12px">Créer et continuer</button>'
+    +'</div>'
+    +'<div class="_afMsg" style="font-size:12px;margin-top:6px;color:#b45309"></div>';
+
+  var ligne=document.createElement("tr");
+  ligne.className="_aiFormRow";ligne.appendChild(box);
+  tr.parentNode.insertBefore(ligne,tr.nextSibling);
+
+  var q=function(s){return box.querySelector(s);};
+  var dire=function(t){q("._afMsg").textContent=t||"";};
+  try{q("._afFr").focus();}catch(_){}
+
+  q("._afKicks").onclick=async function(){
+    var b=this,vieux=b.textContent,s2=(q("._afSku").value||"").trim();
+    if(!s2)return;
+    b.textContent="…";b.disabled=true;dire("");
+    try{
+      var r=await sb.functions.invoke("kicksdb-lookup",{body:{sku:s2}});
+      if(r.error)throw r.error;
+      var pr=r.data&&r.data.product;
+      var nrm=function(x){return String(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");};
+      /* Même garde-fou qu'ailleurs : KicksDB fait une recherche APPROCHANTE,
+         et accepter un résultat voisin créerait une fiche sous un mauvais SKU. */
+      if(!pr||!pr.sku||nrm(pr.sku)!==nrm(s2)){
+        dire("Aucune correspondance exacte dans KicksDB pour « "+s2+" ». Saisis à la main.");
+        return; }
+      if(pr.name)q("._afFr").value=pr.name;
+      if(pr.brand)q("._afMarque").value=pr.brand;
+      var sg=aiGrilleProbable(pr.name||"");
+      if(sg.grille&&!q("._afGrille").value)q("._afGrille").value=sg.grille;
+      dire("");
+    }catch(e){dire("KicksDB indisponible : "+((e&&e.message)||e));}
+    finally{b.textContent=vieux;b.disabled=false;}
+  };
+  q("._afAnnule").onclick=function(){ligne.remove();};
+
+  q("._afOk").onclick=function(){
+    var vSku=(q("._afSku").value||"").trim();
+    var vFr=(q("._afFr").value||"").trim();
+    var vG=q("._afGrille").value;
+    if(!vSku){dire("Le SKU est obligatoire.");return;}
+    if(!vFr){dire("Le titre est obligatoire.");return;}
+    if(!vG||!DB.grilles[vG]){dire("Choisis une grille de tailles : c'est elle qui "
+      +"dira si « "+(l.taille||"?")+" » est une pointure homme, femme ou junior.");return;}
+
+    /* Un SKU déjà pris rattache au lieu de dupliquer : deux fiches pour une
+       même référence rendraient tout rapprochement ultérieur ambigu. */
+    var dup=(DB.modeles||[]).filter(function(x){
+      return aiNormSku(x.sku)===aiNormSku(vSku);})[0];
+    var m=dup;
+    if(!m){
+      m={id:fsModeleId(vSku),sku:vSku,fr:vFr,
+         marque:(q("._afMarque").value||"").trim(),
+         poids:1,taxo:"Apparel & Accessories > Shoes > Sneakers",
+         grille:vG,grilleOk:1,needsGrille:0};
+      DB.modeles.push(m);
+      /* Grille complète d'emblée, comme « Nouveau modèle » et comme l'import
+         Excel : la fiche est utilisable pour toutes ses pointures, pas
+         seulement celle de cette facture. */
+      (DB.grilles[vG]||[]).forEach(function(t){
+        DB.variantes.push({id:fsVarianteId(m.id,t),modeleId:m.id,
+          taille:String(t),eu:String(t),barcode:""});
+      });
+      try{logAct("Création","Modèle",m.fr+" (import facture)");}catch(_){}
+    }
+
+    /* La ligne reprend son cours : modèle posé, taille résolue sur la grille
+       de la fiche qu'on vient de créer. */
+    l.modeleId=m.id;l.certitude="choisi";l.note="";
+    var tt=aiMatchTaille(m,l.taille);
+    l.varianteId=tt.v?tt.v.id:"";l.eu=tt.eu||"";
+    l.tailleNote=tt.raison||"";l.tailleACreer=!!tt.aCreer;
+    l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));
+
+    /* Les AUTRES lignes de la même facture portant ce SKU en profitent : une
+       facture liste souvent le même modèle en plusieurs pointures, et les
+       reprendre une à une serait absurde. */
+    var aussi=0;
+    _aiRevue.lignes.forEach(function(o){
+      if(o===l||o.modeleId||o.certitude!=="sku_inconnu")return;
+      if(aiNormSku(o.sku)!==aiNormSku(vSku))return;
+      o.modeleId=m.id;o.certitude="choisi";o.note="";
+      var t2=aiMatchTaille(m,o.taille);
+      o.varianteId=t2.v?t2.v.id:"";o.eu=t2.eu||"";
+      o.tailleNote=t2.raison||"";o.tailleACreer=!!t2.aCreer;
+      o._garde=!!(o.modeleId&&(o.varianteId||o.tailleACreer));
+      aussi++;
+    });
+
+    ligne.remove();
+    aiRevueRepeindre();
+    if(aussi)console.log("[Facture IA] "+(aussi+1)+" ligne(s) rattachées à "+m.sku);
+  };
+}
+
+/* Devine marque et grille à partir du libellé, pour pré-remplir la fiche.
+   Ce n'est qu'une SUGGESTION, modifiable : se tromper de grille ici fausserait
+   toutes les tailles de la fiche pour toujours. */
+function aiGrilleProbable(titre){
+  var t=aiNorm(titre);
+  var genre=/\bwomen\b|\bwomens\b|\bw\b/.test(t)?"Femme"
+    :(/\bgs\b|\bkids\b|\bjunior\b/.test(t)?"Junior":"Homme");
+  var marques=[["nike","Nike"],["jordan","Nike"],["air force","Nike"],
+    ["adidas","Adidas"],["yeezy","Adidas"],["samba","Adidas"],["gazelle","Adidas"],
+    ["campus","Adidas"],["new balance","New Balance"],["asics","Asics"],
+    ["puma","Puma"],["vans","Vans"],["converse","Converse"],["salomon","Salomon"],
+    ["saucony","Saucony"],["ugg","UGG"],["timberland","Timberland"],
+    ["birkenstock","Birkenstock"],["golden goose","Golden Goose"],["bape","Bape"],
+    ["autry","Autry"],["on running","ON Running"],["mihara","Maison Mihara"]];
+  for(var i=0;i<marques.length;i++){
+    if(t.indexOf(marques[i][0])<0)continue;
+    var g=marques[i][1]+" — "+genre;
+    if((DB.grilles||{})[g])return {marque:marques[i][1],grille:g};
+    var gh=marques[i][1]+" — Homme";
+    if((DB.grilles||{})[gh])return {marque:marques[i][1],grille:gh};
+    return {marque:marques[i][1],grille:""};
+  }
+  return {marque:"",grille:""};
+}
+
+
 function aiBadge(c){
   var m={sku:["Référence exacte","#dcfce7","#166534"],
          sur:["Sûr","#dcfce7","#166534"],
@@ -6851,7 +7019,15 @@ function aiRevueLigne(l){
         +'border:1px solid var(--line);border-radius:7px;font-size:12px">'+aiOptionsModele(l)+'</select>'
       +'<input class="_aiCherche" data-i="'+l.i+'" placeholder="chercher un autre modèle…" '
         +'style="width:100%;max-width:330px;margin-top:4px;padding:5px;border:1px solid var(--line);'
-        +'border-radius:7px;font-size:12px"></td>'
+        +'border-radius:7px;font-size:12px">'
+      /* Le SKU n'existe pas au catalogue : la fiche se crée ICI plutôt que de
+         forcer à sortir, créer le modèle ailleurs et tout relancer — en
+         reperdant les corrections déjà faites sur les autres lignes. */
+      +(l.certitude==="sku_inconnu"&&l.sku
+        ?('<button type="button" class="btn v _aiCreer" data-i="'+l.i+'" '
+          +'style="margin-top:5px;padding:5px 10px;font-size:12px">+ Créer la fiche '
+          +esc(l.sku)+'</button>'):'')
+      +'</td>'
     +'<td style="padding:8px 6px;vertical-align:top">'
       +'<select class="_aiVar" data-i="'+l.i+'" style="padding:5px;border:1px solid var(--line);'
         +'border-radius:7px;font-size:12px;min-width:92px">'+aiOptionsTaille(l)+'</select>'
@@ -6876,7 +7052,10 @@ function aiRevueCompter(){
   var el=document.getElementById("_aiCompte");if(!el||!_aiRevue)return;
   var pris=_aiRevue.lignes.filter(function(l){
     return l._garde!==false&&l.modeleId&&(l.varianteId||l.tailleACreer);});
-  var douteux=pris.filter(function(l){return l.certitude!=="sku"&&l.certitude!=="sur";});
+  /* « choisi » est une décision humaine, pas un doute : la compter comme
+     telle ferait croire qu'il reste du travail après l'avoir fait. */
+  var douteux=pris.filter(function(l){
+    return l.certitude!=="sku"&&l.certitude!=="sur"&&l.certitude!=="choisi";});
   var tot=pris.reduce(function(n,l){return n+(+l.prixHT||0)*(l.qte||1);},0);
   el.innerHTML=pris.length+" ligne(s) retenue(s) · "+eur(tot)+" d'achat"
     +(douteux.length?(' · <b style="color:#b45309">'+douteux.length+" à confirmer</b>"):"");
@@ -6971,6 +7150,15 @@ function aiOpenRevue(res){
     sel.innerHTML='<option value="">— choisir un modèle —</option>'
       +trouves.map(function(m){return '<option value="'+m.id+'">'
         +esc((m.fr||m.sku||"")+"  ["+(m.sku||"")+"]")+'</option>';}).join("");
+  });
+  /* Un seul écouteur de clic pour tout le tableau, comme pour les « change » :
+     les lignes sont redessinées à chaque correction, des écouteurs posés par
+     bouton seraient perdus au premier redessin. */
+  ov.addEventListener("click",function(e){
+    var b=e.target&&e.target.closest?e.target.closest("._aiCreer"):null;
+    if(!b)return;
+    e.preventDefault();
+    aiCreerFiche(+b.getAttribute("data-i"));
   });
   document.getElementById("_aiAnnule").onclick=function(){aiRevueFermer();};
   document.getElementById("_aiOk").onclick=function(){aiRevueValider();};
