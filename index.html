@@ -6662,8 +6662,22 @@ function aiMatchModele(sku,titre){
 
 /* La taille passe par le convertisseur du reste de l'ERP, au lieu d'une
    comparaison de texte : il gère les pointures US, les « W » femme, les
-   virgules et les 38 2/3 qu'Excel transforme en 38,666666. Ne crée JAMAIS de
-   variante ici — une taille hors grille doit se voir, pas se fabriquer. */
+   virgules et les 38 2/3 qu'Excel transforme en 38,666666. C'est la GRILLE DE
+   LA FICHE — donc le modèle désigné par le SKU — qui dit si « 8 » est une
+   pointure homme, femme ou junior.
+
+   DEUX SITUATIONS À NE PAS CONFONDRE. Les confondre faisait perdre des lignes
+   entières, alors que modèle et taille étaient justes :
+
+     · la taille n'est pas dans la grille du modèle → c'est une erreur, on la
+       signale et on ne fabrique rien ;
+     · la taille EST dans la grille, mais le modèle n'a pas encore de variante
+       pour elle → c'est NORMAL. Une fiche ne porte que les pointures déjà
+       passées en stock, rarement les 22 de la grille. La variante est alors
+       simplement à créer, comme le fait déjà l'import Excel.
+
+   Ici on ne crée rien — aucune écriture avant validation : on marque « à
+   créer », et c'est aiRevueValider qui s'en charge. */
 function aiMatchTaille(m,tval){
   var t=String(tval==null?"":tval).trim();
   if(!m||!t)return {v:null,raison:"taille absente de la facture"};
@@ -6678,7 +6692,8 @@ function aiMatchTaille(m,tval){
   if(!eu)return {v:null,raison:"taille « "+t+" » hors de la grille « "+m.grille+" »"};
   var v=(DB.variantes||[]).filter(function(x){
     return x&&x.modeleId==m.id&&szNorm(x.taille)===szNorm(eu);})[0];
-  if(!v)return {v:null,eu:eu,raison:"taille EU "+eu+" absente du modèle"};
+  if(!v)return {v:null,eu:eu,aCreer:true,
+    raison:"taille "+eu+" (EU) à créer sur ce modèle"};
   return {v:v,eu:eu,raison:""};
 }
 
@@ -6732,7 +6747,8 @@ function aiBuildAchatFromInvoice(j){
       modeleId:(mm.m?mm.m.id:""), certitude:mm.certitude, score:mm.score,
       candidats:(mm.candidats||[]).map(function(x){return x.id;}),
       note:mm.note||"",
-      varianteId:(tt.v?tt.v.id:""), eu:(tt.eu||""), tailleNote:(tt.raison||"")};
+      varianteId:(tt.v?tt.v.id:""), eu:(tt.eu||""), tailleNote:(tt.raison||""),
+      tailleACreer:!!tt.aCreer};
   });
 
   return {ok:true, entete:entete, lignes:lignes, fourId:fourId};
@@ -6785,7 +6801,8 @@ function aiOptionsTaille(l){
 }
 
 function aiRevueLigne(l){
-  var pb=(l.certitude!=="sku"&&l.certitude!=="sur")||!l.varianteId;
+  var pb=(l.certitude!=="sku"&&l.certitude!=="sur"&&l.certitude!=="choisi")
+    ||!(l.varianteId||l.tailleACreer);
   return '<tr data-i="'+l.i+'" style="border-top:1px solid var(--line)'
     +(pb?';background:#fffbeb':'')+'">'
     +'<td style="padding:8px 6px;vertical-align:top;max-width:230px">'
@@ -6813,7 +6830,7 @@ function aiRevueLigne(l){
       +(l.pvDeduit?'<div class="muted" style="font-size:10px;margin-top:2px">déduit ×1,8</div>':'')+'</td>'
     +'<td style="padding:8px 6px;vertical-align:top;text-align:center">'
       +'<input class="_aiGarde" data-i="'+l.i+'" type="checkbox"'
-      +((l.modeleId&&l.varianteId)?" checked":"")+'></td></tr>';
+      +((l.modeleId&&(l.varianteId||l.tailleACreer))?" checked":"")+'></td></tr>';
 }
 
 function aiRevueRepeindre(){
@@ -6823,7 +6840,8 @@ function aiRevueRepeindre(){
 }
 function aiRevueCompter(){
   var el=document.getElementById("_aiCompte");if(!el||!_aiRevue)return;
-  var pris=_aiRevue.lignes.filter(function(l){return l._garde!==false&&l.modeleId&&l.varianteId;});
+  var pris=_aiRevue.lignes.filter(function(l){
+    return l._garde!==false&&l.modeleId&&(l.varianteId||l.tailleACreer);});
   var douteux=pris.filter(function(l){return l.certitude!=="sku"&&l.certitude!=="sur";});
   var tot=pris.reduce(function(n,l){return n+(+l.prixHT||0)*(l.qte||1);},0);
   el.innerHTML=pris.length+" ligne(s) retenue(s) · "+eur(tot)+" d'achat"
@@ -6833,7 +6851,7 @@ function aiRevueCompter(){
 
 function aiOpenRevue(res){
   _aiRevue=res;
-  res.lignes.forEach(function(l){l._garde=!!(l.modeleId&&l.varianteId);});
+  res.lignes.forEach(function(l){l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));});
   var f=res.entete.fournId?fourById(res.entete.fournId):null;
   var ov=document.createElement("div");ov.id="_aiOv";
   ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99998;"
@@ -6872,15 +6890,22 @@ function aiOpenRevue(res){
     var i=+t.getAttribute("data-i");var l=_aiRevue.lignes[i];if(!l)return;
     if(t.classList.contains("_aiMod")){
       l.modeleId=t.value||"";l.varianteId="";l.tailleNote="";
+      l.tailleACreer=false;
       if(l.modeleId){
         l.certitude="choisi";
+        /* On rejoue la résolution de taille sur le modèle choisi à la main :
+           sa grille n'est pas celle du modèle proposé, donc « 8 » peut ne plus
+           désigner la même pointure. */
         var tt=aiMatchTaille(modeleById(l.modeleId),l.taille);
         l.varianteId=tt.v?tt.v.id:"";l.eu=tt.eu||"";l.tailleNote=tt.raison||"";
+        l.tailleACreer=!!tt.aCreer;
       }
-      l._garde=!!(l.modeleId&&l.varianteId);
+      l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));
       aiRevueRepeindre();return;
     }
-    if(t.classList.contains("_aiVar")){l.varianteId=t.value||"";l._garde=!!(l.modeleId&&l.varianteId);}
+    if(t.classList.contains("_aiVar")){l.varianteId=t.value||"";
+      if(l.varianteId){l.tailleACreer=false;l.tailleNote="";}
+      l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));}
     if(t.classList.contains("_aiPv"))l.pv=parseFloat(t.value)||0;
     if(t.classList.contains("_aiGarde"))l._garde=!!t.checked;
     aiRevueCompter();
@@ -6908,7 +6933,7 @@ function aiRevueFermer(){
 async function aiRevueValider(){
   if(!_aiRevue)return;
   var gardees=_aiRevue.lignes.filter(function(l){
-    return l._garde!==false&&l.modeleId&&l.varianteId;});
+    return l._garde!==false&&l.modeleId&&(l.varianteId||l.tailleACreer);});
   if(!gardees.length){alert("Aucune ligne retenue.");return;}
   var douteuses=gardees.filter(function(l){
     return l.certitude!=="sku"&&l.certitude!=="sur"&&l.certitude!=="choisi";});
@@ -6922,6 +6947,17 @@ async function aiRevueValider(){
     nFacture:_aiRevue.entete.nFacture,societeId:_aiRevue.entete.societeId,
     ville:_aiRevue.entete.ville,emplacement:_aiRevue.entete.emplacement};
   a.ref=achRef(a);
+  /* Les variantes manquantes naissent ICI, pas avant : la taille est dans la
+     grille du modèle, elle est donc légitime. Même forme que resolveVariante,
+     pour qu'une pièce importée soit identique à une pièce saisie. */
+  gardees.forEach(function(l){
+    if(!l.varianteId&&l.tailleACreer&&l.eu){
+      var nv={id:newId(DB.variantes),modeleId:l.modeleId,taille:String(l.eu),
+        eu:String(l.eu),barcode:""};
+      DB.variantes.push(nv);l.varianteId=nv.id;
+    }
+  });
+  gardees=gardees.filter(function(l){return !!l.varianteId;});
   gardees.forEach(function(l){
     for(var k=0;k<(l.qte||1);k++)
       a.lignes.push({modeleId:l.modeleId,varianteId:l.varianteId,qte:1,
