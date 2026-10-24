@@ -6612,16 +6612,18 @@ function aiScore(motsA,motsB){
   return (2*pa*pb)/(pa+pb);
 }
 
-var AI_SUR=0.82;      // au-dessus : retenu d'office
-var AI_ECART=0.12;    // il faut en plus distancer le suivant
-var AI_PROBABLE=0.5;  // en dessous : on ne propose rien
+/* Les seuils de score du titre (AI_SUR, AI_ECART, AI_PROBABLE) ont disparu
+   avec la décision par le titre : un libellé ne désigne plus jamais un modèle
+   tout seul, quel que soit son score. Le score ne sert plus qu'à CLASSER les
+   candidats proposés au choix.
 
-/* Renvoie toujours un verdict explicite :
-     certitude "sku"      — référence exacte, aucun doute
-     certitude "sur"      — un titre se détache nettement
-     certitude "probable" — un candidat plausible, à confirmer
-     certitude "aucun"    — rien de défendable
-   Les candidats sont toujours joints : c'est ce qui permet de corriger. */
+   Renvoie toujours un verdict explicite :
+     certitude "sku"         — référence exacte, aucun doute, retenu d'office
+     certitude "probable"    — le SKU désigne plusieurs fiches, à trancher
+     certitude "sku_inconnu" — SKU présent mais absent du catalogue
+     certitude "sku_absent"  — aucun SKU sur la facture : on demande
+     certitude "aucun"       — pas même un libellé exploitable
+   Les candidats sont toujours joints : c'est ce qui permet de choisir vite. */
 function aiMatchModele(sku,titre){
   var mods=(DB.modeles||[]).filter(function(x){return x&&x.id!=null;});
 
@@ -6670,26 +6672,51 @@ function aiMatchModele(sku,titre){
       note:"SKU « "+sku+" » absent du catalogue — à créer, ou à choisir ci-contre"};
   }
 
-  /* 2. Pas de SKU sur la facture : le titre prend le relais, mais il doit se
-        détacher nettement (voir plus bas). */
+  /* 2. PAS DE SKU DU TOUT SUR LA LIGNE : on DEMANDE, on n'interprète pas.
+
+        Un libellé de facture fournisseur n'identifie pas un modèle. « Air
+        Force 1 Low » en désigne 125 dans le catalogue, « Samba OG » une
+        trentaine, et le score de mots finissait par en élire un — souvent le
+        bon coloris, parfois pas, et rien ne distinguait les deux cas à
+        l'écran. Une erreur de coloris, c'est une paire étiquetée sous une
+        autre référence, donc un SKU Shopify faux et un stock qui ne tombe
+        jamais juste.
+
+        On remonte donc les trois meilleurs candidats dans le menu — c'est
+        ÇA, demander : le choix est offert, prémâché, mais il reste à faire.
+        Aucun modèle n'est présélectionné, et la ligne n'est pas retenue tant
+        que personne n'a tranché. */
   var mots=aiMots(titre);
   if(!mots.length)return {m:null,score:0,certitude:"aucun",candidats:[]};
   var notes=parTitre();
-
-  var top=notes[0], second=notes[1];
   var candidats=notes.slice(0,3).map(function(r){return r.m;});
-  if(!top)return {m:null,score:0,certitude:"aucun",candidats:[]};
+  if(!notes.length)
+    return {m:null,score:0,certitude:"sku_absent",candidats:[],
+      note:"Pas de référence sur la facture, et le libellé ne ressemble à "
+        +"aucune fiche — cherche le modèle ci-contre"};
 
-  /* Se détacher ne suffit pas : il faut aussi être bon. Et être bon ne suffit
-     pas : il faut se détacher. C'est la conjonction qui évite les 125
-     « Air Force 1 Low » à égalité. */
-  var ecart=top.s-((second&&second.s)||0);
-  if(top.s>=AI_SUR&&ecart>=AI_ECART)
-    return {m:top.m,score:top.s,certitude:"sur",candidats:candidats};
-  if(top.s>=AI_PROBABLE)
-    return {m:top.m,score:top.s,certitude:"probable",candidats:candidats,
-      note:(ecart<AI_ECART&&second)?"plusieurs modèles très proches":""};
-  return {m:null,score:top.s,certitude:"aucun",candidats:candidats};
+  /* LA SEULE EXCEPTION : libellé IDENTIQUE et UNIQUE.
+
+     Un score de 1 signifie que les deux libellés portent exactement les mêmes
+     mots — à l'ordre, à la ponctuation et à la casse près. Ce n'est plus une
+     interprétation, c'est une égalité sur une autre clé que le SKU. Et on
+     exige en plus qu'une seule fiche atteigne ce score : si deux fiches
+     portent le même libellé au mot près, c'est un doublon au catalogue, et
+     c'est précisément le cas où il ne faut pas choisir pour toi.
+
+     Sans cette exception, une facture fournisseur sans colonne SKU — il y en
+     a — demanderait un choix manuel sur ses quarante lignes, y compris celles
+     qui ne laissent aucune place au doute. Tout le reste passe à la main. */
+  var exacts=notes.filter(function(r){return r.s>=1;});
+  if(exacts.length===1)
+    return {m:exacts[0].m,score:1,certitude:"sku",candidats:candidats,
+      note:"libellé identique au catalogue (facture sans référence)"};
+
+  return {m:null,score:notes[0].s,certitude:"sku_absent",candidats:candidats,
+    note:"Pas de référence sur la facture : le libellé seul ne suffit pas à "
+      +"désigner un modèle. Choisis-le ci-contre"
+      +(exacts.length>1?" — attention, "+exacts.length+" fiches portent ce libellé au mot près"
+        :(notes.length>1?" ("+notes.length+" fiches ressemblent au libellé)":""))};
 }
 
 /* La taille passe par le convertisseur du reste de l'ERP, au lieu d'une
@@ -6930,11 +6957,19 @@ function aiCreerFiche(i){
 
     /* Les AUTRES lignes de la même facture portant ce SKU en profitent : une
        facture liste souvent le même modèle en plusieurs pointures, et les
-       reprendre une à une serait absurde. */
+       reprendre une à une serait absurde.
+
+       Le rattachement exige un SKU NON VIDE des deux côtés. Deux lignes sans
+       référence ont le même SKU normalisé — la chaîne vide — et sans cette
+       garde elles se rattacheraient toutes au premier modèle créé, en
+       silence. Une ligne sans référence se choisit une par une : c'est le
+       prix de ne pas se tromper de modèle. */
+    var nsVal=aiNormSku(vSku);
     var aussi=0;
     _aiRevue.lignes.forEach(function(o){
       if(o===l||o.modeleId||o.certitude!=="sku_inconnu")return;
-      if(aiNormSku(o.sku)!==aiNormSku(vSku))return;
+      if(!nsVal||!aiNormSku(o.sku))return;
+      if(aiNormSku(o.sku)!==nsVal)return;
       o.modeleId=m.id;o.certitude="choisi";o.note="";
       var t2=aiMatchTaille(m,o.taille);
       o.varianteId=t2.v?t2.v.id:"";o.eu=t2.eu||"";
@@ -7013,6 +7048,9 @@ function aiBadge(c){
          choisi:["Choisi à la main","#dbeafe","#1e40af"],
          probable:["À CONFIRMER","#fef9c3","#854d0e"],
          sku_inconnu:["SKU INCONNU","#fee2e2","#991b1b"],
+         /* Orange et non rouge : la facture n'a rien fait de mal, il manque
+            juste la référence. Le travail est de choisir, pas de réparer. */
+         sku_absent:["SANS RÉFÉRENCE","#ffedd5","#9a3412"],
          aucun:["Non trouvé","#fee2e2","#991b1b"]};
   var x=m[c]||m.aucun;
   return '<span style="display:inline-block;padding:1px 8px;border-radius:999px;'
@@ -7090,10 +7128,14 @@ function aiRevueLigne(l){
       /* Le SKU n'existe pas au catalogue : la fiche se crée ICI plutôt que de
          forcer à sortir, créer le modèle ailleurs et tout relancer — en
          reperdant les corrections déjà faites sur les autres lignes. */
-      +(l.certitude==="sku_inconnu"&&l.sku
+      /* Offert aussi quand la facture n'a PAS de référence : si le modèle
+         n'existe nulle part, choisir dans le menu ne mène à rien. Le
+         formulaire s'ouvre avec le libellé repris et le SKU à saisir — c'est
+         la seule donnée qu'on ne peut pas deviner. */
+      +((l.certitude==="sku_inconnu"&&l.sku)||l.certitude==="sku_absent"
         ?('<button type="button" class="btn v _aiCreer" data-i="'+l.i+'" '
-          +'style="margin-top:5px;padding:5px 10px;font-size:12px">+ Créer la fiche '
-          +esc(l.sku)+'</button>'):'')
+          +'style="margin-top:5px;padding:5px 10px;font-size:12px">+ Créer la fiche'
+          +(l.sku?(' '+esc(l.sku)):'')+'</button>'):'')
       +'</td>'
     +'<td style="padding:8px 6px;vertical-align:top">'
       +'<select class="_aiVar" data-i="'+l.i+'" style="padding:5px;border:1px solid var(--line);'
@@ -7268,10 +7310,19 @@ async function aiRevueValider(){
     }
   });
   gardees=gardees.filter(function(l){return !!l.varianteId;});
+  /* dispo:1 — une paire achetée est une paire à vendre. La case restait
+     décochée, donc il fallait repasser sur chaque pièce à la main après
+     réception, et une paire oubliée ne partait jamais en ligne.
+
+     Ce n'est pas une mise en vente à l'aveugle : la pièce reste en
+     « Approvisionnement » et non dispo jusqu'à sa réception (apMakePieceAppro),
+     et shopModelSyncPayload écarte de toute façon les pièces sans prix cible
+     — du prix ET du stock affiché. Une paire sans prix n'est donc jamais
+     publiée à 0 €, elle attend simplement son prix. */
   gardees.forEach(function(l){
     for(var k=0;k<(l.qte||1);k++)
       a.lignes.push({modeleId:l.modeleId,varianteId:l.varianteId,qte:1,
-        prixHT:+l.prixHT||0,pv:+l.pv||0,tva:l.tva,etat:l.etat,tag:"Aucun",dispo:0});
+        prixHT:+l.prixHT||0,pv:+l.pv||0,tva:l.tva,etat:l.etat,tag:"Aucun",dispo:1});
   });
   var sansFour=!a.fournId;
   aiRevueFermer();
