@@ -5049,7 +5049,7 @@ function openArticle(id,mid,vid){editA=id;mATitle.textContent=id?"Modifier la pi
   const tM=mid||(a.varianteId?varById(a.varianteId).modeleId:DB.modeles[0].id);a_modele.value=tM;var _tm=modeleById(tM);var _ms=document.getElementById("a_modeleSearch");if(_ms)_ms.value=_tm?((_tm.fr||_tm.sku||"")+" — "+(_tm.sku||"")):"";var _mb=document.getElementById("a_modeleSug");if(_mb){_mb.style.display="none";_mb.innerHTML="";}refreshArticleSizes();if(a.varianteId)a_taille.value=a.varianteId;
   a_soc.value=a.societeId;a_prix.value=a.prix;a_pv.value=a.pv;a_tva.value=a.tva;a_etat.value=a.etat;a_statut.value=a.statut;a_date.value=a.date;a_four.value=a.fourId||"";a_ville.value=a.ville||"";a_emp.value=a.emplacement||"";a_tag.value=a.tag||"Aucun";a_fact.value=a.fact;a_dispo.value=a.dispo;a_depot.value=a.depot?1:0;a_refdep.value=a.refDep||"";a_comment.value=a.commentaire||"";a_dateVente.value=a.dateVente||"";a_expedInfo.value=expedInfoFor(a)||"";a_venteTTC.value=a.venteTTC?eur(a.venteTTC):"";a_pvHT.value=a.venteTTC?eur(pvHTof(a)):"";a_refdepWrap.style.display=a_depot.value=="1"?"":"none";a_depot.onchange=()=>{a_refdepWrap.style.display=a_depot.value=="1"?"":"none";};ovA.classList.add("show");}
 saveArticle.onclick=async()=>{if(!a_taille.value)return alert("Choisis une taille.");
-  const o={varianteId:+a_taille.value,societeId:+a_soc.value,prix:parseFloat(a_prix.value)||0,pv:parseFloat(a_pv.value)||0,tva:a_tva.value,etat:a_etat.value,statut:a_statut.value,date:a_date.value,fourId:a_four.value?+a_four.value:"",ville:a_ville.value,emplacement:a_emp.value,tag:a_tag.value||"Aucun",fact:a_fact.value,commentaire:a_comment.value,dispo:+a_dispo.value,depot:+a_depot.value,refDep:a_refdep.value,maj:today()};
+  const o={varianteId:+a_taille.value,societeId:+a_soc.value,prix:parseFloat(a_prix.value)||0,pv:pvArrondi(parseFloat(a_pv.value)||0),tva:a_tva.value,etat:a_etat.value,statut:a_statut.value,date:a_date.value,fourId:a_four.value?+a_four.value:"",ville:a_ville.value,emplacement:a_emp.value,tag:a_tag.value||"Aucun",fact:a_fact.value,commentaire:a_comment.value,dispo:+a_dispo.value,depot:+a_depot.value,refDep:a_refdep.value,maj:today()};
   if(o.statut!=="En Stock")o.dispo=0;
   /* Sans prix cible, la case « Dispo Shopify » se décoche d'elle-même : on ne
      met pas en vente un produit dont on ne connaît pas le prix, et on ne
@@ -5290,7 +5290,7 @@ importFileStock.onchange=e=>{const file=e.target.files[0];if(!file)return;
       const soc=DB.societes.find(s=>s.nom.toLowerCase()===String(get("SOCIETE","Société")).toLowerCase());
       const four=DB.fournisseurs.find(f=>f.nom.toLowerCase()===String(get("FOURNISSEUR","Fournisseur")).toLowerCase());
       const o={id:newId(DB.articles),varianteId:v.id,societeId:soc?soc.id:DB.societes[0].id,
-        prix:parseFloat(get("PRIX ACHAT HT","Prix achat"))||0,pv:parseFloat(get("PRIX CIBLE (€)","PRIX CIBLE","PRIX CIBLE DE VENTE","PRIX VENTE TTC","Prix vente"))||0,
+        prix:parseFloat(get("PRIX ACHAT HT","Prix achat"))||0,pv:pvArrondi(parseFloat(get("PRIX CIBLE (€)","PRIX CIBLE","PRIX CIBLE DE VENTE","PRIX VENTE TTC","Prix vente"))||0),
         tva:String(get("TVA","TVA ACHAT"))||"TVASM",etat:String(get("ETAT","État","Etat"))||"Used",tag:String(get("TAG","Tag"))||"Aucun",
         statut:resolveStatut(get("STATUT","Statut")),date:getDate("DATE ENTREE","DATE COMMANDE / ENTRÉE EN STOCK","ACHAT DATE","Date")||new Date().toISOString().slice(0,10),
         fourId:four?four.id:"",ville:String(get("VILLE","Ville"))||"",emplacement:String(get("EMPLACEMENT"))||"",
@@ -6257,6 +6257,18 @@ var PV_COEF=1.8;
 
 /* Tout en centimes : 0,1 + 0,2 ne fait pas 0,3 en virgule flottante, et un
    arrondi de prix qui tombe à 109,89 est un arrondi raté. */
+/* LA RÈGLE DE PRIX DE LA MAISON : tout prix cible finit en X4,90 ou X9,90, et
+   on arrondit TOUJOURS AU-DESSUS. 103,67 donne 104,90 ; 104,91 donne 109,90 ;
+   un prix déjà juste ne bouge pas.
+
+   Le calcul se fait en centimes : en virgule flottante, 103,67 × 100 ne vaut
+   pas exactement 10367, et le palier basculerait une fois sur cent.
+
+   Elle s'applique à CHAQUE endroit où un prix cible est posé — saisie d'une
+   pièce, ligne de commande d'achat ou de dépôt, import Excel, facture lue par
+   l'IA, y compris quand le fournisseur propose lui-même un prix de vente.
+   Elle ne s'applique PAS aux montants de transaction : un coût de cession
+   interne ou un prix réellement encaissé sur Shopify n'est pas un prix cible. */
 function pvArrondi(x){
   var c=Math.round((+x||0)*100);
   if(c<=0)return 0;
@@ -6751,7 +6763,10 @@ function aiBuildAchatFromInvoice(j){
       /* Une facture fournisseur ne porte pas le prix de VENTE : sans repli, la
          commande naîtrait avec des prix cibles à zéro et serait refusée à la
          réception. Le coefficient maison s'applique, et reste modifiable. */
-      pv:(pvLu>0?pvLu:pvAutomatique(pa)),
+      /* Le prix lu sur la facture passe par le MÊME arrondi que le prix
+         déduit : la règle est « tout prix cible finit en X4,90 ou X9,90 »,
+         pas « sauf quand le fournisseur en propose un ». */
+      pv:(pvLu>0?pvArrondi(pvLu):pvAutomatique(pa)),
       pvDeduit:!(pvLu>0),
       tva:((DB.taxes||[]).some(function(t){return t.nom===L.tva;})?L.tva:"TVASM"),
       etat:etatDef,
@@ -7134,7 +7149,13 @@ function aiOpenRevue(res){
       }
       l._garde=!!(l.modeleId&&(l.varianteId||l.tailleACreer));
       aiRevueCompter();return;}
-    if(t.classList.contains("_aiPv"))l.pv=parseFloat(t.value)||0;
+    if(t.classList.contains("_aiPv")){
+      /* Snappé tout de suite, et réaffiché : un prix corrigé à la main doit
+         suivre la règle lui aussi, et le voir changer sous ses yeux vaut mieux
+         que de le découvrir sur la commande. */
+      l.pv=pvArrondi(parseFloat(t.value)||0);
+      t.value=l.pv||"";
+    }
     if(t.classList.contains("_aiGarde"))l._garde=!!t.checked;
     aiRevueCompter();
   });
@@ -7546,7 +7567,7 @@ function addAchatLine(){const mid=+selMod||0,vid=+al_size.value,qte=parseInt(al_
   if(!al_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
   curAchat.lignes=curAchat.lignes||[];
-  for(let k=0;k<qte;k++){curAchat.lignes.push({modeleId:mid,varianteId:vid,qte:1,prixHT:parseFloat(al_prix.value),pv:parseFloat(al_pv.value)||0,tva:al_tva.value,etat:al_etat.value,tag:al_tag.value||"Aucun",dispo:+al_dispo.value});}
+  for(let k=0;k<qte;k++){curAchat.lignes.push({modeleId:mid,varianteId:vid,qte:1,prixHT:parseFloat(al_prix.value),pv:pvArrondi(parseFloat(al_pv.value)||0),tva:al_tva.value,etat:al_etat.value,tag:al_tag.value||"Aucun",dispo:+al_dispo.value});}
   apSyncAchat(curAchat);save();renderAchatLines();}
 
 /* ---------- COMMANDES DE DÉPÔT (même structure qu'un achat + données dépôt) ---------- */
@@ -7718,7 +7739,7 @@ function addDepotLine(){const mid=+selDepMod||0,vid=+dl_size.value,qte=parseInt(
   }
   if(!dl_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
-  curDepot.lignes.push({modeleId:mid,varianteId:vid,qte,prixHT:parseFloat(dl_prix.value),pv:parseFloat(dl_pv.value)||0,tva:dl_tva.value,etat:dl_etat.value,refDep:dl_ref.value,tag:dl_tag.value||"Aucun",dispo:+dl_dispo.value});
+  curDepot.lignes.push({modeleId:mid,varianteId:vid,qte,prixHT:parseFloat(dl_prix.value),pv:pvArrondi(parseFloat(dl_pv.value)||0),tva:dl_tva.value,etat:dl_etat.value,refDep:dl_ref.value,tag:dl_tag.value||"Aucun",dispo:+dl_dispo.value});
   save();renderDepotLines();}
 
 /* ---------- EXPÉDITIONS (sorties de stock : ventes B2B, marketplaces, directe, retours) ---------- */
