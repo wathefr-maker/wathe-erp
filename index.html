@@ -6895,7 +6895,51 @@ async function aiRevueValider(){
   if(sansFour)alert("Commande créée.\n\n⚠️ Fournisseur non reconnu — choisis-le via « Modifier ».");
 }
 
-async function aiExtractInvoice(fileObj){const {data,error}=await sb.functions.invoke("claude-assistant",{body:{file:{media_type:fileObj.media_type||"application/pdf",data:fileObj.data}}});if(error)throw error;if(data&&data.error)throw new Error(data.error);return {j:data&&data.json,text:(data&&data.text)||""};}
+/* Repêche un JSON dans une réponse en texte.
+
+   La fonction edge renvoie deux champs : « json », déjà analysé, et « text »,
+   la réponse brute. Quand son propre analyseur échoue — un bloc ```json, une
+   phrase avant ou après, une virgule en trop — elle laisse « json » vide et
+   l'ERP jetait une extraction pourtant CORRECTE, en affichant le JSON complet
+   dans un message d'erreur. C'est exactement ce qui s'est produit sur la
+   facture TURUM : toutes les lignes étaient là, sous les yeux, et refusées.
+
+   On réessaie donc ici : on retire les clôtures de code, puis on isole la
+   première accolade et la dernière, ce qui absorbe les phrases qui entourent
+   parfois la réponse. */
+function aiJsonDuTexte(t){
+  var s=String(t==null?"":t).trim();
+  if(!s)return null;
+  s=s.replace(/^\s*```(?:json)?\s*/i,"").replace(/\s*```\s*$/,"");
+  var tentatives=[s];
+  var a=s.indexOf("{"),b=s.lastIndexOf("}");
+  if(a>=0&&b>a)tentatives.push(s.slice(a,b+1));
+  for(var i=0;i<tentatives.length;i++){
+    try{
+      var o=JSON.parse(tentatives[i]);
+      if(o&&typeof o==="object")return o;
+    }catch(_){}
+  }
+  return null;
+}
+async function aiExtractInvoice(fileObj){
+  const {data,error}=await sb.functions.invoke("claude-assistant",{body:{file:{media_type:fileObj.media_type||"application/pdf",data:fileObj.data}}});
+  if(error)throw error;
+  if(data&&data.error)throw new Error(data.error);
+  var txt=(data&&data.text)||"";
+  var j=(data&&data.json)||null;
+  /* Le repêchage ne sert que si l'analyse du serveur n'a rien donné d'utile :
+     un « json » valide reste prioritaire. */
+  if(!j||!Array.isArray(j.lignes)||!j.lignes.length){
+    var repeche=aiJsonDuTexte(txt);
+    if(repeche&&Array.isArray(repeche.lignes)&&repeche.lignes.length){
+      console.warn("[Facture IA] JSON repêché dans la réponse texte : "
+        +repeche.lignes.length+" ligne(s). La fonction edge ne l'avait pas analysé.");
+      j=repeche;
+    }
+  }
+  return {j:j,text:txt};
+}
 async function aiInvoiceImport(file){
   if(!file)return;const btn=document.getElementById("achAI");const prev=btn?btn.textContent:"";if(btn){btn.textContent="Lecture IA…";btn.disabled=true;}
   try{
