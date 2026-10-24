@@ -6593,23 +6593,56 @@ var AI_PROBABLE=0.5;  // en dessous : on ne propose rien
 function aiMatchModele(sku,titre){
   var mods=(DB.modeles||[]).filter(function(x){return x&&x.id!=null;});
 
-  /* 1. Le SKU, s'il est exact et unique. Rien ne vaut une référence. */
+  /* Suggestions par le titre, calculées à part : elles servent à PROPOSER des
+     candidats, jamais à décider quand un SKU est présent. */
+  var parTitre=function(){
+    var mt=aiMots(titre);
+    if(!mt.length)return [];
+    return mods.map(function(x){
+      return {m:x,s:Math.max(aiScore(mt,aiMots(x.fr)),aiScore(mt,aiMots(x.sku)))};
+    }).filter(function(r){return r.s>0;}).sort(function(a,b){return b.s-a.s;});
+  };
+
+  /* 1. LE SKU FAIT FOI. C'est une référence constructeur : quand la facture en
+        porte un, c'est lui qui désigne le modèle, pas les mots du libellé.
+
+        Et surtout : un SKU présent mais ABSENT du catalogue ne doit PAS faire
+        retomber sur le titre. C'était le défaut — une référence inconnue
+        laissait les mots décider, et la commande se remplissait de modèles
+        voisins qui n'avaient rien à voir. On le dit, on propose des candidats,
+        on ne choisit pas. */
   var ns=aiNormSku(sku);
   if(ns){
     var parSku=mods.filter(function(x){return aiNormSku(x.sku)===ns;});
     if(parSku.length===1)return {m:parSku[0],score:1,certitude:"sku",candidats:[parSku[0]]};
     if(parSku.length>1)  return {m:null,score:1,certitude:"probable",candidats:parSku.slice(0,3),
       note:parSku.length+" modèles portent ce SKU"};
+
+    /* Le coloris est parfois omis : « DM0032 » pour « DM0032-041 ». On accepte
+       ce raccourci s'il ne désigne qu'un seul modèle — on reste sur la
+       référence, pas sur les mots. */
+    var racine=ns.split(/[^0-9A-Z]/)[0];
+    if(racine.length>=5){
+      var parRacine=mods.filter(function(x){
+        return aiNormSku(x.sku).indexOf(racine)===0;});
+      if(parRacine.length===1)
+        return {m:parRacine[0],score:0.95,certitude:"sku",candidats:[parRacine[0]],
+          note:"coloris déduit du SKU « "+sku+" »"};
+      if(parRacine.length>1)
+        return {m:null,score:0.9,certitude:"probable",candidats:parRacine.slice(0,3),
+          note:parRacine.length+" coloris portent la racine « "+racine+" »"};
+    }
+
+    return {m:null,score:0,certitude:"sku_inconnu",
+      candidats:parTitre().slice(0,3).map(function(r){return r.m;}),
+      note:"SKU « "+sku+" » absent du catalogue — à créer, ou à choisir ci-contre"};
   }
 
-  /* 2. Le titre, noté contre chaque modèle (titre ET référence : certaines
-        factures mettent le SKU dans le libellé). */
+  /* 2. Pas de SKU sur la facture : le titre prend le relais, mais il doit se
+        détacher nettement (voir plus bas). */
   var mots=aiMots(titre);
   if(!mots.length)return {m:null,score:0,certitude:"aucun",candidats:[]};
-  var notes=mods.map(function(x){
-    return {m:x,s:Math.max(aiScore(mots,aiMots(x.fr)),aiScore(mots,aiMots(x.sku)))};
-  }).filter(function(r){return r.s>0;});
-  notes.sort(function(a,b){return b.s-a.s;});
+  var notes=parTitre();
 
   var top=notes[0], second=notes[1];
   var candidats=notes.slice(0,3).map(function(r){return r.m;});
@@ -6634,9 +6667,15 @@ function aiMatchModele(sku,titre){
 function aiMatchTaille(m,tval){
   var t=String(tval==null?"":tval).trim();
   if(!m||!t)return {v:null,raison:"taille absente de la facture"};
+  /* La grille vient de la FICHE du modèle, donc du SKU qui l'a désignée :
+     c'est elle qui dit si « 8 » est une pointure homme, femme ou junior. Sans
+     grille, rien n'est convertible — et le dire vaut mieux que de parler de
+     taille « hors grille », qui envoie corriger la facture au lieu de la fiche. */
+  if(!m.grille||!(DB.grilles||{})[m.grille])
+    return {v:null,raison:"le modèle « "+(m.fr||m.sku||"?")+" » n'a pas de grille de tailles"};
   var eu="";
   try{eu=(typeof taille2EU==="function")?taille2EU(m,t):"";}catch(_){eu="";}
-  if(!eu)return {v:null,raison:"taille « "+t+" » hors de la grille « "+(m.grille||"?")+" »"};
+  if(!eu)return {v:null,raison:"taille « "+t+" » hors de la grille « "+m.grille+" »"};
   var v=(DB.variantes||[]).filter(function(x){
     return x&&x.modeleId==m.id&&szNorm(x.taille)===szNorm(eu);})[0];
   if(!v)return {v:null,eu:eu,raison:"taille EU "+eu+" absente du modèle"};
@@ -6709,7 +6748,9 @@ var _aiRevue=null;
 function aiBadge(c){
   var m={sku:["Référence exacte","#dcfce7","#166534"],
          sur:["Sûr","#dcfce7","#166534"],
+         choisi:["Choisi à la main","#dbeafe","#1e40af"],
          probable:["À CONFIRMER","#fef9c3","#854d0e"],
+         sku_inconnu:["SKU INCONNU","#fee2e2","#991b1b"],
          aucun:["Non trouvé","#fee2e2","#991b1b"]};
   var x=m[c]||m.aucun;
   return '<span style="display:inline-block;padding:1px 8px;border-radius:999px;'
