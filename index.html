@@ -5455,12 +5455,15 @@ async function askSendMsg(text){text=(text||"").trim();if(!text&&!_askFile)retur
       const ex=await aiExtractInvoice(sentFile);
       const res=aiBuildAchatFromInvoice(ex.j);
       th.remove();
-      if(!res.ok){askAdd("assistant",res.reason==="no_match"?("J'ai lu la facture mais aucune ligne ne correspond à un modèle déjà dans ton catalogue. À créer d'abord : "+(res.miss||[]).join(", ")):("Je n'ai pas réussi à lire les lignes de cette facture — essaie un PDF ou une photo plus nette."));return;}
-      await aiCommitAchat(res);
-      let m="✅ Commande "+res.a.ref+" créée avec "+res.a.lignes.length+" ligne(s). Je l'ai ouverte pour que tu la vérifies, puis clique « Réceptionner » pour mettre en stock.";
-      if(!res.fourId)m+="\n⚠️ Fournisseur non reconnu : choisis-le via « Modifier ».";
-      if(res.miss&&res.miss.length)m+="\nNon importé : "+res.miss.join(", ");
-      askAdd("assistant",m);
+      if(!res.ok){askAdd("assistant","Je n'ai pas réussi à lire les lignes de cette facture — essaie un PDF ou une photo plus nette.");return;}
+      /* Même chemin que le bouton : on montre ce qui a été compris avant de
+         créer quoi que ce soit. Enregistrer d'abord et inviter à vérifier
+         ensuite laissait des commandes fausses en base. */
+      var _sr=res.lignes.filter(function(l){return l.certitude==="sku"||l.certitude==="sur";}).length;
+      askAdd("assistant","J'ai lu "+res.lignes.length+" ligne(s), dont "+_sr
+        +" reconnue(s) avec certitude. Je t'ouvre la vérification : rien ne sera "
+        +"enregistré tant que tu n'auras pas validé.");
+      aiOpenRevue(res);
     }catch(err){th.remove();askAdd("assistant","Désolé, lecture impossible. ("+err.message+")");}
     return;
   }
@@ -6524,37 +6527,374 @@ achClear.onclick=()=>{Object.keys(achFilt).forEach(k=>achFilt[k]="");achF_q.valu
 achPager.onclick=e=>{const b=e.target.closest("[data-achpg]");if(b)achGoPage(+b.dataset.achpg);};
 addAchat.onclick=()=>openAchatNew(null);
 function _fileToB64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]||"");r.onerror=()=>rej(r.error||new Error("lecture impossible"));r.readAsDataURL(file);});}
+/* ============================================================================
+   FACTURE → COMMANDE D'ACHAT : LE RAPPROCHEMENT
+
+   CE QUI N'ALLAIT PAS. Le modèle était retrouvé ainsi :
+
+       const key = titre.toLowerCase().slice(0, 18);
+       m = DB.modeles.find(x => x.fr.toLowerCase().includes(key));
+
+   Mesuré sur la base : 67 % des modèles partagent leurs 18 premiers
+   caractères avec au moins un autre, et « nike air force 1 l » en désigne
+   125. find() rendait le PREMIER du tableau — autant dire au hasard. D'où des
+   commandes qui ne correspondaient jamais à la facture.
+
+   CE QUI LE REMPLACE. Un score symétrique sur les mots : on compte les mots
+   communs à la ligne de facture et au titre du modèle, et on divise par les
+   deux longueurs (moyenne harmonique). Un titre trop court comme trop long
+   est pénalisé — « Air Force 1 Low » ne peut donc plus l'emporter sur rien,
+   et un modèle à rallonge ne gagne pas parce qu'il contient tous les mots.
+
+   ET SURTOUT : quand aucun candidat ne se détache nettement, on ne choisit
+   PAS. On remonte les trois meilleurs et on laisse trancher. Une erreur
+   silencieuse coûte plus cher qu'une question.
+   ========================================================================== */
+
+/* Mots porteurs de sens. Les séparateurs disparaissent, pas les chiffres :
+   « 1906r », « '07 », « lv8 », « 95 » sont ce qui distingue deux modèles
+   d'une même famille. */
+function aiNorm(s){
+  return String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .toLowerCase().replace(/[^0-9a-z]+/g," ").trim();
+}
+function aiMots(s){
+  var t=aiNorm(s);return t?t.split(" ").filter(Boolean):[];
+}
+/* Un SKU se compare sans ponctuation : les fournisseurs écrivent
+   « CT8527-016 », « CT8527 016 » ou « ct8527016 » pour la même référence. */
+function aiNormSku(s){
+  return String(s==null?"":s).toUpperCase().replace(/[^0-9A-Z]/g,"");
+}
+
+/* Score de 0 à 1. Moyenne harmonique de la part des mots de la facture
+   retrouvés dans le modèle, et de l'inverse : les deux doivent être bons.
+   Une part seule suffirait à faire gagner un titre générique. */
+function aiScore(motsA,motsB){
+  if(!motsA.length||!motsB.length)return 0;
+  var dansB={};motsB.forEach(function(m){dansB[m]=(dansB[m]||0)+1;});
+  var communs=0;
+  motsA.forEach(function(m){if(dansB[m]>0){dansB[m]--;communs++;}});
+  if(!communs)return 0;
+  var pa=communs/motsA.length, pb=communs/motsB.length;
+  return (2*pa*pb)/(pa+pb);
+}
+
+var AI_SUR=0.82;      // au-dessus : retenu d'office
+var AI_ECART=0.12;    // il faut en plus distancer le suivant
+var AI_PROBABLE=0.5;  // en dessous : on ne propose rien
+
+/* Renvoie toujours un verdict explicite :
+     certitude "sku"      — référence exacte, aucun doute
+     certitude "sur"      — un titre se détache nettement
+     certitude "probable" — un candidat plausible, à confirmer
+     certitude "aucun"    — rien de défendable
+   Les candidats sont toujours joints : c'est ce qui permet de corriger. */
+function aiMatchModele(sku,titre){
+  var mods=(DB.modeles||[]).filter(function(x){return x&&x.id!=null;});
+
+  /* 1. Le SKU, s'il est exact et unique. Rien ne vaut une référence. */
+  var ns=aiNormSku(sku);
+  if(ns){
+    var parSku=mods.filter(function(x){return aiNormSku(x.sku)===ns;});
+    if(parSku.length===1)return {m:parSku[0],score:1,certitude:"sku",candidats:[parSku[0]]};
+    if(parSku.length>1)  return {m:null,score:1,certitude:"probable",candidats:parSku.slice(0,3),
+      note:parSku.length+" modèles portent ce SKU"};
+  }
+
+  /* 2. Le titre, noté contre chaque modèle (titre ET référence : certaines
+        factures mettent le SKU dans le libellé). */
+  var mots=aiMots(titre);
+  if(!mots.length)return {m:null,score:0,certitude:"aucun",candidats:[]};
+  var notes=mods.map(function(x){
+    return {m:x,s:Math.max(aiScore(mots,aiMots(x.fr)),aiScore(mots,aiMots(x.sku)))};
+  }).filter(function(r){return r.s>0;});
+  notes.sort(function(a,b){return b.s-a.s;});
+
+  var top=notes[0], second=notes[1];
+  var candidats=notes.slice(0,3).map(function(r){return r.m;});
+  if(!top)return {m:null,score:0,certitude:"aucun",candidats:[]};
+
+  /* Se détacher ne suffit pas : il faut aussi être bon. Et être bon ne suffit
+     pas : il faut se détacher. C'est la conjonction qui évite les 125
+     « Air Force 1 Low » à égalité. */
+  var ecart=top.s-((second&&second.s)||0);
+  if(top.s>=AI_SUR&&ecart>=AI_ECART)
+    return {m:top.m,score:top.s,certitude:"sur",candidats:candidats};
+  if(top.s>=AI_PROBABLE)
+    return {m:top.m,score:top.s,certitude:"probable",candidats:candidats,
+      note:(ecart<AI_ECART&&second)?"plusieurs modèles très proches":""};
+  return {m:null,score:top.s,certitude:"aucun",candidats:candidats};
+}
+
+/* La taille passe par le convertisseur du reste de l'ERP, au lieu d'une
+   comparaison de texte : il gère les pointures US, les « W » femme, les
+   virgules et les 38 2/3 qu'Excel transforme en 38,666666. Ne crée JAMAIS de
+   variante ici — une taille hors grille doit se voir, pas se fabriquer. */
+function aiMatchTaille(m,tval){
+  var t=String(tval==null?"":tval).trim();
+  if(!m||!t)return {v:null,raison:"taille absente de la facture"};
+  var eu="";
+  try{eu=(typeof taille2EU==="function")?taille2EU(m,t):"";}catch(_){eu="";}
+  if(!eu)return {v:null,raison:"taille « "+t+" » hors de la grille « "+(m.grille||"?")+" »"};
+  var v=(DB.variantes||[]).filter(function(x){
+    return x&&x.modeleId==m.id&&szNorm(x.taille)===szNorm(eu);})[0];
+  if(!v)return {v:null,eu:eu,raison:"taille EU "+eu+" absente du modèle"};
+  return {v:v,eu:eu,raison:""};
+}
+
+/* Construit une PROPOSITION de commande. Rien n'est écrit, rien n'est même
+   numéroté : la commande ne naît qu'à la validation, dans aiRevueValider.
+
+   C'était le second défaut, aussi grave que le rapprochement : aiCommitAchat
+   était appelé d'office, puis une alerte invitait à « relire les lignes » —
+   une fois la commande enregistrée. Une erreur de modèle se corrigeait donc
+   après coup, sur une commande déjà en base. */
 function aiBuildAchatFromInvoice(j){
   if(!j||!Array.isArray(j.lignes)||!j.lignes.length)return {ok:false,reason:"no_json"};
-  let fourId="";const fn=((j.fournisseur&&j.fournisseur.nom)||"").toLowerCase().trim();const fe=((j.fournisseur&&j.fournisseur.email)||"").toLowerCase().trim();
-  if(fn||fe){let f=DB.fournisseurs.find(x=>(fe&&(x.email||"").toLowerCase()===fe)||(fn&&(fourLabel(x)||"").toLowerCase()===fn));if(!f&&fn)f=DB.fournisseurs.find(x=>(fourLabel(x)||"").toLowerCase().includes(fn));if(f)fourId=f.id;}
-  const id=newId(DB.achats);
-  const a={id,statut:"En cours de livraison",lignes:[],justifs:[],createdAt:new Date().toISOString(),date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:today(),fournId:fourId||"",nFacture:j.numero||"",societeId:(socFilter||((DB.societes[0]||{}).id)||""),ville:(attrLabels("Ville")[0]||"Vichy"),emplacement:(attrLabels("Emplacement")[0]||"")};
-  a.ref=achRef(a);
-  const miss=[];
-  (j.lignes||[]).forEach(L=>{const sku=String(L.sku||"").trim(),titre=String(L.titre||"").trim();
-    let m=sku?DB.modeles.find(x=>(x.sku||"").toLowerCase()===sku.toLowerCase()):null;
-    if(!m&&titre){m=DB.modeles.find(x=>(x.fr||"").toLowerCase()===titre.toLowerCase());if(!m){const key=titre.toLowerCase().slice(0,Math.min(18,titre.length));m=DB.modeles.find(x=>key&&(x.fr||"").toLowerCase().includes(key));}}
-    if(!m){miss.push((sku||titre||"?")+" — modèle introuvable");return;}
-    const tval=String(L.taille||"").trim();let v=null;
-    if(tval){v=DB.variantes.find(x=>x.modeleId==m.id&&String(x.taille)===tval);
-      if(!v){const usMap=(DB.grilles["__us"]||{})[m.grille]||{};const euForUs=Object.keys(usMap).find(eu=>String(usMap[eu])===tval);if(euForUs)v=DB.variantes.find(x=>x.modeleId==m.id&&String(x.taille)===String(euForUs));}}
-    if(!v){miss.push((m.fr||sku)+" — taille « "+tval+" » introuvable");return;}
-    const qte=Math.max(1,parseInt(L.qte)||1);const tva=(DB.taxes||[]).some(function(t){return t.nom===L.tva;})?L.tva:"TVASM";
-    const etat=(attrLabels("État du produit")[0]||"Used");
-    /* Une facture fournisseur ne porte jamais le prix de VENTE : sans repli, la
-       commande naissait avec des prix cibles à zéro et se faisait refuser à la
-       réception. On applique le coefficient maison sur le prix d'achat lu sur
-       la facture : la commande est réceptionnable et la paire vendable, et le
-       vrai prix se saisit en modifiant les lignes. */
-    const _pvFact=parseFloat(L.prix_vente_ttc)||0;
-    const _paFact=parseFloat(L.prix_ht)||0;
-    for(let k=0;k<qte;k++)a.lignes.push({modeleId:m.id,varianteId:v.id,qte:1,prixHT:_paFact,pv:(_pvFact>0?_pvFact:pvAutomatique(_paFact)),tva,etat,tag:"Aucun",dispo:0});
+
+  var fourId="";
+  var fn=((j.fournisseur&&j.fournisseur.nom)||"").toLowerCase().trim();
+  var fe=((j.fournisseur&&j.fournisseur.email)||"").toLowerCase().trim();
+  if(fn||fe){
+    var f=(DB.fournisseurs||[]).filter(function(x){
+      return (fe&&(x.email||"").toLowerCase()===fe)||(fn&&(fourLabel(x)||"").toLowerCase()===fn);})[0];
+    if(!f&&fn)f=(DB.fournisseurs||[]).filter(function(x){
+      return (fourLabel(x)||"").toLowerCase().indexOf(fn)>=0;})[0];
+    if(f)fourId=f.id;
+  }
+
+  var entete={
+    date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:today(),
+    fournId:fourId||"", nFacture:j.numero||"",
+    societeId:(socFilter||((DB.societes[0]||{}).id)||""),
+    ville:(attrLabels("Ville")[0]||"Vichy"),
+    emplacement:(attrLabels("Emplacement")[0]||"")};
+
+  var etatDef=(attrLabels("État du produit")[0]||"Used");
+  var lignes=(j.lignes||[]).map(function(L,i){
+    var sku=String(L.sku||"").trim(), titre=String(L.titre||"").trim();
+    var tval=String(L.taille||"").trim();
+    var mm=aiMatchModele(sku,titre);
+    var tt=mm.m?aiMatchTaille(mm.m,tval):{v:null,raison:"modèle à choisir d'abord"};
+    var pa=parseFloat(L.prix_ht)||0;
+    var pvLu=parseFloat(L.prix_vente_ttc)||0;
+    return {
+      i:i, sku:sku, titre:titre, taille:tval,
+      qte:Math.max(1,parseInt(L.qte)||1),
+      prixHT:pa,
+      /* Une facture fournisseur ne porte pas le prix de VENTE : sans repli, la
+         commande naîtrait avec des prix cibles à zéro et serait refusée à la
+         réception. Le coefficient maison s'applique, et reste modifiable. */
+      pv:(pvLu>0?pvLu:pvAutomatique(pa)),
+      pvDeduit:!(pvLu>0),
+      tva:((DB.taxes||[]).some(function(t){return t.nom===L.tva;})?L.tva:"TVASM"),
+      etat:etatDef,
+      modeleId:(mm.m?mm.m.id:""), certitude:mm.certitude, score:mm.score,
+      candidats:(mm.candidats||[]).map(function(x){return x.id;}),
+      note:mm.note||"",
+      varianteId:(tt.v?tt.v.id:""), eu:(tt.eu||""), tailleNote:(tt.raison||"")};
   });
-  if(!a.lignes.length)return {ok:false,reason:"no_match",miss};
-  return {ok:true,a,fourId,miss};
+
+  return {ok:true, entete:entete, lignes:lignes, fourId:fourId};
 }
-async function aiCommitAchat(res){DB.achats.push(res.a);logAct("Création","Commande d'achat",res.a.ref+" · importée depuis facture (IA)");await save();openAchat(res.a.id);}
+
+/* ---------------------------------------------------------------------------
+   LA RELECTURE. Chaque ligne de la facture est montrée face à ce que l'ERP en
+   a compris, avec son degré de certitude, et reste modifiable. Rien ne part en
+   base tant que le bouton de validation n'est pas cliqué.
+   ------------------------------------------------------------------------- */
+var _aiRevue=null;
+
+function aiBadge(c){
+  var m={sku:["Référence exacte","#dcfce7","#166534"],
+         sur:["Sûr","#dcfce7","#166534"],
+         probable:["À CONFIRMER","#fef9c3","#854d0e"],
+         aucun:["Non trouvé","#fee2e2","#991b1b"]};
+  var x=m[c]||m.aucun;
+  return '<span style="display:inline-block;padding:1px 8px;border-radius:999px;'
+    +'font-size:11px;font-weight:700;background:'+x[1]+';color:'+x[2]+'">'+x[0]+'</span>';
+}
+/* Le choix de modèle ne liste pas les 1 834 fiches : les candidats trouvés
+   d'abord, puis une recherche libre pour les cas que le score a manqués. */
+function aiOptionsModele(l){
+  var vus={},opts='<option value="">— choisir un modèle —</option>';
+  (l.candidats||[]).forEach(function(id){
+    var m=modeleById(id);if(!m||vus[id])return;vus[id]=1;
+    opts+='<option value="'+id+'"'+(String(l.modeleId)===String(id)?" selected":"")+'>'
+      +esc((m.fr||m.sku||"")+"  ["+(m.sku||"")+"]")+'</option>';
+  });
+  if(l.modeleId&&!vus[l.modeleId]){
+    var m0=modeleById(l.modeleId);
+    if(m0)opts+='<option value="'+l.modeleId+'" selected>'
+      +esc((m0.fr||m0.sku||"")+"  ["+(m0.sku||"")+"]")+'</option>';
+  }
+  return opts;
+}
+function aiOptionsTaille(l){
+  var m=l.modeleId?modeleById(l.modeleId):null;
+  if(!m)return '<option value="">—</option>';
+  var vs=(DB.variantes||[]).filter(function(v){return v&&v.modeleId==m.id;})
+    .sort(function(a,b){return szSortNum(a.taille)-szSortNum(b.taille);});
+  var o='<option value="">— taille —</option>';
+  vs.forEach(function(v){
+    o+='<option value="'+v.id+'"'+(String(l.varianteId)===String(v.id)?" selected":"")+'>'
+      +esc(String(v.taille))+'</option>';});
+  return o;
+}
+
+function aiRevueLigne(l){
+  var pb=(l.certitude!=="sku"&&l.certitude!=="sur")||!l.varianteId;
+  return '<tr data-i="'+l.i+'" style="border-top:1px solid var(--line)'
+    +(pb?';background:#fffbeb':'')+'">'
+    +'<td style="padding:8px 6px;vertical-align:top;max-width:230px">'
+      +'<div style="font-size:12px;font-weight:600">'+esc(l.titre||"(sans libellé)")+'</div>'
+      +'<div class="muted" style="font-size:11px">'
+        +(l.sku?('SKU '+esc(l.sku)+' · '):'')+'T. '+esc(l.taille||"?")
+        +' · '+l.qte+' × '+eur(l.prixHT)+'</div>'
+      +'<div style="margin-top:3px">'+aiBadge(l.certitude)
+        +(l.note?(' <span class="muted" style="font-size:11px">'+esc(l.note)+'</span>'):'')+'</div></td>'
+    +'<td style="padding:8px 6px;vertical-align:top">'
+      +'<select class="_aiMod" data-i="'+l.i+'" style="width:100%;max-width:330px;padding:5px;'
+        +'border:1px solid var(--line);border-radius:7px;font-size:12px">'+aiOptionsModele(l)+'</select>'
+      +'<input class="_aiCherche" data-i="'+l.i+'" placeholder="chercher un autre modèle…" '
+        +'style="width:100%;max-width:330px;margin-top:4px;padding:5px;border:1px solid var(--line);'
+        +'border-radius:7px;font-size:12px"></td>'
+    +'<td style="padding:8px 6px;vertical-align:top">'
+      +'<select class="_aiVar" data-i="'+l.i+'" style="padding:5px;border:1px solid var(--line);'
+        +'border-radius:7px;font-size:12px;min-width:92px">'+aiOptionsTaille(l)+'</select>'
+      +(l.tailleNote?('<div style="font-size:11px;color:#b45309;margin-top:3px;max-width:150px">'
+        +esc(l.tailleNote)+'</div>'):'')+'</td>'
+    +'<td style="padding:8px 6px;vertical-align:top;text-align:right">'
+      +'<input class="_aiPv" data-i="'+l.i+'" type="number" step="0.01" min="0" value="'+(l.pv||"")+'" '
+        +'style="width:92px;padding:5px;border:1px solid var(--line);border-radius:7px;'
+        +'font-size:12px;text-align:right">'
+      +(l.pvDeduit?'<div class="muted" style="font-size:10px;margin-top:2px">déduit ×1,8</div>':'')+'</td>'
+    +'<td style="padding:8px 6px;vertical-align:top;text-align:center">'
+      +'<input class="_aiGarde" data-i="'+l.i+'" type="checkbox"'
+      +((l.modeleId&&l.varianteId)?" checked":"")+'></td></tr>';
+}
+
+function aiRevueRepeindre(){
+  var tb=document.getElementById("_aiRows");if(!tb||!_aiRevue)return;
+  tb.innerHTML=_aiRevue.lignes.map(aiRevueLigne).join("");
+  aiRevueCompter();
+}
+function aiRevueCompter(){
+  var el=document.getElementById("_aiCompte");if(!el||!_aiRevue)return;
+  var pris=_aiRevue.lignes.filter(function(l){return l._garde!==false&&l.modeleId&&l.varianteId;});
+  var douteux=pris.filter(function(l){return l.certitude!=="sku"&&l.certitude!=="sur";});
+  var tot=pris.reduce(function(n,l){return n+(+l.prixHT||0)*(l.qte||1);},0);
+  el.innerHTML=pris.length+" ligne(s) retenue(s) · "+eur(tot)+" d'achat"
+    +(douteux.length?(' · <b style="color:#b45309">'+douteux.length+" à confirmer</b>"):"");
+  var b=document.getElementById("_aiOk");if(b)b.disabled=!pris.length;
+}
+
+function aiOpenRevue(res){
+  _aiRevue=res;
+  res.lignes.forEach(function(l){l._garde=!!(l.modeleId&&l.varianteId);});
+  var f=res.entete.fournId?fourById(res.entete.fournId):null;
+  var ov=document.createElement("div");ov.id="_aiOv";
+  ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99998;"
+    +"display:flex;align-items:center;justify-content:center;padding:16px";
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:1080px;width:100%;'
+    +'padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:88vh;display:flex;flex-direction:column">'
+    +'<div style="font-weight:800;font-size:18px">Facture lue — à vérifier avant création</div>'
+    +'<div class="sub" style="margin:3px 0 12px">Rien n\'est enregistré tant que tu n\'as pas validé. '
+      +'Les lignes en jaune demandent une confirmation.</div>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:12px;'
+      +'padding:10px 12px;background:#f8fafc;border-radius:10px">'
+      +'<div><b>Fournisseur</b> : '+(f?esc(fourLabel(f)):'<span style="color:#b3261e">non reconnu — à choisir après création</span>')+'</div>'
+      +'<div><b>Facture</b> : '+esc(res.entete.nFacture||"—")+'</div>'
+      +'<div><b>Date</b> : '+esc(res.entete.date)+'</div></div>'
+    +'<div style="overflow:auto;flex:1;border:1px solid var(--line);border-radius:10px">'
+    +'<table style="width:100%;border-collapse:collapse;font-size:13px">'
+    +'<thead><tr style="background:#f1f5f9;position:sticky;top:0">'
+      +'<th style="text-align:left;padding:8px 6px">Ligne de la facture</th>'
+      +'<th style="text-align:left;padding:8px 6px">Modèle retenu</th>'
+      +'<th style="text-align:left;padding:8px 6px">Taille</th>'
+      +'<th style="text-align:right;padding:8px 6px">Prix cible</th>'
+      +'<th style="padding:8px 6px">Garder</th></tr></thead>'
+    +'<tbody id="_aiRows"></tbody></table></div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:12px">'
+      +'<div id="_aiCompte" class="muted" style="font-size:13px"></div>'
+      +'<div style="display:flex;gap:8px">'
+        +'<button class="btn" id="_aiAnnule">Annuler</button>'
+        +'<button class="btn g" id="_aiOk">Créer la commande</button></div></div></div>';
+  document.body.appendChild(ov);
+  aiRevueRepeindre();
+
+  /* Un seul écouteur sur le tableau : les lignes sont redessinées à chaque
+     changement de modèle, des écouteurs par champ seraient perdus. */
+  ov.addEventListener("change",function(e){
+    var t=e.target;if(!t||!_aiRevue)return;
+    var i=+t.getAttribute("data-i");var l=_aiRevue.lignes[i];if(!l)return;
+    if(t.classList.contains("_aiMod")){
+      l.modeleId=t.value||"";l.varianteId="";l.tailleNote="";
+      if(l.modeleId){
+        l.certitude="choisi";
+        var tt=aiMatchTaille(modeleById(l.modeleId),l.taille);
+        l.varianteId=tt.v?tt.v.id:"";l.eu=tt.eu||"";l.tailleNote=tt.raison||"";
+      }
+      l._garde=!!(l.modeleId&&l.varianteId);
+      aiRevueRepeindre();return;
+    }
+    if(t.classList.contains("_aiVar")){l.varianteId=t.value||"";l._garde=!!(l.modeleId&&l.varianteId);}
+    if(t.classList.contains("_aiPv"))l.pv=parseFloat(t.value)||0;
+    if(t.classList.contains("_aiGarde"))l._garde=!!t.checked;
+    aiRevueCompter();
+  });
+  /* Recherche libre : le score a pu manquer un modèle, il faut pouvoir aller
+     le chercher soi-même sans quitter l'écran. */
+  ov.addEventListener("input",function(e){
+    var t=e.target;if(!t||!t.classList||!t.classList.contains("_aiCherche"))return;
+    var i=+t.getAttribute("data-i");var l=_aiRevue.lignes[i];if(!l)return;
+    var q=aiNorm(t.value);if(q.length<2)return;
+    var trouves=(DB.modeles||[]).filter(function(m){
+      return aiNorm((m.fr||"")+" "+(m.sku||"")).indexOf(q)>=0;}).slice(0,8);
+    var sel=t.parentElement.querySelector("._aiMod");if(!sel)return;
+    sel.innerHTML='<option value="">— choisir un modèle —</option>'
+      +trouves.map(function(m){return '<option value="'+m.id+'">'
+        +esc((m.fr||m.sku||"")+"  ["+(m.sku||"")+"]")+'</option>';}).join("");
+  });
+  document.getElementById("_aiAnnule").onclick=function(){aiRevueFermer();};
+  document.getElementById("_aiOk").onclick=function(){aiRevueValider();};
+}
+function aiRevueFermer(){
+  var ov=document.getElementById("_aiOv");if(ov)ov.remove();_aiRevue=null;
+}
+
+async function aiRevueValider(){
+  if(!_aiRevue)return;
+  var gardees=_aiRevue.lignes.filter(function(l){
+    return l._garde!==false&&l.modeleId&&l.varianteId;});
+  if(!gardees.length){alert("Aucune ligne retenue.");return;}
+  var douteuses=gardees.filter(function(l){
+    return l.certitude!=="sku"&&l.certitude!=="sur"&&l.certitude!=="choisi";});
+  if(douteuses.length&&!confirm(douteuses.length+" ligne(s) n'ont pas été reconnues avec "
+    +"certitude et n'ont pas été corrigées.\n\nCréer la commande quand même ?"))return;
+
+  var id=newId(DB.achats);
+  var a={id:id,statut:"En cours de livraison",lignes:[],justifs:[],
+    createdAt:new Date().toISOString(),
+    date:_aiRevue.entete.date,fournId:_aiRevue.entete.fournId,
+    nFacture:_aiRevue.entete.nFacture,societeId:_aiRevue.entete.societeId,
+    ville:_aiRevue.entete.ville,emplacement:_aiRevue.entete.emplacement};
+  a.ref=achRef(a);
+  gardees.forEach(function(l){
+    for(var k=0;k<(l.qte||1);k++)
+      a.lignes.push({modeleId:l.modeleId,varianteId:l.varianteId,qte:1,
+        prixHT:+l.prixHT||0,pv:+l.pv||0,tva:l.tva,etat:l.etat,tag:"Aucun",dispo:0});
+  });
+  var sansFour=!a.fournId;
+  aiRevueFermer();
+  DB.achats.push(a);
+  logAct("Création","Commande d'achat",a.ref+" · importée depuis facture (IA)");
+  await save();
+  openAchat(a.id);
+  if(sansFour)alert("Commande créée.\n\n⚠️ Fournisseur non reconnu — choisis-le via « Modifier ».");
+}
+
 async function aiExtractInvoice(fileObj){const {data,error}=await sb.functions.invoke("claude-assistant",{body:{file:{media_type:fileObj.media_type||"application/pdf",data:fileObj.data}}});if(error)throw error;if(data&&data.error)throw new Error(data.error);return {j:data&&data.json,text:(data&&data.text)||""};}
 async function aiInvoiceImport(file){
   if(!file)return;const btn=document.getElementById("achAI");const prev=btn?btn.textContent:"";if(btn){btn.textContent="Lecture IA…";btn.disabled=true;}
@@ -6563,16 +6903,13 @@ async function aiInvoiceImport(file){
     const ex=await aiExtractInvoice({media_type:file.type||"application/pdf",data:data64});
     const res=aiBuildAchatFromInvoice(ex.j);
     if(!res.ok){
-      if(res.reason==="no_match")alert("Facture lue, mais aucune ligne n'a pu être reliée à un modèle existant.\n\nÀ créer / vérifier :\n- "+(res.miss||[]).join("\n- ")+"\n\nCrée d'abord ces modèles (Catalogue) puis relance, ou ajoute les lignes à la main.");
-      else alert("Je n'ai pas réussi à extraire de lignes de cette facture.\nVérifie que le fichier est net (PDF ou photo bien cadrée).\n\nDébut de la réponse :\n"+(ex.text||"").slice(0,400));
+      alert("Je n'ai pas réussi à extraire de lignes de cette facture.\nVérifie que le fichier est net (PDF ou photo bien cadrée).\n\nDébut de la réponse :\n"+(ex.text||"").slice(0,400));
       return;
     }
-    await aiCommitAchat(res);
-    let msg=res.a.lignes.length+" ligne(s) pré-remplie(s) depuis la facture.";
-    if(!res.fourId)msg+="\n\n⚠️ Fournisseur non reconnu — choisis-le via « Modifier ».";
-    if(res.miss.length)msg+="\n\nNon importé ("+res.miss.length+") :\n- "+res.miss.join("\n- ");
-    msg+="\n\n➡️ Relis les lignes et les prix, puis clique « Réceptionner » pour mettre en stock.";
-    alert(msg);
+    /* On OUVRE LA RELECTURE au lieu d'enregistrer. Une ligne mal reconnue se
+       corrige ici, avant que la commande existe — et non sur une commande
+       déjà en base, ce que faisait la version précédente. */
+    aiOpenRevue(res);
   }catch(e){
     alert("Lecture IA indisponible.\n\nVérifie que la fonction Supabase « claude-assistant » est déployée avec le secret ANTHROPIC_API_KEY.\n\nDétail : "+((e&&e.message)||e));
   }finally{if(btn){btn.textContent=prev;btn.disabled=false;}}
