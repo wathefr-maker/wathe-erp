@@ -8036,29 +8036,39 @@ async function shopCacheLoad(){
     if(r.error||!r.data)return null;
     var d=r.data.data||null;
     if(!d)return null;
-    var n=+(d.chunks||0);
-    if(!(n>0))return d;                             // tout tient dans id=1
 
-    var ids=[];for(var k=0;k<n;k++)ids.push(SHOP_CHUNK_ID0+k);
-    const s=await sb.from("shopify_orders_cache").select("id,data").in("id",ids);
+    /* LES PAQUETS SE DÉCOUVRENT, ILS NE SE CROIENT PAS DÉCLARÉS.
+
+       La version précédente lisait le nombre de paquets dans le sommaire de
+       id=1. C'était fragile : il suffit qu'un onglet resté ouvert sur une
+       ANCIENNE version de l'ERP sauvegarde par-dessus pour que le sommaire
+       disparaisse — l'ancien code ne l'écrit pas — et tout l'historique
+       devient orphelin d'un coup. C'est arrivé : 467 commandes rendues
+       invisibles par une sauvegarde d'un autre onglet.
+
+       On demande donc directement à la base quelles lignes de débordement
+       existent. Le sommaire reste écrit, mais pour le diagnostic seulement :
+       plus rien ne dépend de lui. Le dédoublonnage plus bas absorbe un paquet
+       en trop venu d'un historique plus ancien. */
+    const s=await sb.from("shopify_orders_cache")
+      .select("id,data").gte("id",SHOP_CHUNK_ID0).order("id",{ascending:true});
     if(s.error){
       console.error("[Shopify] Les archives du cache sont illisibles :",s.error);
-      d.partiel=n;return d;
+      d.partiel=1;return d;
     }
-    /* On range par id : « in » ne garantit pas l'ordre, et l'ordre des paquets
-       est celui de l'historique. */
-    var parId={};(s.data||[]).forEach(function(x){parId[String(x.id)]=x;});
-    var suite=[],manquantes=0;
-    ids.forEach(function(id){
-      var x=parId[String(id)];
-      if(!x||!x.data||!Array.isArray(x.data.orders)){manquantes++;return;}
-      suite=suite.concat(x.data.orders);
+    var suite=[];
+    (s.data||[]).forEach(function(x){
+      if(x&&x.data&&Array.isArray(x.data.orders))suite=suite.concat(x.data.orders);
     });
-    if(manquantes){
-      console.error("[Shopify] "+manquantes+" paquet(s) d'archives introuvable(s) :"
-        +" l'historique relu est incomplet.");
-      d.partiel=manquantes;
+    /* Le sommaire n'est plus qu'un témoin : s'il annonce plus de paquets qu'il
+       n'en existe, on le dit sans pour autant refuser ce qu'on a trouvé. */
+    var annonces=+(d.chunks||0),trouves=(s.data||[]).length;
+    if(annonces>trouves){
+      console.error("[Shopify] "+(annonces-trouves)+" paquet(s) d'archives manquant(s) :"
+        +" le sommaire en annonce "+annonces+", la base en contient "+trouves+".");
+      d.partiel=annonces-trouves;
     }
+    if(!suite.length)return d;                      // tout tient dans id=1
     /* Dédoublonnage par identifiant : deux enregistrements concurrents peuvent
        avoir laissé la même commande dans deux paquets. */
     var vus={},tout=[];
