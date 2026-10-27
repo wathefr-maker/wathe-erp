@@ -6273,7 +6273,15 @@ function fillAchSizes(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.
    part en ligne et se vend avant qu'on l'ait relu. Trop haut, il ne se vend pas
    et on le corrige. L'erreur coûteuse n'est pas symétrique.
    -------------------------------------------------------------------------- */
-var PV_COEF=1.8;
+/* 1,83 depuis le 27/10/2026, aligné sur le coefficient du Sourcing Hub.
+   Il valait 1,8 : les deux côtés doivent dire la même chose, sinon une paire
+   n'a pas le même prix cible selon qu'elle arrive par le Hub ou par une
+   facture, et l'écart ne se voit nulle part.
+
+   L'arrondi au palier amortit le changement : sur les 273 pièces encore au
+   coefficient précédent, 121 seulement ont changé de prix — les autres
+   retombaient sur le même palier de 5 €. */
+var PV_COEF=1.83;
 
 /* Tout en centimes : 0,1 + 0,2 ne fait pas 0,3 en virgule flottante, et un
    arrondi de prix qui tombe à 109,89 est un arrondi raté. */
