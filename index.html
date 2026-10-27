@@ -11562,12 +11562,103 @@ function fsCarrierName(c){
   if(c.indexOf("colissimo")>=0)return "Colissimo";if(c.indexOf("mondial")>=0)return "Mondial Relay";if(c.indexOf("poste")>=0)return "La Poste";
   return "Autre";
 }
+/* ============================================================================
+   CONTRÔLE DU COEFFICIENT — commandes Sourcing Hub uniquement
+   Quand le suivi fournisseur arrive, AVANT de l'envoyer au client et de facturer :
+   si une paire est vendue sous le coefficient minimum (prix vendu TTC ÷ prix d'achat HT),
+   rien n'est envoyé ; une pop-up te prévient. « C'est OK » envoie le suivi et facture ;
+   « Ouvrir la commande » pour vérifier / annuler ; « Plus tard » la remet à la prochaine ouverture.
+   La validation est enregistrée sur l'achat (partagée entre les postes).
+   ============================================================================ */
+/* Même seuil que l'alerte « marge faible » (COEF_MINI). Le coefficient se calcule sur le prix
+   RÉELLEMENT payé sur le canal de vente (marketplace ou site), converti en euros si la commande
+   est dans une autre devise — pas sur le coefficient du Sourcing Hub. */
+function shCoefMini(){return (typeof COEF_MINI==="number"&&COEF_MINI>0)?COEF_MINI:1.9;}
+var _shCoefDismissed=new Set();
+/* Paires de cet achat Sourcing Hub, déjà rattachées à une commande Shopify, sous le seuil. */
+function shCoefLow(ach){
+  var out=[];
+  (DB.articles||[]).forEach(function(a){
+    if(a.archived||a.flowstockId!==ach.flowstockId||!a.shopifyOrderId)return;
+    if(a.shopifyTracking&&a.shopifyTracking.number)return;
+    var o=(_shopOrders||[]).find(function(x){return x&&x.id===a.shopifyOrderId;});if(!o)return;
+    var l=(o.lines||[])[a.shopifyLineIdx];if(!l)return;
+    var pa=+a.prix||0;if(pa<=0)return;                       // prix d'achat inconnu : pas de calcul possible
+    // prix payé par le client sur le canal (marketplace / site) ; devise étrangère → euros au taux du jour de la commande
+    var cur=(o.custCurrency&&o.custCurrency!=="EUR")?o.custCurrency:((o.currency&&o.currency!=="EUR")?o.currency:"EUR");
+    var pvRaw=(cur!=="EUR")?(l.custPrice!=null?+l.custPrice:(+l.price||0)):(+l.puTTC||+l.price||0);
+    var fx=(cur!=="EUR")?(fxRate(cur,o.date)||0):1;
+    var pv=(cur!=="EUR")?(fx>0?pvRaw*fx:0):pvRaw;
+    var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
+    var base={o:o,piece:a,pa:pa,titre:(m.fr||m.sku||l.title||a.ref||""),taille:vSizeTxt(v),cur:cur};
+    if(cur!=="EUR"&&!(fx>0)){out.push(Object.assign(base,{coef:null,pv:pvRaw,note:"vendu "+pvRaw+" "+cur+" — taux de change inconnu, à vérifier"}));return;}
+    if(pv<=0)return;
+    var c=Math.round((pv/pa)*100)/100;
+    if(c>=shCoefMini())return;
+    out.push(Object.assign(base,{coef:c,pv:pv}));
+  });
+  return out;
+}
+/* Commandes en attente de validation : suivi reçu, coefficient trop bas, pas encore validées. */
+function shCoefPending(){
+  var byOrder={};
+  (DB.achats||[]).forEach(function(ach){
+    if(!isShAchat(ach)||ach.shCoefOk||!ach.tracking||!ach.tracking.number)return;
+    shCoefLow(ach).forEach(function(x){
+      var k=x.o.id;if(!byOrder[k])byOrder[k]={o:x.o,achats:[],rows:[],tracking:ach.tracking,supplier:""};
+      if(byOrder[k].achats.indexOf(ach)<0)byOrder[k].achats.push(ach);
+      var f=(DB.fournisseurs||[]).find(function(ff){return ff.id===ach.fournId;});if(f)byOrder[k].supplier=f.societe||f.nom||"";
+      byOrder[k].rows.push(x);
+    });
+  });
+  return Object.keys(byOrder).map(function(k){return byOrder[k];});
+}
+function shCoefPopup(){
+  if(document.getElementById("ovShCoef"))return;                       // déjà ouverte
+  if(document.querySelector(".ov.show"))return;                        // une autre fenêtre est ouverte : plus tard
+  var list=shCoefPending().filter(function(p){return !_shCoefDismissed.has(p.o.id);});
+  if(!list.length)return;
+  var p=list[0],t=p.tracking||{},C=function(v){return "× "+(+v).toFixed(2).replace(".",",");};
+  var rows=p.rows.map(function(x){return '<tr><td><b>'+esc(x.titre)+'</b><br><span class="muted" style="font-size:12px">'+esc(x.piece.ref||"")+(x.taille?(' · '+esc(x.taille)):'')+'</span></td>'
+    +'<td>'+eur(x.pa)+'</td><td>'+(x.coef==null?esc(x.note):(eur(x.pv)+(x.cur&&x.cur!=="EUR"?' <span class="muted" style="font-size:11px">('+esc(x.cur)+' converti)</span>':'')))+'</td><td><b style="color:#b45309;background:#fef3c7;padding:2px 8px;border-radius:999px">'+(x.coef==null?'?':C(x.coef))+'</b></td></tr>';}).join("");
+  var ov=document.createElement("div");ov.className="ov show";ov.id="ovShCoef";
+  ov.innerHTML='<div class="modal" style="width:640px;padding:0">'
+    +'<div style="padding:18px 22px;background:#fffbeb;border-bottom:1px solid #fcd34d;display:flex;gap:12px;align-items:flex-start">'
+      +'<div style="width:36px;height:36px;border-radius:10px;background:#f59e0b;color:#fff;font-weight:800;font-size:20px;display:flex;align-items:center;justify-content:center;flex:none">!</div>'
+      +'<div><div style="font-weight:800;font-size:17px;color:#92400e">Coefficient sous le minimum — commande '+esc(p.o.name||"")+'</div>'
+      +'<div style="font-size:13px;color:#92400e;margin-top:3px">Commande Sourcing Hub'+(p.supplier?(' ('+esc(p.supplier)+')'):'')+' : le suivi n\'a <b>pas été envoyé au client</b> et la commande <b>n\'est pas facturée</b>. Vérifie le prix — tu peux encore annuler la commande.</div></div></div>'
+    +'<div style="padding:18px 22px">'
+      +'<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px"><table><thead><tr><th>Paire</th><th>Achat HT</th><th>Vendu TTC</th><th>Coef</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+      +'<div style="font-size:13px;line-height:1.9"><span class="muted" style="display:inline-block;width:160px">Coefficient minimum</span><b>'+C(shCoefMini())+'</b> <span class="muted" style="font-size:12px">(prix payé sur le canal de vente ÷ prix d\'achat HT)</span><br>'
+      +'<span class="muted" style="display:inline-block;width:160px">Client</span>'+esc(shopOrderClient(p.o)||"—")+'<br>'
+      +'<span class="muted" style="display:inline-block;width:160px">Suivi fournisseur</span>'+esc((t.carrier?t.carrier+" ":"")+(t.number||""))+' — <b style="color:#92400e">en attente</b></div>'
+    +'</div>'
+    +'<div class="mf" style="padding:14px 22px;display:flex;gap:10px;justify-content:flex-end;align-items:center">'
+      +'<span class="muted" style="margin-right:auto;font-size:12px">'+(list.length>1?('+ '+(list.length-1)+' autre(s) commande(s) en attente'):'')+'</span>'
+      +'<button class="btn" id="shCoefLater">Plus tard</button><button class="btn" id="shCoefOpen">Ouvrir la commande</button>'
+      +'<button class="btn v" id="shCoefOk">C\'est OK — envoyer le suivi et facturer</button></div></div>';
+  document.body.appendChild(ov);
+  var close=function(){try{ov.remove();}catch(e){}};
+  document.getElementById("shCoefLater").onclick=function(){_shCoefDismissed.add(p.o.id);close();setTimeout(shCoefPopup,300);};
+  document.getElementById("shCoefOpen").onclick=function(){_shCoefDismissed.add(p.o.id);close();try{show("shopify",document.querySelector('.item[data-view="shopify"]'));openShopifyOrder(p.o.id);}catch(e){}};
+  document.getElementById("shCoefOk").onclick=function(){
+    p.achats.forEach(function(ach){ach.shCoefOk=1;});
+    try{logAct("Coefficient",p.o.name,"Validé à la main : "+p.rows.map(function(x){return (x.piece.ref||"")+" "+(x.coef==null?"?":C(x.coef));}).join(", "));}catch(e){}
+    try{save();}catch(e){}
+    close();
+    try{shAutoTracking();}catch(e){}
+    setTimeout(shCoefPopup,600);
+  };
+}
+var _shCoefTimer=null;
+function shCoefWatch(){if(_shCoefTimer)return;setTimeout(shCoefPopup,4000);_shCoefTimer=setInterval(shCoefPopup,60000);}
 function shAutoTracking(){
   var n=0,byOrder={};
   (DB.achats||[]).forEach(function(ach){
     if(!isShAchat(ach)||!ach.tracking||!ach.tracking.number)return;
     var number=String(ach.tracking.number).split(/[,\s]+/)[0];if(!number)return;
     var company=fsCarrierName(ach.tracking.carrier),url=ach.tracking.url||shopTrackUrl(company,number);
+    if(!ach.shCoefOk&&shCoefLow(ach).length)return;   // coefficient sous le minimum : on attend ta validation (pop-up)
     (DB.articles||[]).forEach(function(a){
       if(a.archived||a.flowstockId!==ach.flowstockId||!a.shopifyOrderId)return;
       if(a.shopifyTracking&&a.shopifyTracking.number)return;   // déjà un suivi (saisi à la main ou déjà posé)
@@ -11732,7 +11823,7 @@ const SH_ROW=10;
 function isShAchat(a){return !!a&&a.source==="flowstock"&&(a.supplierType==="sourcing-hub"||String(a.flowstockId||"").indexOf("sh-")===0);}
 async function shCacheLoad(){try{const r=await sb.from("flowstock_cache").select("data").eq("id",SH_ROW).maybeSingle();if(r.error||!r.data)return null;return r.data.data||null;}catch(_){return null;}}
 let _shAuto=null,_shPullBusy=false,_shPage=0;
-function shAutoStart(){if(_shAuto)return;setTimeout(function(){shPull(true);},2500);_shAuto=setInterval(function(){shPull(true);},300000);}
+function shAutoStart(){try{shCoefWatch();}catch(e){}if(_shAuto)return;setTimeout(function(){shPull(true);},2500);_shAuto=setInterval(function(){shPull(true);},300000);}
 async function shPull(auto){
   if(_shPullBusy){if(!auto)alert("Un import Sourcing Hub est déjà en cours.");return;}
   var _claimed=await claimTask(101,auto?270000:0);
