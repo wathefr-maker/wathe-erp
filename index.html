@@ -11528,6 +11528,22 @@ function fsDedupeAchats(){
   }
   return rmAch.size;
 }
+/* Achat déjà importé : le fournisseur peut avoir avancé depuis (numéro de commande chez lui,
+   statut, NUMÉRO DE SUIVI arrivé à l'expédition). On met à jour ces informations de suivi
+   seulement — jamais les lignes, les prix ni le stock. Renvoie true si quelque chose a changé. */
+function fsRefreshFollow(a,p){
+  var ch=false;
+  var t=p.tracking&&p.tracking.number?{number:String(p.tracking.number),url:p.tracking.url||"",carrier:p.tracking.carrier||""}:null;
+  var cur=a.tracking&&a.tracking.number?String(a.tracking.number):"";
+  if(t&&t.number!==cur){a.tracking=t;ch=true;}
+  if(p.status&&p.status!==a.flowstockStatus){a.flowstockStatus=p.status;ch=true;}
+  if(p.reference&&p.reference!==a.flowstockRef){
+    if(!a.nFacture||a.nFacture===a.flowstockRef)a.nFacture=p.reference;   // n° saisi à la main : gardé
+    a.flowstockRef=p.reference;ch=true;
+  }
+  if(ch){try{logAct("FlowStock","Suivi",(a.ref||a.flowstockId)+(t?" · suivi "+(t.carrier?t.carrier+" ":"")+t.number:"")+" · "+(p.status||""));}catch(e){}}
+  return ch;
+}
 function flowstockImport(txt,silent){
   try{fsDedupeAchats();}catch(e){}
   let data;try{data=JSON.parse(txt);}catch(e){alert("JSON invalide : "+e.message);return {ok:false};}
@@ -11535,7 +11551,7 @@ function flowstockImport(txt,silent){
   const _fsKnown=(typeof fsKnownSet==="function")?fsKnownSet():new Set();
   const soc=(watheSocId()||(DB.societes[0]||{}).id||"");
   const ville=(attrLabels("Ville")[0]||"Vichy"),emp=(attrLabels("Emplacement")[0]||"");
-  let nNew=0,nDup=0,nPieces=0,nUnmatched=0;
+  let nNew=0,nDup=0,nPieces=0,nUnmatched=0,nUpd=0;
   const _seenThisRun=new Set();   // le lot lui-même peut contenir deux fois la même commande
   arr.forEach(function(p){
     if(!p||!p.purchase_id)return;
@@ -11543,7 +11559,7 @@ function flowstockImport(txt,silent){
     _seenThisRun.add(String(p.purchase_id));
     var _pn=parseInt(String((p.customer_order||{}).number||"").replace(/[^0-9]/g,""),10)||0;
     {if(_fsKnown.has(String(p.purchase_id))&&!DB.achats.some(a=>a.flowstockId===p.purchase_id)){nDup++;return;}
-      const _ex=DB.achats.find(a=>a.flowstockId===p.purchase_id);if(_ex){nDup++;return;}}
+      const _ex=DB.achats.find(a=>a.flowstockId===p.purchase_id);if(_ex){if(fsRefreshFollow(_ex,p))nUpd++;nDup++;return;}}
     // Le flux FlowStock renvoie parfois LA MÊME commande avec un purchase_id différent.
     // On compare alors le contenu réel : référence FlowStock (ou n° de commande client) + produits/tailles.
     {var _sig=function(ref,items){var ls=(items||[]).map(function(it){return String(it.sku||"").toLowerCase().trim()+"~"+String(it.size||"").toLowerCase().trim()+"~"+Math.max(1,+it.quantity||1);}).sort().join(",");return String(ref||"").toLowerCase().trim()+"|"+ls;};
@@ -11610,7 +11626,7 @@ function flowstockImport(txt,silent){
   let linked=0;try{linked=flowstockReconcile(true);}catch(e){}
   try{var _vm=new Set();(DB.articles||[]).forEach(function(a){if(cutoffHides(a))return;var v=varById(a.varianteId);if(v&&v.modeleId!=null)_vm.add(v.modeleId);});(DB.modeles||[]).forEach(function(mm){if(mm&&mm.source==="flowstock"&&!mm._reEnrich2&&_vm.has(mm.id)){mm.enriched=0;mm._reEnrich2=1;}});}catch(e){}
   renderFlowstock();try{renderAchats();}catch(e){}try{renderModeles();}catch(e){}try{fillSelects();}catch(e){}try{flowstockEnrichModels();}catch(e){}
-  if(!silent)alert("Import terminé.\n\n"+nNew+" commande(s) importée(s)"+(nDup?(", "+nDup+" déjà présente(s)"):"")+".\n"+nPieces+" pièce(s) mise(s) en stock"+(nUnmatched?(",\n"+nUnmatched+" produit(s) non rattaché(s) — SKU/pointure inconnus au catalogue"):"")+".\n"+(linked?(linked+" pièce(s) liée(s) à une vente Shopify."):"Aucune liaison Shopify pour l'instant (ouvre l'onglet « Vente Shopify » pour charger les commandes, puis « Rattacher »)."));
+  if(!silent)alert("Import terminé.\n\n"+nNew+" commande(s) importée(s)"+(nDup?(", "+nDup+" déjà présente(s)"):"")+(nUpd?(", "+nUpd+" mise(s) à jour (suivi / statut)"):"")+".\n"+nPieces+" pièce(s) mise(s) en stock"+(nUnmatched?(",\n"+nUnmatched+" produit(s) non rattaché(s) — SKU/pointure inconnus au catalogue"):"")+".\n"+(linked?(linked+" pièce(s) liée(s) à une vente Shopify."):"Aucune liaison Shopify pour l'instant (ouvre l'onglet « Vente Shopify » pour charger les commandes, puis « Rattacher »)."));
   return {ok:true};
 }
 function fsNormalizeSizes(){
