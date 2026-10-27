@@ -10637,19 +10637,23 @@ function shopBottomBar(o){
     '</div></div>';
 }
 async function shopSaveOrder(btn){await save();renderShopRows();if(btn){btn.textContent="✔ Enregistré";setTimeout(function(){btn.textContent="Enregistrer";},1500);}}
-async function shopInvoiceOrder(){
-  const o=_shopOrders.find(x=>x.id===_shopCurOrderId);if(!o)return false;
+async function shopInvoiceOrder(autoOrderId){
+  /* autoOrderId : facturation automatique (Sourcing Hub, après le suivi) — aucune fenêtre ;
+     en cas de doute (taux de change introuvable…), on ne facture pas et on le note au journal. */
+  const auto=(typeof autoOrderId==="string"&&!!autoOrderId);
+  const _say=function(msg){if(auto){try{logAct("Facturation auto",autoOrderId,msg);}catch(_){}}else alert(msg);};
+  const o=_shopOrders.find(x=>x.id===(auto?autoOrderId:_shopCurOrderId));if(!o)return false;
   // Si la commande est en devise étrangère et que son taux n'est pas encore figé,
   // on le récupère MAINTENANT (une fois), pour que la facture parte en euros corrects.
   var _c0=(o.custCurrency&&o.custCurrency!=="EUR")?o.custCurrency:((o.currency&&o.currency!=="EUR")?o.currency:"EUR");
   if(_c0!=="EUR"&&fxRate(_c0,o.date)==null){
     var _r=await fxFetch(_c0,o.date);
-    if(_r==null&&!confirm("Impossible de récupérer le taux "+_c0+"→EUR pour le "+String(o.date||"").slice(0,10)+".\n\nFacturer quand même ? Les statistiques compteront cette vente au montant brut en "+_c0+" (à corriger plus tard).")){return false;}
+    if(_r==null&&(auto||!confirm("Impossible de récupérer le taux "+_c0+"→EUR pour le "+String(o.date||"").slice(0,10)+".\n\nFacturer quand même ? Les statistiques compteront cette vente au montant brut en "+_c0+" (à corriger plus tard)."))){if(auto)_say("taux "+_c0+" introuvable : à facturer à la main");return false;}
   }
   const pieces=shopOrderPieces(o);
-  if(!pieces.length){alert("Assigne au moins une paire avant de facturer.");return false;}
-  if((DB.factures||[]).some(f=>f.orderId===o.id)){alert("Cette commande est déjà facturée.");return false;}
-  if(!confirm("Passer la commande "+o.name+" en facturation ?\n\nLes paires assignées sortiront du stock (statut « Facturé »). Si plusieurs régimes de TVA sont présents, une facture par régime sera créée."))return false;
+  if(!pieces.length){_say("Assigne au moins une paire avant de facturer.");return false;}
+  if((DB.factures||[]).some(f=>f.orderId===o.id)){if(!auto)alert("Cette commande est déjà facturée.");return false;}
+  if(!auto&&!confirm("Passer la commande "+o.name+" en facturation ?\n\nLes paires assignées sortiront du stock (statut « Facturé »). Si plusieurs régimes de TVA sont présents, une facture par régime sera créée."))return false;
   const soc=pieces[0]?socById(pieces[0].societeId):DB.societes[0];
   const trk=shopOrderTracking(o);
   const saleLines=[];
@@ -10674,7 +10678,7 @@ async function shopInvoiceOrder(){
     var _eur=_foreign?(_fx>0?(_orig*_fx):(+l.price||0)):(+l.price||0);
     saleLines.push({title:l.title,sku:l.sku||"",qty:1,puTTC:_eur,
       custPuTTC:_foreign?_orig:null,ref:a.ref,tva:lineTva,cost:(+a.prix||0)});});});
-  if(!saleLines.length){alert("Aucune paire assignée.");return false;}
+  if(!saleLines.length){_say("Aucune paire assignée.");return false;}
   /* RÉDUCTIONS SHOPIFY (codes promo, remises panier)
      Le cache expose le sous-total, le port et le total payé, mais pas le détail
      des réductions. On les déduit par différence : ce qui manque entre
@@ -10704,8 +10708,10 @@ async function shopInvoiceOrder(){
     societeId:soc?soc.id:DB.societes[0].id,buyer:shopOrderClient(o)||o.name,buyerAddr:o.billing||null,shipAddr:o.shipTo||null,
     tracking:trk?(trk.company+" "+trk.number):"",shipping:(o.shipping!=null?(_foreign?((o.custShipping!=null?(+o.custShipping):(+o.shipping||0))*(_fx>0?_fx:1)):(+o.shipping)):0),custShipping:(_foreign?(o.custShipping!=null?(+o.custShipping):(+o.shipping||0)):null),currency:"EUR",custCurrency:(_foreign?_cur:""),custRate:(_foreign&&_fx>0?_fx:1),fxDate:(_foreign?String(o.date||"").slice(0,10):""),country:orderCountryName(o),saleLines:saleLines});
   pieces.forEach(function(a){a.shopifyInvoiced=1;a.shopifyInvoiceNum=facts[0]?facts[0].num:"";a.statut="Facturé";a.dispo=0;a.maj=today();});
-  logAct("Facturation",o.name,facts.map(f=>f.num).join(" + "));
-  save();shopRefresh();
+  logAct("Facturation",o.name,facts.map(f=>f.num).join(" + ")+(auto?" (automatique, après le suivi fournisseur)":""));
+  save();
+  if(auto){try{renderShopRows();}catch(_){}if(_shopCurOrderId===o.id){try{shopRefresh();}catch(_){}}return true;}
+  shopRefresh();
   alert(facts.length>1?(facts.length+" factures créées (une par régime de TVA) : "+facts.map(f=>f.num).join(", ")):("Facture "+facts[0].num+" créée ✔"));
   return true;
 }
@@ -11572,15 +11578,30 @@ function shAutoTracking(){
     });
   });
   if(!n)return 0;
+  var todo=[];
   Object.keys(byOrder).forEach(function(k){
     var g=byOrder[k],o=(_shopOrders||[]).find(function(x){return x&&x.id===g.orderId;});
     var deja=o&&(o.fulfilledShopify||o.fulfillment==="FULFILLED");
     g.pieces.forEach(function(a){a.shopifyTrackingSent=1;});
     try{logAct("Tracking Shopify",(o&&o.name)||g.orderId,"Auto Sourcing Hub · "+g.company+" "+g.number+(deja?" (déjà expédiée sur Shopify)":""));}catch(e){}
-    if(o&&!o.duplicated&&!deja)shopPushFulfillmentGroups(o,[{company:g.company,number:g.number,url:g.url,pieces:g.pieces}]);
+    if(o&&!o.duplicated&&!deja)todo.push({o:o,g:g});
   });
   try{save();}catch(e){}
   try{renderShopRows();}catch(e){}
+  /* En série : envoi du suivi à Shopify, PUIS facturation de la commande si elle est complète
+     (toutes ses paires assignées et suivies, pas déjà facturée). Une commande qui attend encore
+     une paire de ton stock non expédiée reste à facturer à la main. Les anciennes commandes déjà
+     expédiées sur Shopify (« deja ») ne sont jamais facturées automatiquement. */
+  (async function(){
+    for(var i=0;i<todo.length;i++){
+      var o=todo[i].o,g=todo[i].g;
+      try{await shopPushFulfillmentGroups(o,[{company:g.company,number:g.number,url:g.url,pieces:g.pieces}]);}catch(e){}
+      try{
+        var ac=shopOrderAssignCount(o);
+        if(ac.need>0&&ac.have>=ac.need&&shopTrackingComplete(o)&&!(DB.factures||[]).some(function(f){return f.orderId===o.id;}))await shopInvoiceOrder(o.id);
+      }catch(e){try{logAct("Facturation auto",o.name,"échec : "+((e&&e.message)||e));}catch(_){}}
+    }
+  })();
   return n;
 }
 function flowstockImport(txt,silent){
