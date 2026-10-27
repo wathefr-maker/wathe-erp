@@ -11544,6 +11544,45 @@ function fsRefreshFollow(a,p){
   if(ch){try{logAct("FlowStock","Suivi",(a.ref||a.flowstockId)+(t?" · suivi "+(t.carrier?t.carrier+" ":"")+t.number:"")+" · "+(p.status||""));}catch(e){}}
   return ch;
 }
+/* Sourcing Hub : quand le fournisseur a expédié (numéro de suivi reçu sur l'achat), le suivi est
+   posé tout seul dans « Vente Shopify » sur les paires de la commande client, puis envoyé à Shopify
+   (commande marquée expédiée + e-mail de suivi au client), exactement comme « Enregistrer le tracking ».
+   - seulement les paires qui n'ont pas encore de suivi (un suivi saisi à la main n'est jamais remplacé) ;
+   - commande déjà expédiée sur Shopify : le suivi est noté dans l'ERP, rien n'est renvoyé à Shopify. */
+function fsCarrierName(c){
+  c=String(c||"").toLowerCase();
+  if(c.indexOf("dhl")>=0)return "DHL Express";if(c.indexOf("dpd")>=0)return "DPD";if(c.indexOf("ups")>=0)return "UPS";
+  if(c.indexOf("gls")>=0)return "GLS";if(c.indexOf("fedex")>=0)return "FedEx";if(c.indexOf("chrono")>=0)return "Chronopost";
+  if(c.indexOf("colissimo")>=0)return "Colissimo";if(c.indexOf("mondial")>=0)return "Mondial Relay";if(c.indexOf("poste")>=0)return "La Poste";
+  return "Autre";
+}
+function shAutoTracking(){
+  var n=0,byOrder={};
+  (DB.achats||[]).forEach(function(ach){
+    if(!isShAchat(ach)||!ach.tracking||!ach.tracking.number)return;
+    var number=String(ach.tracking.number).split(/[,\s]+/)[0];if(!number)return;
+    var company=fsCarrierName(ach.tracking.carrier),url=ach.tracking.url||shopTrackUrl(company,number);
+    (DB.articles||[]).forEach(function(a){
+      if(a.archived||a.flowstockId!==ach.flowstockId||!a.shopifyOrderId)return;
+      if(a.shopifyTracking&&a.shopifyTracking.number)return;   // déjà un suivi (saisi à la main ou déjà posé)
+      a.shopifyTracking={company:company,number:number,url:url};a.maj=today();n++;
+      var k=a.shopifyOrderId+"|"+company+"|"+number;
+      if(!byOrder[k])byOrder[k]={orderId:a.shopifyOrderId,company:company,number:number,url:url,pieces:[]};
+      byOrder[k].pieces.push(a);
+    });
+  });
+  if(!n)return 0;
+  Object.keys(byOrder).forEach(function(k){
+    var g=byOrder[k],o=(_shopOrders||[]).find(function(x){return x&&x.id===g.orderId;});
+    var deja=o&&(o.fulfilledShopify||o.fulfillment==="FULFILLED");
+    g.pieces.forEach(function(a){a.shopifyTrackingSent=1;});
+    try{logAct("Tracking Shopify",(o&&o.name)||g.orderId,"Auto Sourcing Hub · "+g.company+" "+g.number+(deja?" (déjà expédiée sur Shopify)":""));}catch(e){}
+    if(o&&!o.duplicated&&!deja)shopPushFulfillmentGroups(o,[{company:g.company,number:g.number,url:g.url,pieces:g.pieces}]);
+  });
+  try{save();}catch(e){}
+  try{renderShopRows();}catch(e){}
+  return n;
+}
 function flowstockImport(txt,silent){
   try{fsDedupeAchats();}catch(e){}
   let data;try{data=JSON.parse(txt);}catch(e){alert("JSON invalide : "+e.message);return {ok:false};}
@@ -11624,6 +11663,7 @@ function flowstockImport(txt,silent){
   if(_seenNew)try{flowstockKnownSave();}catch(e){}
   save();
   let linked=0;try{linked=flowstockReconcile(true);}catch(e){}
+  let nTrk=0;try{nTrk=shAutoTracking();}catch(e){}
   try{var _vm=new Set();(DB.articles||[]).forEach(function(a){if(cutoffHides(a))return;var v=varById(a.varianteId);if(v&&v.modeleId!=null)_vm.add(v.modeleId);});(DB.modeles||[]).forEach(function(mm){if(mm&&mm.source==="flowstock"&&!mm._reEnrich2&&_vm.has(mm.id)){mm.enriched=0;mm._reEnrich2=1;}});}catch(e){}
   renderFlowstock();try{renderAchats();}catch(e){}try{renderModeles();}catch(e){}try{fillSelects();}catch(e){}try{flowstockEnrichModels();}catch(e){}
   if(!silent)alert("Import terminé.\n\n"+nNew+" commande(s) importée(s)"+(nDup?(", "+nDup+" déjà présente(s)"):"")+(nUpd?(", "+nUpd+" mise(s) à jour (suivi / statut)"):"")+".\n"+nPieces+" pièce(s) mise(s) en stock"+(nUnmatched?(",\n"+nUnmatched+" produit(s) non rattaché(s) — SKU/pointure inconnus au catalogue"):"")+".\n"+(linked?(linked+" pièce(s) liée(s) à une vente Shopify."):"Aucune liaison Shopify pour l'instant (ouvre l'onglet « Vente Shopify » pour charger les commandes, puis « Rattacher »)."));
