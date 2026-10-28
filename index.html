@@ -6260,7 +6260,7 @@ function fillAchSizes(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.
    part en ligne et se vend avant qu'on l'ait relu. Trop haut, il ne se vend pas
    et on le corrige. L'erreur coûteuse n'est pas symétrique.
    -------------------------------------------------------------------------- */
-/* 1,82 depuis le 27/10/2026 (il valait 1,8, puis 1,83 le même jour), aligné
+/* 1,80 depuis le 28/10/2026 (1,82 depuis le 27/10, avant 1,8 puis 1,83), aligné
    sur le coefficient du Sourcing Hub. Les deux côtés doivent dire la même
    chose, sinon une paire n'a pas le même prix cible selon qu'elle arrive par
    le Hub ou par une facture, et l'écart ne se voit nulle part.
@@ -6275,7 +6275,7 @@ function fillAchSizes(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.
    l'ANCIENNE valeur : l'import Sourcing Hub s'y déclenche tout seul toutes les
    5 minutes et réécrit des prix au vieux coefficient, par-dessus la migration.
    Recharge donc tous les onglets (Cmd+Maj+R) AVANT de recalculer. */
-var PV_COEF=1.82;
+var PV_COEF=1.8;
 
 /* Tout en centimes : 0,1 + 0,2 ne fait pas 0,3 en virgule flottante, et un
    arrondi de prix qui tombe à 109,89 est un arrondi raté. */
@@ -6299,11 +6299,11 @@ function pvArrondi(x){
 }
 /* PALIERS DE COEFFICIENT (même règle que le Sourcing Hub) : pour les petits prix d'achat,
    un coefficient plus élevé remplace PV_COEF. Le premier palier qui convient s'applique.
-     achat < 30 €  → × 2
-     achat < 40 €  → × 1,9
-     au-delà       → × PV_COEF (1,82)
+     achat < 30 €  → × 1,99
+     achat < 40 €  → × 1,89
+     au-delà       → × PV_COEF (1,80)
    Sert au prix automatique ET au seuil des alertes de marge (on alerte sous le coefficient attendu). */
-var PV_PALIERS=[{max:30,coef:2},{max:40,coef:1.9}];
+var PV_PALIERS=[{max:30,coef:1.99},{max:40,coef:1.89}];
 function coefPourAchat(pa){
   pa=+pa||0;
   var t=PV_PALIERS.slice().sort(function(a,b){return a.max-b.max;}).find(function(x){return pa<x.max;});
