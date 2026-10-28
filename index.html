@@ -6310,9 +6310,22 @@ function pvArrondi(x){
   var k=Math.ceil((c+10)/500);        // paliers de 5 €, décalés de 10 centimes
   return (k*500-10)/100;
 }
+/* PALIERS DE COEFFICIENT (même règle que le Sourcing Hub) : pour les petits prix d'achat,
+   un coefficient plus élevé remplace PV_COEF. Le premier palier qui convient s'applique.
+     achat < 30 €  → × 2
+     achat < 40 €  → × 1,9
+     au-delà       → × PV_COEF (1,82)
+   Sert au prix automatique ET au seuil des alertes de marge (on alerte sous le coefficient attendu). */
+var PV_PALIERS=[{max:30,coef:2},{max:40,coef:1.9}];
+function coefPourAchat(pa){
+  pa=+pa||0;
+  var t=PV_PALIERS.slice().sort(function(a,b){return a.max-b.max;}).find(function(x){return pa<x.max;});
+  return t?t.coef:PV_COEF;
+}
+function coefTxt(c){return "× "+String(+(+c).toFixed(2)).replace(".",",");}
 function pvAutomatique(pa,coef){
   pa=+pa||0; if(pa<=0)return 0;
-  return pvArrondi(pa*((+coef>0)?+coef:PV_COEF));
+  return pvArrondi(pa*((+coef>0)?+coef:coefPourAchat(pa)));
 }
 
 /* Le test unique, utilisé partout. Une pièce sans prix cible ne part ni en
@@ -7824,7 +7837,7 @@ function addAchatLine(){const mid=+selMod||0,vid=+al_size.value,qte=parseInt(al_
     return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire ne part ni en"
       +" boutique ni en ligne : elle reste en stock sans pouvoir être vendue."
       +(_sg>0?("\n\nSuggestion d'après ton coefficient : "+_sg.toFixed(2).replace(".",",")
-        +" €  (prix d'achat × "+String(PV_COEF).replace(".",",")+", arrondi au palier)"):""));
+        +" €  (prix d'achat "+coefTxt(coefPourAchat(parseFloat(al_prix.value)))+", arrondi au palier)"):""));
   }
   if(!al_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
@@ -7997,7 +8010,7 @@ function addDepotLine(){const mid=+selDepMod||0,vid=+dl_size.value,qte=parseInt(
     return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire ne part ni en"
       +" boutique ni en ligne : elle reste en stock sans pouvoir être vendue."
       +(_sgd>0?("\n\nSuggestion d'après ton coefficient : "+_sgd.toFixed(2).replace(".",",")
-        +" €  (prix dépôt × "+String(PV_COEF).replace(".",",")+", arrondi au palier)"):""));
+        +" €  (prix dépôt "+coefTxt(coefPourAchat(parseFloat(dl_prix.value)))+", arrondi au palier)"):""));
   }
   if(!dl_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
@@ -10048,7 +10061,9 @@ function assignMismatch(l,v){var m=modeleById(v.modeleId)||{};var A=_pwords(m.fr
    l'expédition : c'est le dernier moment où le prix peut encore être discuté.
    Le seuil est modifiable ici — pas besoin de toucher au reste du code.
    ============================================================================ */
-var COEF_MINI=1.9;
+var COEF_MINI=1.9;   // (ancien seuil unique — remplacé par les paliers, voir coefMiniPour)
+/* Seuil d'alerte d'une paire = coefficient attendu pour son prix d'achat (paliers PV_PALIERS / PV_COEF). */
+function coefMiniPour(pa){return coefPourAchat(pa);}
 
 function shopCoefOf(o,l,i,a){
   var pa=+a.prix||0;
@@ -10065,7 +10080,7 @@ function shopLowMargin(o){
   (o.lines||[]).forEach(function(l,i){
     shopAssignedFor(o.id,i).forEach(function(a){
       var c=shopCoefOf(o,l,i,a);
-      if(c==null||c>=COEF_MINI)return;
+      if(c==null||c>=coefMiniPour(+a.prix||0))return;
       var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
       out.push({piece:a,coef:c,pa:(+a.prix||0),pv:(+l.puTTC||+l.price||+a.pv||0),
         titre:(m.fr||m.sku||a.ref||""),taille:vSizeTxt(v),
@@ -10087,7 +10102,7 @@ function shopLowMarginBanner(o){
   }).join("");
   return '<div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:12px 14px;margin-bottom:14px">'
     +'<div style="font-weight:800;font-size:13.5px;color:#b45309;margin-bottom:3px">⚠ Marge faible sur '+bas.length+' paire(s) assignée(s)</div>'
-    +'<div class="muted" style="font-size:12px;margin-bottom:8px">Coefficient inférieur à '+String(COEF_MINI).replace(".",",")+' — vérifie le prix de vente avant d\'expédier.</div>'
+    +'<div class="muted" style="font-size:12px;margin-bottom:8px">Coefficient sous le minimum attendu ('+coefTxt(PV_PALIERS[0]?PV_PALIERS[0].coef:PV_COEF)+' sous '+(PV_PALIERS[0]?PV_PALIERS[0].max:0)+' € d\'achat, '+PV_PALIERS.slice(1).map(function(t){return coefTxt(t.coef)+' sous '+t.max+' €';}).join(', ')+(PV_PALIERS.length>1?', ':'')+coefTxt(PV_COEF)+' au-delà) — vérifie le prix de vente avant d\'expédier.</div>'
     +'<div style="font-size:12.5px;line-height:1.6">'+lignes+'</div>'
   +'</div>';
 }
@@ -11588,7 +11603,7 @@ function fsCarrierName(c){
 /* Même seuil que l'alerte « marge faible » (COEF_MINI). Le coefficient se calcule sur le prix
    RÉELLEMENT payé sur le canal de vente (marketplace ou site), converti en euros si la commande
    est dans une autre devise — pas sur le coefficient du Sourcing Hub. */
-function shCoefMini(){return (typeof COEF_MINI==="number"&&COEF_MINI>0)?COEF_MINI:1.9;}
+function shCoefMini(pa){return coefMiniPour(pa);}
 var _shCoefDismissed=new Set();
 /* Paires de cet achat Sourcing Hub, déjà rattachées à une commande Shopify, sous le seuil. */
 function shCoefLow(ach){
@@ -11609,7 +11624,8 @@ function shCoefLow(ach){
     if(cur!=="EUR"&&!(fx>0)){out.push(Object.assign(base,{coef:null,pv:pvRaw,note:"vendu "+pvRaw+" "+cur+" — taux de change inconnu, à vérifier"}));return;}
     if(pv<=0)return;
     var c=Math.round((pv/pa)*100)/100;
-    if(c>=shCoefMini())return;
+    if(c>=shCoefMini(pa))return;
+    base.min=shCoefMini(pa);
     out.push(Object.assign(base,{coef:c,pv:pv}));
   });
   return out;
@@ -11644,7 +11660,7 @@ function shCoefPopup(){
       +'<div style="font-size:13px;color:#92400e;margin-top:3px">Commande Sourcing Hub'+(p.supplier?(' ('+esc(p.supplier)+')'):'')+' : le suivi n\'a <b>pas été envoyé au client</b> et la commande <b>n\'est pas facturée</b>. Vérifie le prix — tu peux encore annuler la commande.</div></div></div>'
     +'<div style="padding:18px 22px">'
       +'<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px"><table><thead><tr><th>Paire</th><th>Achat HT</th><th>Vendu TTC</th><th>Coef</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
-      +'<div style="font-size:13px;line-height:1.9"><span class="muted" style="display:inline-block;width:160px">Coefficient minimum</span><b>'+C(shCoefMini())+'</b> <span class="muted" style="font-size:12px">(prix payé sur le canal de vente ÷ prix d\'achat HT)</span><br>'
+      +'<div style="font-size:13px;line-height:1.9"><span class="muted" style="display:inline-block;width:160px">Coefficient minimum</span><b>'+p.rows.map(function(x){return C(x.min||shCoefMini(x.pa));}).filter(function(v,i,a){return a.indexOf(v)===i;}).join(' / ')+'</b> <span class="muted" style="font-size:12px">(prix payé sur le canal de vente ÷ prix d\'achat HT)</span><br>'
       +'<span class="muted" style="display:inline-block;width:160px">Client</span>'+esc(shopOrderClient(p.o)||"—")+'<br>'
       +'<span class="muted" style="display:inline-block;width:160px">Suivi fournisseur</span>'+esc((t.carrier?t.carrier+" ":"")+(t.number||""))+' — <b style="color:#92400e">en attente</b></div>'
     +'</div>'
