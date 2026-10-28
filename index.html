@@ -10061,9 +10061,10 @@ function assignMismatch(l,v){var m=modeleById(v.modeleId)||{};var A=_pwords(m.fr
    l'expédition : c'est le dernier moment où le prix peut encore être discuté.
    Le seuil est modifiable ici — pas besoin de toucher au reste du code.
    ============================================================================ */
-var COEF_MINI=1.9;   // (ancien seuil unique — remplacé par les paliers, voir coefMiniPour)
-/* Seuil d'alerte d'une paire = coefficient attendu pour son prix d'achat (paliers PV_PALIERS / PV_COEF). */
-function coefMiniPour(pa){return coefPourAchat(pa);}
+/* Seuils d'ALERTE (distincts des paliers de prix de vente) : × 2 sous 40 € d'achat, × 1,9 au-delà. */
+var ALERTE_PALIERS=[{max:40,coef:2}];
+var COEF_MINI=1.9;   // seuil au-delà du dernier palier d'alerte
+function coefMiniPour(pa){ pa=+pa||0; var t=ALERTE_PALIERS.slice().sort(function(a,b){return a.max-b.max;}).find(function(x){return pa<x.max;}); return t?t.coef:COEF_MINI; }
 
 function shopCoefOf(o,l,i,a){
   var pa=+a.prix||0;
@@ -10102,7 +10103,7 @@ function shopLowMarginBanner(o){
   }).join("");
   return '<div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:12px 14px;margin-bottom:14px">'
     +'<div style="font-weight:800;font-size:13.5px;color:#b45309;margin-bottom:3px">⚠ Marge faible sur '+bas.length+' paire(s) assignée(s)</div>'
-    +'<div class="muted" style="font-size:12px;margin-bottom:8px">Coefficient sous le minimum attendu ('+coefTxt(PV_PALIERS[0]?PV_PALIERS[0].coef:PV_COEF)+' sous '+(PV_PALIERS[0]?PV_PALIERS[0].max:0)+' € d\'achat, '+PV_PALIERS.slice(1).map(function(t){return coefTxt(t.coef)+' sous '+t.max+' €';}).join(', ')+(PV_PALIERS.length>1?', ':'')+coefTxt(PV_COEF)+' au-delà) — vérifie le prix de vente avant d\'expédier.</div>'
+    +'<div class="muted" style="font-size:12px;margin-bottom:8px">Coefficient sous le minimum attendu ('+ALERTE_PALIERS.map(function(t){return coefTxt(t.coef)+' sous '+t.max+' € d\'achat';}).join(', ')+', '+coefTxt(COEF_MINI)+' au-delà) — vérifie le prix de vente avant d\'expédier.</div>'
     +'<div style="font-size:12.5px;line-height:1.6">'+lignes+'</div>'
   +'</div>';
 }
@@ -11600,7 +11601,7 @@ function fsCarrierName(c){
    « Ouvrir la commande » pour vérifier / annuler ; « Plus tard » la remet à la prochaine ouverture.
    La validation est enregistrée sur l'achat (partagée entre les postes).
    ============================================================================ */
-/* Même seuil que l'alerte « marge faible » (COEF_MINI). Le coefficient se calcule sur le prix
+/* Même seuil que l'alerte « marge faible » (coefMiniPour : × 2 sous 40 €, × 1,9 au-delà). Le coefficient se calcule sur le prix
    RÉELLEMENT payé sur le canal de vente (marketplace ou site), converti en euros si la commande
    est dans une autre devise — pas sur le coefficient du Sourcing Hub. */
 function shCoefMini(pa){return coefMiniPour(pa);}
