@@ -262,7 +262,6 @@
     <div class="item sub" data-view="achats"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.2 12h11l1.8-8H6"/></svg></span> Commande d'achat</div>
     <div class="item sub" data-view="depots"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12v7a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-7"/><path d="M3 12 6 4h12l3 8M3 12h5l1 2h6l1-2h5"/></svg></span> Commande de dépôt</div>
     <div class="item sub" data-view="deposants"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/><path d="M18 8h4M20 6v4"/></svg></span> Déposants</div>
-    <div class="item sub" data-view="flowstock"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-10 0Z"/><path d="M12 15v7"/></svg></span> FlowStock</div>
     <div class="item sub" data-view="sourcinghub"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-10 0Z"/><path d="M12 15v7"/></svg></span> Sourcing Hub</div>
     <div class="item sub" data-view="justifs"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span> Justificatifs</div>
 
@@ -684,32 +683,17 @@
       </div>
     </div>
 
-    <div class="wrap view hide" id="view-flowstock">
-      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div style="flex:1"><h1>FlowStock</h1><div class="sub">Commande fournisseur FlowStock → commande d'achat + mise en stock + rattachement automatique à la vente Shopify</div></div>
-        <button class="btn" onclick="flowstockReconcile(false)" style="align-self:center">Rattacher aux ventes Shopify</button>
-        
-        <button class="btn v" onclick="flowstockPull()" style="align-self:center">Importer depuis FlowStock</button><button class="btn" id="fsSyncBtn" onclick="fsToggleSync()" style="align-self:center">Synchro auto</button>
-      </div>
-      <div class="tablecard" style="padding:12px 14px;margin:10px 0"><div class="muted" id="fsMeta" style="font-size:13px"></div>
-        <div class="muted" style="font-size:12px;margin-top:4px">Les commandes FlowStock sont importées automatiquement (à l'ouverture de l'ERP, puis toutes les 5 minutes). Le bouton ci-dessus force une récupération immédiate. « Coller du JSON » reste disponible en secours.</div><div style="margin-top:8px"><button class="btn" onclick="fsDiag()">Diagnostic rattachement</button></div></div>
-      <div id="fsDiag"></div>
-      <div id="fsTodo"></div>
-      <div class="tablecard"><div style="overflow-x:auto"><table>
-        <thead><tr><th>Référence</th><th>Date</th><th>Fournisseur</th><th>Produits</th><th>Prix</th><th>Commande Shopify</th><th>Statut FlowStock</th><th>Suivi</th><th>Actions</th></tr></thead>
-        <tbody id="fsRoot"></tbody></table></div></div>
-      <div id="fsPager" style="display:flex;gap:8px;justify-content:center;align-items:center;margin:10px 0"></div>
-    </div>
-
     <div class="wrap view hide" id="view-sourcinghub">
       <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div style="flex:1"><h1>Sourcing Hub</h1><div class="sub">Commande transmise par le Sourcing Hub (ShoePlatform…) → commande d'achat + mise en stock + rattachement automatique à la vente Shopify (même système que FlowStock)</div></div>
+        <div style="flex:1"><h1>Sourcing Hub</h1><div class="sub">Commandes fournisseur automatiques (Turum, Golden Sneakers, ShoePlatform…) → commande d'achat + mise en stock + rattachement automatique à la vente Shopify</div></div>
         <button class="btn" onclick="flowstockReconcile(false)" style="align-self:center">Rattacher aux ventes Shopify</button>
         <button class="btn v" onclick="shPull(false)" style="align-self:center">Importer depuis le Sourcing Hub</button>
+        <button class="btn" onclick="fsDiag()" style="align-self:center">Diagnostic rattachement</button>
       </div>
       <div class="tablecard" style="padding:12px 14px;margin:10px 0"><div class="muted" id="shMeta" style="font-size:13px"></div>
         <div class="muted" style="font-size:12px;margin-top:4px">Les commandes transmises par le Sourcing Hub sont importées automatiquement (à l'ouverture de l'ERP, puis toutes les 5 minutes). Le bouton ci-dessus force une récupération immédiate.</div></div>
-      <div id="shTodo"></div>
+      <div id="fsDiag"></div>
+      <div id="fsTodo"></div>
       <div class="tablecard"><div style="overflow-x:auto"><table>
         <thead><tr><th>Référence</th><th>Date</th><th>Fournisseur</th><th>Produits</th><th>Prix</th><th>Commande Shopify</th><th>Statut fournisseur</th><th>Suivi</th><th>Actions</th></tr></thead>
         <tbody id="shRoot"></tbody></table></div></div>
@@ -1666,8 +1650,11 @@ function articleModeleSug(){
 }
 function articleModelePick(id){var m=modeleById(id);if(!m)return;var hid=document.getElementById("a_modele"),inp=document.getElementById("a_modeleSearch"),box=document.getElementById("a_modeleSug");hid.value=id;if(inp)inp.value=(m.fr||m.sku||"")+" — "+(m.sku||"");if(box){box.style.display="none";box.innerHTML="";}refreshArticleSizes();}
 function renderAll(){renderDash();renderModeles();renderStock();
-  try{renderAchats();}catch(e){}try{renderFactures();}catch(e){}try{renderVBoutique();}catch(e){}try{renderShopRows();}catch(e){}try{renderFlowstock();}catch(e){}try{renderSourcingHub();}catch(e){}try{renderExpeds();}catch(e){}try{renderDepots();}catch(e){}try{renderDeposants();}catch(e){}try{renderVentesDep();}catch(e){}try{renderFournisseurs();}catch(e){}try{renderClients();}catch(e){}
-  try{flowstockAutoStart();}catch(e){}try{shAutoStart();}catch(e){}
+  try{renderAchats();}catch(e){}try{renderFactures();}catch(e){}try{renderVBoutique();}catch(e){}try{renderShopRows();}catch(e){}try{renderSourcingHub();}catch(e){}try{renderSourcingHub();}catch(e){}try{renderExpeds();}catch(e){}try{renderDepots();}catch(e){}try{renderDeposants();}catch(e){}try{renderVentesDep();}catch(e){}try{renderFournisseurs();}catch(e){}try{renderClients();}catch(e){}
+  /* flowstockAutoStart() ne démarre plus : l'ancien canal direct est coupé,
+     les fournisseurs étant passés sur le Sourcing Hub. La vigie prend sa
+     place et se contente de signaler ce qui y arriverait encore. */
+  try{shAutoStart();}catch(e){}
   try{docusealAutoStart();}catch(e){}
   try{rzWatchStart();}catch(e){}}
 
@@ -4488,7 +4475,7 @@ function show(view,item){
   // Relève DocuSeal à l'ouverture des écrans où une signature peut arriver.
   if(view==="justifs"||view==="ventesdep"||view==="achats"){try{docusealSync();}catch(e){}}
   if(view==="vboutique"){try{rzCheckVentes();}catch(e){}}
-  if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="flowstock")renderFlowstock();if(view==="sourcinghub")renderSourcingHub();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
+  if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="sourcinghub")renderSourcingHub();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
 }
 document.querySelectorAll(".item[data-view]").forEach(it=>it.onclick=()=>show(it.dataset.view,it));
 document.querySelectorAll(".ghead[data-group]").forEach(h=>h.onclick=()=>document.getElementById(h.dataset.group).classList.toggle("open"));
@@ -10099,7 +10086,7 @@ function shopLowMarginBanner(o){
     return '<div style="margin:3px 0">• <b>'+esc(x.piece.ref||"")+'</b> — '+esc(x.titre)
       +(x.taille?(' '+esc(x.taille)):'')+' · '+eur(x.pa)+' → '+eur(x.pv)
       +' · <b style="color:#b45309">×'+String(x.coef).replace(".",",")+'</b>'
-      +(x.flowstock?' <span class="muted" style="font-size:11px">(FlowStock)</span>':'')+'</div>';
+      +(x.flowstock?' <span class="muted" style="font-size:11px">(import fournisseur)</span>':'')+'</div>';
   }).join("");
   return '<div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:12px 14px;margin-bottom:14px">'
     +'<div style="font-weight:800;font-size:13.5px;color:#b45309;margin-bottom:3px">⚠ Marge faible sur '+bas.length+' paire(s) assignée(s)</div>'
@@ -10558,7 +10545,7 @@ async function shopRowDeleteDup(orderId){
    et la laisse publiée en boutique.
    On ne décide rien tout seul — supprimer du stock est irréversible — mais on
    propose, en montrant exactement ce qui serait retiré.
-   Une commande FlowStock n'est marquée annulée que si TOUTES ses paires sont
+   Une commande fournisseur n'est marquée annulée que si TOUTES ses paires sont
    concernées : un achat groupé dont une seule ligne part avec la commande
    annulée reste une commande valide pour le reste. */
 async function shopCancelPurgeFlowstock(pieces,orderName){
@@ -10568,7 +10555,7 @@ async function shopCancelPurgeFlowstock(pieces,orderName){
   });
   if(!fsPieces.length)return 0;
 
-  // Regroupement par commande FlowStock, pour savoir laquelle se vide entièrement.
+  // Regroupement par commande fournisseur, pour savoir laquelle se vide entièrement.
   var parAchat={};
   fsPieces.forEach(function(p){(parAchat[p.achatId]=parAchat[p.achatId]||[]).push(p);});
   var lots=Object.keys(parAchat).map(function(aid){
@@ -10578,12 +10565,12 @@ async function shopCancelPurgeFlowstock(pieces,orderName){
     return {ach:ach,pcs:pcs,total:total,complet:pcs.length>=total};
   });
   var detail=lots.map(function(L){
-    return "  · "+(L.ach.ref||L.ach.flowstockRef||"commande FlowStock")+" — "+L.pcs.length+" paire(s)"
+    return "  · "+(L.ach.ref||L.ach.flowstockRef||"commande fournisseur")+" — "+L.pcs.length+" paire(s)"
       +(L.complet?" — commande entière, sera marquée annulée"
                  :(" sur "+L.total+" — commande conservée"));
   }).join("\n");
   if(!confirm("Commande "+orderName+" annulée.\n\n"+fsPieces.length
-    +" paire(s) proviennent d'achats FlowStock :\n"+detail
+    +" paire(s) proviennent de commandes fournisseur :\n"+detail
     +"\n\nOK = retirer ces paires du stock.\nAnnuler = les garder en stock."))return 0;
 
   /* Sortie de la caisse AVANT suppression : une fois la pièce effacée de l'ERP,
@@ -10629,10 +10616,11 @@ async function shopCancelPurgeFlowstock(pieces,orderName){
   });
 
   try{if(mids.length)await shopResyncIds(mids);}catch(_){}
-  logAct("Annulation Shopify",orderName,fsPieces.length+" paire(s) FlowStock retirée(s) du stock"
+  logAct("Annulation Shopify",orderName,fsPieces.length+" paire(s) retirée(s) du stock"
     +(annulees.length?(" · commande(s) marquée(s) annulée(s) : "+annulees.join(", ")):""));
-  // L'onglet FlowStock a son propre rendu : renderAchats en exclut les achats FlowStock.
-  try{renderFlowstock();}catch(_){}
+  // Les commandes fournisseur automatiques ont leur propre écran (Sourcing Hub) :
+  // renderAchats les exclut pour ne pas les montrer deux fois.
+  try{renderSourcingHub();}catch(_){}
   try{renderAchats();}catch(_){}
   try{renderStock();}catch(_){}
   return fsPieces.length;
@@ -10653,7 +10641,7 @@ async function shopRowCancel(orderId){
   save();try{shopCacheSave();}catch(e){}renderShopRows();
   alert("Commande "+o.name+" annulée côté ERP.\n"
     +(pieces.length-_purg)+" paire(s) de nouveau en stock."
-    +(_purg?("\n"+_purg+" paire(s) FlowStock retirée(s) du stock."):""));
+    +(_purg?("\n"+_purg+" paire(s) retirée(s) du stock."):""));
 }
 function shopBottomBar(o){
   const ac=shopOrderAssignCount(o),assignedDone=ac.need>0&&ac.have>=ac.need,trackSent=shopOrderTrackingSent(o);
@@ -10994,7 +10982,7 @@ function fsGrilleOptions(sel){
   Object.keys(groups).forEach(b=>{o+='<optgroup label="'+esc(b)+'">';groups[b].forEach(k=>{o+='<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>';});o+='</optgroup>';});
   return o;
 }
-function fsSetName(id,val){var m=modeleById(id);if(!m)return;var nm=String(val||"").trim();if(!nm)return;m.fr=nm;m.namedManual=1;m.enriched=1;logAct("FlowStock","Nom saisi",m.sku+" → "+nm);save();try{renderFlowstock();}catch(e){}try{renderModeles();}catch(e){}try{fillSelects();}catch(e){}}
+function fsSetName(id,val){var m=modeleById(id);if(!m)return;var nm=String(val||"").trim();if(!nm)return;m.fr=nm;m.namedManual=1;m.enriched=1;logAct("Sourcing Hub","Nom saisi",m.sku+" → "+nm);save();try{renderSourcingHub();}catch(e){}try{renderModeles();}catch(e){}try{fillSelects();}catch(e){}}
 function fsConfirmGrille(id){
   const el=document.getElementById("fsG_"+id);
   const val=el?el.value:"";
@@ -11015,7 +11003,7 @@ function fsSetGrille(id,val){
     v.taille=fsEuToUsG(v.eu,val);                 // stock en US (Homme/Femme) ; EU sinon
   });
   try{save();}catch(e){}
-  try{renderModeles();}catch(e){}try{renderFlowstock();}catch(e){}try{renderStock();}catch(e){}try{fillSelects();}catch(e){}
+  try{renderModeles();}catch(e){}try{renderSourcingHub();}catch(e){}try{renderStock();}catch(e){}try{fillSelects();}catch(e){}
 }
 
 function fsEuToUs(eu,grille){
@@ -11080,31 +11068,15 @@ async function flowstockEnrichModels(){
   }finally{
     _fsEnriching=false;
     if(changed){try{save();}catch(_){}}
-    try{renderModeles();}catch(_){}try{renderFlowstock();}catch(_){}try{fillSelects();}catch(_){}
+    try{renderModeles();}catch(_){}try{renderSourcingHub();}catch(_){}try{fillSelects();}catch(_){}
   }
-}
-let _fsPage=0;
-function flowstockPage(d){_fsPage+=d;renderFlowstock();}
-function flowstockGoto(n){_fsPage=n;renderFlowstock();}
-function fsPagerHTML(cur,pages){
-  if(pages<=1)return"";
-  const win=2,nums=[];
-  for(let i=0;i<pages;i++){if(i===0||i===pages-1||(i>=cur-win&&i<=cur+win))nums.push(i);}
-  let html='<button class="btn" '+(cur<=0?"disabled":"")+' onclick="flowstockPage(-1)">\u2039</button>',last=-1;
-  nums.forEach(function(i){
-    if(last>=0&&i>last+1)html+='<span class="muted" style="padding:0 4px">\u2026</span>';
-    html+='<button class="btn'+(i===cur?" v":"")+'" onclick="flowstockGoto('+i+')">'+(i+1)+'</button>';
-    last=i;
-  });
-  html+='<button class="btn" '+(cur>=pages-1?"disabled":"")+' onclick="flowstockPage(1)">\u203a</button>';
-  return html;
 }
 function fsDiag(){
   const el=document.getElementById("fsDiag");if(!el)return;
   if(!_shopOrders||!_shopOrders.length){el.innerHTML='<div class="tablecard" style="margin:10px 0;padding:12px 16px"><div class="muted">Aucune commande Shopify chargée. Ouvre l\'onglet « Vente Shopify », attends quelques secondes, puis reviens cliquer ici.</div></div>';return;}
   const normNum=s2=>String(s2||"").replace(/^#/,"").replace(/[^0-9a-z]/gi,"").trim();
   const achats=DB.achats.filter(a=>a.source==="flowstock").sort(function(x,y){const dx=x.flowstockTime||x.date||"",dy=y.flowstockTime||y.date||"";return dx<dy?1:(dx>dy?-1:(y.id||0)-(x.id||0));}).slice(0,3);
-  if(!achats.length){el.innerHTML='<div class="tablecard" style="margin:10px 0;padding:12px 16px"><div class="muted">Aucune commande FlowStock importée pour le moment.</div></div>';return;}
+  if(!achats.length){el.innerHTML='<div class="tablecard" style="margin:10px 0;padding:12px 16px"><div class="muted">Aucune commande importée pour le moment.</div></div>';return;}
   const blocks=achats.map(function(a){
     const head='<div style="font-weight:600;margin:10px 0 4px;color:#374151">Commande '+esc(a.flowstockRef||a.ref||"?")+' · n° Shopify : '+esc(a.customerOrderNumber||"—")+' · '+esc(fsDateTime(a))+'</div>';
     const pieces=(flowstockPieces(a)||[]).filter(p=>!p.archived&&p.statut==="En Stock");
@@ -11115,25 +11087,34 @@ function fsDiag(){
       const onum=normNum(p.flowstockOrderNumber);
       const o=onum?_shopOrders.find(x=>normNum(x.name)===onum):null;
       let verdict,detail="";
-      if(!onum){verdict='<span style="color:#b91c1c">❌ Aucun n° de commande FlowStock sur la pièce</span>';}
+      if(!onum){verdict='<span style="color:#b91c1c">❌ Aucun n° de commande fournisseur sur la pièce</span>';}
       else if(!o){verdict='<span style="color:#b91c1c">❌ Aucune commande Shopify avec le n° '+esc(p.flowstockOrderNumber)+'</span>';}
       else{
         const sized=(o.lines||[]).filter(function(l,i){return fsLineMatch(l,v,p);});const pidx=fsPickLine(o,v,p);
         verdict=pidx>=0?('<span style="color:#166534">✅ Devrait se lier à '+esc(o.name)+((o.lines||[]).length>1?' (ligne '+(pidx+1)+')':'')+'</span>'):((sized.length?'<span style="color:#92400e">⚠️ Taille OK, mais la ligne correspondante est déjà prise par une autre pièce (doublon ?)</span>':'<span style="color:#92400e">⚠️ Commande '+esc(o.name)+' trouvée, mais aucune ligne à la bonne taille</span>'));
         const lineInfo=(o.lines||[]).map(function(l,i){return '• <b>'+esc(l.title||"?")+'</b> · SKU '+esc(l.sku||"—")+(l.barcode?' · code-barres '+esc(l.barcode):'')+' / taille <b>'+esc(l.variantTitle||"—")+'</b>'+(l.variantSku&&l.variantSku!==l.sku?' · variantSKU '+esc(l.variantSku):'')+((l.metafields&&l.metafields.length)?'<br>&nbsp;&nbsp;<span style="color:#7c3aed">metafields: '+l.metafields.map(function(mf){return esc(mf.ns)+'.'+esc(mf.key)+'='+esc(mf.value);}).join(' · ')+'</span>':'')+' '+(fsLineMatch(l,v,p)?(shopAssignedFor(o.id,i).length>=(l.qty||1)?'<span style="color:#166534">✅ taille OK · déjà servie</span>':'<span style="color:#166534">✅</span>'):(shopAssignedFor(o.id,i).length>=(l.qty||1)?'<span class="muted">(déjà servie)</span>':'<span style="color:#b91c1c">≠</span>'));}).join("<br>");
-        const _og=Date.parse(o.date||"")||0,_fg=Date.parse(p.flowstockTime||p.date||"")||0;const _gap=(_og&&_fg)?Math.round((_fg-_og)/86400000):null;const _gapTxt=(_gap===null)?"":(" · vente Shopify du "+(o.date?String(o.date).slice(0,10):"?")+" ("+(_gap===0?"même jour":("écart de "+Math.abs(_gap)+" j"))+")");detail='<div class="muted" style="font-size:12px;margin-top:4px">Pièce FlowStock : SKU <b>'+esc(shopVarSku(v))+'</b> (modèle '+esc(m.sku||"—")+') · taille EU <b>'+esc(shopSizeEU(v))+'</b>'+_gapTxt+'<br>Lignes Shopify de '+esc(o.name)+' :<br>'+lineInfo+'</div>';
+        const _og=Date.parse(o.date||"")||0,_fg=Date.parse(p.flowstockTime||p.date||"")||0;const _gap=(_og&&_fg)?Math.round((_fg-_og)/86400000):null;const _gapTxt=(_gap===null)?"":(" · vente Shopify du "+(o.date?String(o.date).slice(0,10):"?")+" ("+(_gap===0?"même jour":("écart de "+Math.abs(_gap)+" j"))+")");detail='<div class="muted" style="font-size:12px;margin-top:4px">Pièce fournisseur : SKU <b>'+esc(shopVarSku(v))+'</b> (modèle '+esc(m.sku||"—")+') · taille EU <b>'+esc(shopSizeEU(v))+'</b>'+_gapTxt+'<br>Lignes Shopify de '+esc(o.name)+' :<br>'+lineInfo+'</div>';
       }
       return '<div style="padding:6px 0;border-top:1px solid #eee"><b>'+esc(m.fr||"?")+'</b> — '+verdict+detail+'</div>';
     }).join("");
     return head+lines;
   }).join("");
-  el.innerHTML='<div class="tablecard" style="margin:10px 0;padding:12px 16px"><div style="font-weight:600;margin-bottom:2px">Diagnostic — 3 dernières commandes FlowStock</div>'+blocks+'</div>';
+  el.innerHTML='<div class="tablecard" style="margin:10px 0;padding:12px 16px"><div style="font-weight:600;margin-bottom:2px">Diagnostic — 3 dernières commandes fournisseur</div>'+blocks+'</div>';
 }
-function renderFlowstock(){var _b=document.getElementById("fsSyncBtn");if(_b){_b.textContent=fsEnabled()?"⏸ Mettre la synchro en pause":"▶ Reprendre (à partir de maintenant)";_b.style.color=fsEnabled()?"":"#16a34a";}
-  const root=document.getElementById("fsRoot");if(!root)return;
-  var _wf=watheSocId();
-  if(socFilter&&_wf!=null&&socFilter!=_wf){root.innerHTML='<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">FlowStock est rattaché à WATHE. Sélectionne « WATHE » (ou « Toutes les sociétés ») pour voir les remontées FlowStock.</td></tr>';var _t=document.getElementById("fsTodo");if(_t)_t.innerHTML="";var _p=document.getElementById("fsPager");if(_p)_p.innerHTML="";var _dg=document.getElementById("fsDiag");if(_dg)_dg.innerHTML="";return;}
-  (function(){
+/* ---------------------------------------------------------------------------
+   LES MODÈLES À COMPLÉTER, SOUS LA LISTE DES COMMANDES
+
+   Une commande importée crée ses fiches toute seule, mais deux choses ne
+   se devinent pas : le NOM du produit quand le SKU est une référence
+   fournisseur inconnue de KicksDB, et la GRILLE DE TAILLES. Sans elles la
+   paire existe en stock sans pouvoir être étiquetée ni mise en ligne.
+
+   Ce panneau vivait dans l'onglet FlowStock, et le Sourcing Hub se
+   contentait d'un bouton qui y renvoyait. L'onglet ayant disparu, le
+   panneau s'affiche ici — à la source du problème, pas à côté.
+   ------------------------------------------------------------------------- */
+function fsTodoPanel(){
+
     var _visMod=new Set();(DB.articles||[]).forEach(function(a){if(cutoffHides(a))return;var v=varById(a.varianteId);if(v&&v.modeleId!=null)_visMod.add(v.modeleId);});
     const todo=DB.modeles.filter(m=>m&&m.source==="flowstock"&&m.needsGrille&&_visMod.has(m.id));
     const el=document.getElementById("fsTodo");
@@ -11164,52 +11145,6 @@ function renderFlowstock(){var _b=document.getElementById("fsSyncBtn");if(_b){_b
       +'</div>'
     ):"";
     el.innerHTML=nameHtml+gridHtml+(function(){try{return fsDupPanelHtml();}catch(e){return "";}})();
-  })();
-
-  const list=DB.achats.filter(a=>a.source==="flowstock"&&!isShAchat(a)&&!cutoffHides(a)).sort(function(x,y){const dx=(x.flowstockTime||x.date||""),dy=(y.flowstockTime||y.date||"");if(dx<dy)return 1;if(dx>dy)return -1;return (y.id||0)-(x.id||0);});
-  const per=50,total=list.length,pages=Math.max(1,Math.ceil(total/per));if(_fsPage>=pages)_fsPage=pages-1;if(_fsPage<0)_fsPage=0;const pageList=list.slice(_fsPage*per,_fsPage*per+per);
-  const stFR={order_placed:"Commande passée",shipped:"Expédiée (fournisseur)",delivered:"Livrée (fournisseur)",cancelled:"Annulée"};
-  root.innerHTML=pageList.length?pageList.map(function(a){
-    const four=fourById(a.fournId)||{};
-    const pieces=flowstockPieces(a);const linked=pieces.filter(p=>p.shopifyOrderId).length;
-    const linkBadge=a.flowstockStatus==="cancelled"?'<span class="badge" style="background:#e5e7eb;color:#374151">—</span>':(pieces.length&&linked>=pieces.length?'<span class="badge" style="background:#dcfce7;color:#166534">Lié ✓</span>':(linked>0?'<span class="badge" style="background:#fef3c7;color:#92400e">Partiel '+linked+'/'+pieces.length+'</span>':'<span class="badge" style="background:#fee2e2;color:#b91c1c">À rattacher</span>'));
-    const items=(a.lignes||[]).map(function(l){const m=modeleById(l.modeleId)||{},v=varById(l.varianteId)||{};return esc(m.fr||l.rawSku||"?")+' <span class="muted">'+esc((v&&v.id?shopSizeEU(v):"")||l.rawSize||"")+(l.varianteId?"":" · non rattaché")+'</span>';}).join("<br>");
-    const trk=(a.tracking&&a.tracking.number)?('<a href="'+esc(a.tracking.url||"#")+'" target="_blank" style="color:var(--violet)">'+esc(a.tracking.carrier||"")+' '+esc(a.tracking.number)+'</a>'):'<span class="muted">—</span>';
-    const totalPrix=(a.lignes||[]).reduce((s,l)=>s+((+l.prixHT||0)*(+l.qte||1)),0);
-    return '<tr>'+
-      '<td><b>'+esc(a.flowstockRef||"—")+'</b><div class="muted" style="font-size:11px">Cmd. achat : '+esc(a.ref)+'</div></td>'+
-      '<td class="muted">'+esc(fsDateTime(a))+'</td>'+
-      '<td>'+esc(four.societe||four.nom||"—")+'</td>'+
-      '<td>'+items+'</td>'+
-      '<td>'+eur(totalPrix)+'</td>'+
-      '<td>'+(a.customerOrderNumber?('<span title="'+(linked>0?"Rattachée à la vente Shopify":"Commande web (pièce pas encore rattachée)")+'" style="display:inline-flex;align-items:center;gap:5px">'+(linked>0?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>':'')+'<b>'+esc(a.customerOrderNumber)+'</b></span>'):'<span class="muted">—</span>')+'</td>'+
-      '<td><span class="badge" style="background:#e0e7ff;color:#3730a3">'+esc(stFR[a.flowstockStatus]||a.flowstockStatus||"—")+'</span></td>'+
-      '<td>'+trk+'</td>'+
-      
-      '<td><div class="act"><button title="Modifier la commande / le produit" onclick="openAchat('+a.id+')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button title="Supprimer la commande et sa paire du stock" onclick="fsDeleteAchat('+a.id+')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button></div></td>'+
-    '</tr>';
-  }).join(""):'<tr><td colspan="9" class="muted" style="text-align:center;padding:22px">Aucune commande FlowStock pour le moment.</td></tr>';
-  const meta=document.getElementById("fsMeta");if(meta)meta.textContent=total+" commande"+(total>1?"s":"")+" FlowStock"+(pages>1?(" · page "+(_fsPage+1)+"/"+pages):"");
-  const pg=document.getElementById("fsPager");if(pg)pg.innerHTML=fsPagerHTML(_fsPage,pages);
-}
-function flowstockExampleJSON(){return JSON.stringify({purchase_id:"a3f1c2e4-7b90-4d22-9a11-6f0c2e8b4410",reference:"TURUM-RES-88231",created_at:"2026-06-14T13:02:11Z",supplier:{id:"f47ac10b-58cc-4372-a567-0e02b2c3d479",name:"Turum",type:"turum"},price:{amount:84.50,currency:"EUR"},status:"order_placed",customer_order:{id:"9c0b2a17-3e54-4c81-bb29-77d1f0a9c8e2",number:"#1042"},items:[{sku:"1203A609-110",size:"EU 42",quantity:1,unit_price:84.50}],tracking:{number:"JD0099887766",url:"https://track.dhl.com/JD0099887766",carrier:"DHL"}},null,2);}
-function flowstockOpenImport(){
-  const ex=flowstockExampleJSON();
-  const ov=document.createElement("div");
-  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10001;padding:20px";
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:640px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'+
-    '<h2 style="margin:0 0 6px;font-size:19px">Importer une commande FlowStock</h2>'+
-    '<div class="muted" style="margin-bottom:12px">Colle la réponse JSON de l\'API FlowStock (un achat, une liste, ou {"purchases":[…]}). Chaque commande crée une commande d\'achat et met le produit en stock.</div>'+
-    '<textarea id="fsJson" rows="12" style="width:100%;font-family:monospace;font-size:12px;box-sizing:border-box" placeholder="Colle le JSON ici…"></textarea>'+
-    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px">'+
-      '<button class="btn" id="fsEx">Charger l\'exemple</button>'+
-      '<div style="display:flex;gap:10px"><button class="btn" id="fsCancel">Annuler</button><button class="btn v" id="fsGo">Importer</button></div>'+
-    '</div></div>';
-  document.body.appendChild(ov);const close=()=>ov.remove();
-  ov.addEventListener("click",e=>{if(e.target===ov)close();});
-  ov.querySelector("#fsCancel").onclick=close;
-  ov.querySelector("#fsEx").onclick=()=>{ov.querySelector("#fsJson").value=ex;};
-  ov.querySelector("#fsGo").onclick=()=>{const txt=ov.querySelector("#fsJson").value.trim();if(!txt){alert("Colle le JSON d'abord (ou charge l'exemple).");return;}if(flowstockImport(txt).ok)close();};
 }
 let _fsAuto=null;
 function fsEnabled(){try{return localStorage.getItem("fsSync")!=="off";}catch(e){return true;}}
@@ -11299,11 +11234,11 @@ async function fsResolveDupes(opts){
       }
     });
   });
-  console.log("%c[FlowStock] "+(dry?"SIMULATION":"APPLIQUÉ"),"font-weight:bold");
+  console.log("%c[Sourcing Hub] "+(dry?"SIMULATION":"APPLIQUÉ"),"font-weight:bold");
   console.log(res.groups+" groupe(s) de doublons · "+res.removed.length+" commande(s) · "+res.pieces+" paire(s) fantôme(s)");
   if(res.removed.length)console.table(res.removed);
   if(res.skipped.length){console.warn("À trancher à la main :");console.table(res.skipped);}
-  if(!dry){await save();try{renderFlowstock();renderAchats();renderStock();renderDash();}catch(_){}}
+  if(!dry){await save();try{renderSourcingHub();renderAchats();renderStock();renderDash();}catch(_){}}
   res.resume=(dry?"SIMULATION — rien n'a été modifié.\n\n":"Correction appliquée.\n\n")
     +res.removed.length+" commande(s) en double à supprimer\n"
     +res.pieces+" paire(s) fantôme(s) retirée(s) du stock\n"
@@ -11323,7 +11258,7 @@ function fsPurgeOrphanModels(modelIds,dry){
   var ids=Array.from(new Set((modelIds||[]).filter(function(x){return x!=null;})));
   ids.forEach(function(mid){
     var m=modeleById(mid);if(!m)return;
-    if(m.source!=="flowstock"){out.kept.push({sku:m.sku||m.fr,why:"pas créé par FlowStock"});return;}
+    if(m.source!=="flowstock"){out.kept.push({sku:m.sku||m.fr,why:"pas créé par un import fournisseur"});return;}
     var vars=(DB.variantes||[]).filter(function(v){return v.modeleId==mid;});
     var vids=new Set(vars.map(function(v){return v.id;}));
     var nArt=(DB.articles||[]).filter(function(a){return vids.has(a.varianteId);}).length;
@@ -11380,7 +11315,7 @@ async function deleteAchatWithPieces(a){
     if(_sim.removed.length){
       var _lst=_sim.removed.map(function(x){return "• "+x.sku+" ("+x.nVar+" taille(s))";}).join("\n");
       if(confirm("Supprimer aussi la ou les fiche(s) produit devenue(s) vide(s) ?\n\n"+_lst
-        +"\n\nElles ont été créées par FlowStock, ne portent plus aucune paire et ne sont citées par aucune autre commande."))
+        +"\n\nElles ont été créées par un import fournisseur, ne portent plus aucune paire et ne sont citées par aucune autre commande."))
         _pm=fsPurgeOrphanModels(_candM,false);
     }
   }catch(_e){console.warn("purge modèles",_e);}
@@ -11407,26 +11342,54 @@ async function fsDeleteAchat(id){
   const a=(DB.achats||[]).find(function(x){return x.id==id;});
   if(!a){alert("Commande introuvable.");return;}
   if(await deleteAchatWithPieces(a)){
-    try{renderFlowstock();}catch(e){}try{renderAchats();}catch(e){}try{renderStock();}catch(e){}try{renderDash();}catch(e){}
+    try{renderSourcingHub();}catch(e){}try{renderAchats();}catch(e){}try{renderStock();}catch(e){}try{renderDash();}catch(e){}
   }
 }
 function fsKnownSet(){var s=new Set();try{JSON.parse(localStorage.getItem("fsKnown")||"[]").forEach(function(x){s.add(String(x));});}catch(e){}try{_fsKnownShared.forEach(function(x){s.add(String(x));});}catch(e){}return s;}
-function fsToggleSync(){if(fsEnabled()){try{localStorage.setItem("fsSync","off");}catch(e){}try{clearInterval(_fsAuto);_fsAuto=null;}catch(e){}location.reload();}else{fsResumeFromNow();}}
-async function fsResumeFromNow(){
-  if(!confirm("Reprendre FlowStock à partir de maintenant ?\n\nTous les achats actuellement chez FlowStock seront marqués comme « déjà traités » (non réimportés). Seuls les nouveaux achats à venir seront ajoutés."))return;
-  var meta=document.getElementById("fsMeta");if(meta)meta.textContent="Marquage de l'historique FlowStock…";
+/* ---------------------------------------------------------------------------
+   L'ANCIEN CANAL NE SE SONDE PLUS — MAIS ON LE SURVEILLE
+
+   Les fournisseurs sont passés sur le Sourcing Hub : Turum le 27/10, Golden
+   Sneakers le 23/10, ShoePlatform depuis le début. L'ancien canal direct n'a
+   donc plus à alimenter l'ERP, et son sondage automatique est arrêté.
+
+   Mais une bascule peut se défaire — un fournisseur qui repasse par l'ancienne
+   intégration, un réglage perdu côté Hub. Sans rien, ses commandes
+   cesseraient simplement d'arriver, et on s'en apercevrait à l'inventaire.
+
+   La vigie coûte un appel toutes les cinq minutes et ne RÉPARE rien
+   volontairement : elle compte ce qui traîne et le dit. Importer en douce
+   recréerait exactement le double canal qu'on vient de supprimer. Quand
+   l'ancien canal sera resté muet quelques semaines, cette fonction et le
+   moteur de sondage pourront partir.
+   ------------------------------------------------------------------------- */
+let _fsVigieDit=0;
+async function fsVigieAncienCanal(){
   try{
-    const r=await sb.functions.invoke("dynamic-handler",{body:{limit:200}});
-    if(r.error)throw r.error;const d=r.data||{};if(!d.ok)throw new Error(d.error||"Réponse FlowStock invalide");
-    const ids=(d.purchases||[]).map(function(x){return String(x.purchase_id);});
-    var prev=[];try{prev=JSON.parse(localStorage.getItem("fsKnown")||"[]");}catch(e){}
-    var merged=Array.from(new Set(prev.concat(ids)));
-    localStorage.setItem("fsKnown",JSON.stringify(merged));localStorage.setItem("fsSync","on");
-    alert(ids.length+" achat(s) historique(s) marqué(s) comme déjà traités.\nFlowStock réactivé : seuls les NOUVEAUX achats seront importés.");
-    location.reload();
-  }catch(e){if(meta)meta.textContent="";alert("Erreur FlowStock : "+(e&&e.message?e.message:e));}
+    const r=await sb.functions.invoke("dynamic-handler",{body:{limit:50}});
+    if(r.error||!r.data||!r.data.ok)return 0;
+    const purchases=(r.data.purchases||[]).filter(function(p){return p&&p.purchase_id;});
+    if(!purchases.length)return 0;
+    /* Une commande déjà importée porte son purchase_id dans flowstockId.
+       On ne compte donc QUE ce que l'ERP n'a jamais vu. */
+    const connus=new Set((DB.achats||[]).map(function(a){return String(a&&a.flowstockId||"");}));
+    const inconnus=purchases.filter(function(p){return !connus.has(String(p.purchase_id));});
+    if(!inconnus.length)return 0;
+    /* Une fois par session : répété toutes les cinq minutes, l'avertissement
+       deviendrait du bruit qu'on apprend à ignorer. */
+    if(!_fsVigieDit){
+      _fsVigieDit=1;
+      console.warn("[Ancien canal] "+inconnus.length+" commande(s) y sont arrivées et "
+        +"n'ont PAS été importées : "+inconnus.slice(0,5).map(function(p){
+          return p.purchase_id;}).join(", ")+(inconnus.length>5?"…":""));
+      try{alert(inconnus.length+" commande(s) fournisseur sont arrivées par l'ANCIEN canal, "
+        +"pas par le Sourcing Hub.\n\nElles n'ont pas été importées : l'ancien canal a été "
+        +"coupé le 28/10.\n\nVérifie côté Sourcing Hub que le fournisseur concerné y est bien "
+        +"raccordé, puis préviens-moi — je peux les rattraper.");}catch(_){}
+    }
+    return inconnus.length;
+  }catch(e){return 0;}   // l'ancien canal éteint renvoie une erreur : c'est le but
 }
-function flowstockAutoStart(){if(!fsEnabled())return;if(_fsAuto)return;setTimeout(function(){flowstockPull(true);},1500);_fsAuto=setInterval(function(){flowstockPull(true);},300000);}
 async function flowstockCacheLoad(){try{const r=await sb.from("flowstock_cache").select("data").eq("id",1).maybeSingle();if(r.error||!r.data)return null;return r.data.data||null;}catch(_){return null;}}
 async function flowstockCacheSave(purchases){try{await sb.from("flowstock_cache").upsert([{id:1,data:{purchases:purchases,savedAt:new Date().toISOString()}}]);}catch(_){}}
 var _sessId=Math.random().toString(36).slice(2)+"."+Date.now();
@@ -11470,27 +11433,27 @@ var _fsPullBusy=false;
 async function flowstockPull(auto){if(auto&&!fsEnabled())return;
   // Garde de ré-entrance : deux exécutions simultanées dans le même onglet
   // (auto + clic manuel, ou double clic) créaient chacune leur commande.
-  if(_fsPullBusy){if(!auto)alert("Un import FlowStock est déjà en cours.");return;}
+  if(_fsPullBusy){if(!auto)alert("Un import de l'ancien canal est déjà en cours.");return;}
   // Le verrou partagé s'applique AUSSI à l'import manuel : sans ça il court-circuitait
   // entièrement claimTask et pouvait tourner en parallèle de la synchro automatique.
   var _lockMs=auto?270000:0;
   var _claimed=await claimTask(100,_lockMs);
-  if(!_claimed){if(!auto)alert("Un import FlowStock est en cours sur un autre poste. Réessaie dans quelques secondes.");return;}
+  if(!_claimed){if(!auto)alert("Un import de l'ancien canal est en cours sur un autre poste. Réessaie dans quelques secondes.");return;}
   _fsPullBusy=true;
-  let meta=document.getElementById("fsMeta");if(!auto&&meta)meta.textContent="Connexion \u00e0 FlowStock\u2026";
+  let meta=document.getElementById("fsMeta");if(!auto&&meta)meta.textContent="Connexion \u00e0 l'ancien canal\u2026";
   try{
     const r=await sb.functions.invoke("dynamic-handler",{body:{limit:200}});
     if(r.error)throw r.error;
     const d=r.data||{};
-    if(!d.ok)throw new Error(d.error||"R\u00e9ponse FlowStock invalide");
+    if(!d.ok)throw new Error(d.error||"R\u00e9ponse de l'ancien canal invalide");
     const purchases=d.purchases||[];flowstockCacheSave(purchases);
     if(!auto&&meta)meta.textContent="";
     // Relecture de la table achats AVANT la déduplication : DB.achats date du login
     // et ne contient pas les commandes créées entre-temps par un autre poste.
     if(purchases.length){await fsRefreshAchats();flowstockImport(JSON.stringify({purchases:purchases}),auto);}
-    else if(!auto)alert("Aucune commande re\u00e7ue depuis FlowStock.");
+    else if(!auto)alert("Aucune commande re\u00e7ue depuis l'ancien canal.");
     try{await loadShopifyOrders();}catch(_){try{flowstockReconcile(true);}catch(__){}}
-  }catch(e){if(!auto&&meta)meta.textContent="";if(!auto)alert("Erreur FlowStock : "+(e&&e.message?e.message:e)+"\n\nV\u00e9rifie que l'Edge Function \"flowstock\" est d\u00e9ploy\u00e9e et que la cl\u00e9 API (FLOWSTOCK_API_KEY) est bien renseign\u00e9e dans Supabase.");}
+  }catch(e){if(!auto&&meta)meta.textContent="";if(!auto)alert("Erreur de l'ancien canal : "+(e&&e.message?e.message:e)+"\n\nV\u00e9rifie que l'Edge Function \"flowstock\" est d\u00e9ploy\u00e9e et que la cl\u00e9 API (FLOWSTOCK_API_KEY) est bien renseign\u00e9e dans Supabase.");}
   _fsPullBusy=false;
   try{await finishTask(100);}catch(e){}
 }
@@ -11523,8 +11486,8 @@ function fsDupPanelHtml(){
   var groups=fsDupGroups();if(!groups.length)return "";
   var n=groups.reduce(function(s,g){return s+(g.length-1);},0);
   return '<div class="tablecard" style="margin:10px 0;border:1px solid #fecaca;background:#fef2f2;padding:12px 18px">'
-    +'<div style="font-weight:600;color:#b91c1c;margin-bottom:4px">'+n+' commande(s) FlowStock en double détectée(s)</div>'
-    +'<div class="muted" style="font-size:12px;margin-bottom:10px">Même achat FlowStock importé plusieurs fois : une seule paire physique existe, les autres sont fantômes. « Résoudre » garde la commande rattachée à la vente Shopify et retire les copies avec leurs paires.</div>'
+    +'<div style="font-weight:600;color:#b91c1c;margin-bottom:4px">'+n+' commande(s) en double détectée(s)</div>'
+    +'<div class="muted" style="font-size:12px;margin-bottom:10px">Même achat importé plusieurs fois : une seule paire physique existe, les autres sont fantômes. « Résoudre » garde la commande rattachée à la vente Shopify et retire les copies avec leurs paires.</div>'
     +'<div style="margin-bottom:10px"><button class="btn g" style="padding:5px 12px;font-size:12px" onclick="fsRunResolveDupes()">Résoudre automatiquement</button></div>'
     +groups.map(function(g){
       return '<div style="border-top:1px solid #fee2e2;padding:8px 0">'
@@ -11561,7 +11524,7 @@ function fsDedupeAchats(){
   if(rmAch.size||rmPcs.size){
     DB.achats=(DB.achats||[]).filter(function(a){return !rmAch.has(a.id);});
     DB.articles=(DB.articles||[]).filter(function(p){return !rmPcs.has(p.id);});
-    logAct("FlowStock","Dédoublonnage",rmAch.size+" commande(s) d'achat en double retirée(s)");
+    logAct("Sourcing Hub","Dédoublonnage",rmAch.size+" commande(s) d'achat en double retirée(s)");
   }
   return rmAch.size;
 }
@@ -11578,7 +11541,7 @@ function fsRefreshFollow(a,p){
     if(!a.nFacture||a.nFacture===a.flowstockRef)a.nFacture=p.reference;   // n° saisi à la main : gardé
     a.flowstockRef=p.reference;ch=true;
   }
-  if(ch){try{logAct("FlowStock","Suivi",(a.ref||a.flowstockId)+(t?" · suivi "+(t.carrier?t.carrier+" ":"")+t.number:"")+" · "+(p.status||""));}catch(e){}}
+  if(ch){try{logAct("Sourcing Hub","Suivi",(a.ref||a.flowstockId)+(t?" · suivi "+(t.carrier?t.carrier+" ":"")+t.number:"")+" · "+(p.status||""));}catch(e){}}
   return ch;
 }
 /* Sourcing Hub : quand le fournisseur a expédié (numéro de suivi reçu sur l'achat), le suivi est
@@ -11755,7 +11718,7 @@ function flowstockImport(txt,silent){
        var aItems=(a.lignes||[]).map(function(l){return {sku:l.rawSku,size:l.rawSize,quantity:l.qte};});
        return _sig(a.flowstockRef||a.customerOrderNumber||"",aItems)===_key;
      })){nDup++;try{if(p.purchase_id!=null){_fsKnownShared.add(String(p.purchase_id));}}catch(e){}return;}}
-    const sname=((p.supplier||{}).name||"FlowStock").trim();
+    const sname=((p.supplier||{}).name||"Fournisseur inconnu").trim();
     let four=DB.fournisseurs.find(f=>(f.societe||f.nom||"").toLowerCase()===sname.toLowerCase());
     if(!four){const fid=newId(DB.fournisseurs);four={id:fid,type:"Professionnel",societe:sname,nom:sname,prenom:"",flowstockType:(p.supplier||{}).type||"",reg:"",pays:"France"};DB.fournisseurs.push(four);}
     // Identifiant DÉRIVÉ du purchase_id FlowStock, pas tiré au hasard.
@@ -11797,7 +11760,7 @@ function flowstockImport(txt,silent){
         piece.source="flowstock";piece.flowstockId=p.purchase_id;piece.flowstockOrderNumber=a.customerOrderNumber;piece.flowstockTime=a.flowstockTime;piece.rawSize=line.rawSize;nPieces++;}}
       else if(!v)nUnmatched++;
     });
-    DB.achats.push(a);nNew++;logAct("FlowStock","Import",a.ref+" · "+(p.reference||p.purchase_id));
+    DB.achats.push(a);nNew++;logAct("Sourcing Hub","Import",a.ref+" · "+(p.reference||p.purchase_id));
   });
   // Mémoire PARTAGÉE : tout achat vu ici est marqué « déjà traité » pour tous les postes,
   // afin qu'un poste vierge ne recrée pas un stock supprimé depuis (bug multi-utilisateur).
@@ -11809,7 +11772,7 @@ function flowstockImport(txt,silent){
   let linked=0;try{linked=flowstockReconcile(true);}catch(e){}
   let nTrk=0;try{nTrk=shAutoTracking();}catch(e){}
   try{var _vm=new Set();(DB.articles||[]).forEach(function(a){if(cutoffHides(a))return;var v=varById(a.varianteId);if(v&&v.modeleId!=null)_vm.add(v.modeleId);});(DB.modeles||[]).forEach(function(mm){if(mm&&mm.source==="flowstock"&&!mm._reEnrich2&&_vm.has(mm.id)){mm.enriched=0;mm._reEnrich2=1;}});}catch(e){}
-  renderFlowstock();try{renderAchats();}catch(e){}try{renderModeles();}catch(e){}try{fillSelects();}catch(e){}try{flowstockEnrichModels();}catch(e){}
+  renderSourcingHub();try{renderAchats();}catch(e){}try{renderModeles();}catch(e){}try{fillSelects();}catch(e){}try{flowstockEnrichModels();}catch(e){}
   if(!silent)alert("Import terminé.\n\n"+nNew+" commande(s) importée(s)"+(nDup?(", "+nDup+" déjà présente(s)"):"")+(nUpd?(", "+nUpd+" mise(s) à jour (suivi / statut)"):"")+".\n"+nPieces+" pièce(s) mise(s) en stock"+(nUnmatched?(",\n"+nUnmatched+" produit(s) non rattaché(s) — SKU/pointure inconnus au catalogue"):"")+".\n"+(linked?(linked+" pièce(s) liée(s) à une vente Shopify."):"Aucune liaison Shopify pour l'instant (ouvre l'onglet « Vente Shopify » pour charger les commandes, puis « Rattacher »)."));
   return {ok:true};
 }
@@ -11823,7 +11786,7 @@ function fsNormalizeSizes(){
     const us=fsEuToUs(v.taille,m.grille);
     if(us&&String(us)!==String(v.taille)){v.taille=us;nv++;}
   });
-  if(nv){try{save();}catch(e){}try{renderModeles();}catch(e){}try{renderFlowstock();}catch(e){}try{fillSelects();}catch(e){}}
+  if(nv){try{save();}catch(e){}try{renderModeles();}catch(e){}try{renderSourcingHub();}catch(e){}try{fillSelects();}catch(e){}}
   return nv;
 }
 function fsLineMatch(l,v,a){
@@ -11844,7 +11807,7 @@ function fsPickLine(o,v,a){
   return -1;   // toutes les lignes de la commande sont déjà servies
 }
 /* ============================================================================
-   SOURCING HUB — même système que FlowStock.
+   SOURCING HUB — l'unique canal d'import fournisseur depuis le 28/10/2026.
    Le Sourcing Hub publie ses commandes fournisseurs au FORMAT FLOWSTOCK dans
    flowstock_cache (ligne 10). On les fait passer dans flowstockImport : même
    commande d'achat, même mise en stock, même rattachement Shopify par n° de
@@ -11855,7 +11818,14 @@ const SH_ROW=10;
 function isShAchat(a){return !!a&&a.source==="flowstock"&&(a.supplierType==="sourcing-hub"||String(a.flowstockId||"").indexOf("sh-")===0);}
 async function shCacheLoad(){try{const r=await sb.from("flowstock_cache").select("data").eq("id",SH_ROW).maybeSingle();if(r.error||!r.data)return null;return r.data.data||null;}catch(_){return null;}}
 let _shAuto=null,_shPullBusy=false,_shPage=0;
-function shAutoStart(){try{shCoefWatch();}catch(e){}if(_shAuto)return;setTimeout(function(){shPull(true);},2500);_shAuto=setInterval(function(){shPull(true);},300000);}
+function shAutoStart(){try{shCoefWatch();}catch(e){}if(_shAuto)return;
+  setTimeout(function(){shPull(true);},2500);
+  _shAuto=setInterval(function(){shPull(true);},300000);
+  /* La vigie suit le même rythme que l'import, mais décalée : elle lit
+     l'ancien canal pendant que le Hub ne travaille pas. */
+  setTimeout(function(){fsVigieAncienCanal();},20000);
+  setInterval(function(){fsVigieAncienCanal();},300000);
+}
 async function shPull(auto){
   if(_shPullBusy){if(!auto)alert("Un import Sourcing Hub est déjà en cours.");return;}
   var _claimed=await claimTask(101,auto?270000:0);
@@ -11877,12 +11847,13 @@ function shGoto(n){_shPage=n;renderSourcingHub();}
 function renderSourcingHub(){
   const root=document.getElementById("shRoot");if(!root)return;
   var _wf=watheSocId();
-  if(socFilter&&_wf!=null&&socFilter!=_wf){root.innerHTML='<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">Le Sourcing Hub est rattaché à WATHE. Sélectionne « WATHE » (ou « Toutes les sociétés ») pour voir ses commandes.</td></tr>';var _p0=document.getElementById("shPager");if(_p0)_p0.innerHTML="";return;}
-  const list=DB.achats.filter(a=>isShAchat(a)&&!cutoffHides(a)).sort(function(x,y){const dx=(x.flowstockTime||x.date||""),dy=(y.flowstockTime||y.date||"");if(dx<dy)return 1;if(dx>dy)return -1;return (y.id||0)-(x.id||0);});
-  // modèles créés par ces commandes et encore à compléter : on renvoie vers l'onglet FlowStock (même outil)
-  (function(){var el=document.getElementById("shTodo");if(!el)return;var mids=new Set();list.forEach(function(a){(a.lignes||[]).forEach(function(l){if(l.modeleId!=null)mids.add(l.modeleId);});});
-    var n=(DB.modeles||[]).filter(function(m){if(!m||!mids.has(m.id)||m.source!=="flowstock")return false;var f=String(m.fr||"").trim().toLowerCase(),sk=String(m.sku||"").trim().toLowerCase();return m.needsGrille||!f||f===sk;}).length;
-    el.innerHTML=n?'<div class="tablecard" style="margin:10px 0;border:1px solid #fde68a;background:#fffbeb;padding:12px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:600;color:#92400e">'+n+' modèle(s) à compléter (nom ou grille de tailles)</div><button class="btn" onclick="show(\'flowstock\',document.querySelector(\'.item[data-view=&quot;flowstock&quot;]\'));renderFlowstock();">Compléter dans FlowStock</button></div>':"";})();
+  if(socFilter&&_wf!=null&&socFilter!=_wf){root.innerHTML='<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">Les commandes fournisseur sont rattachées à WATHE. Sélectionne « WATHE » (ou « Toutes les sociétés ») pour les voir.</td></tr>';var _p0=document.getElementById("shPager");if(_p0)_p0.innerHTML="";return;}
+  /* TOUTES les commandes fournisseur automatiques, pas seulement celles du
+     Hub : l'ancien canal en a laissé des milliers, et les cacher ferait
+     disparaître l'historique de l'écran le jour où l'onglet FlowStock
+     a été retiré. */
+  const list=DB.achats.filter(a=>a&&a.source==="flowstock"&&!cutoffHides(a)).sort(function(x,y){const dx=(x.flowstockTime||x.date||""),dy=(y.flowstockTime||y.date||"");if(dx<dy)return 1;if(dx>dy)return -1;return (y.id||0)-(x.id||0);});
+  try{fsTodoPanel();}catch(_){}
   const per=50,total=list.length,pages=Math.max(1,Math.ceil(total/per));if(_shPage>=pages)_shPage=pages-1;if(_shPage<0)_shPage=0;const pageList=list.slice(_shPage*per,_shPage*per+per);
   const stFR={order_placed:"Commande passée",shipped:"Expédiée (fournisseur)",delivered:"Livrée (fournisseur)",cancelled:"Annulée"};
   root.innerHTML=pageList.length?pageList.map(function(a){
@@ -11950,7 +11921,7 @@ function flowstockReconcile(silent){
        cette commande, puis expédiée et facturée, n'est justement plus en
        stock : elle était donc écartée pour toujours et n'apparaissait jamais
        dans sa ligne de vente, alors que c'est elle qui est partie.
-       Le numéro de commande FlowStock, lui, dit pour QUELLE commande la paire
+       Le numéro de commande fournisseur, lui, dit pour QUELLE commande la paire
        a été achetée — il ne devient pas faux parce que la paire est sortie.
        On ne garde donc qu'une exclusion : une paire perdue n'a servi aucune
        vente et n'a rien à faire sur une ligne. Les autres garde-fous restent
@@ -11970,8 +11941,8 @@ function flowstockReconcile(silent){
     const idx=fsPickLine(o,null,null);if(idx<0)return; // commande pleine
     a.shopifyOrderId=o.id;a.shopifyOrderName=o.name;a.shopifyLineIdx=idx;a.autoLinked=1;a.maj=today();n++;
   });
-  if(n){logAct("FlowStock","Rattachement Shopify",n+" pièce(s) mises à jour");save();renderFlowstock();}
-  else if(!silent)alert("Aucune pièce FlowStock à rattacher (déjà liées, ou commande Shopify introuvable par numéro).");
+  if(n){logAct("Sourcing Hub","Rattachement Shopify",n+" pièce(s) mises à jour");save();renderSourcingHub();}
+  else if(!silent)alert("Aucune pièce fournisseur à rattacher (déjà liées, ou commande Shopify introuvable par numéro).");
   return n;
 }
 function factClearFilters(){["factQ","factType","factSource","factSoc","factBuyer","factStatut","factPay","factFrom","factTo"].forEach(id=>{const el=document.getElementById(id);if(el)el.value="";});renderFactures();}
