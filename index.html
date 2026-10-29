@@ -9607,7 +9607,10 @@ function shopUndoReturn(orderId){
     a.shopifyOrderId=(s.orderId!=null?s.orderId:o.id);
     a.shopifyOrderName=(s.orderName!=null?s.orderName:o.name);
     if(s.lineIdx!=null)a.shopifyLineIdx=s.lineIdx;
-    else{var _li=(typeof fsPickLine==="function")?fsPickLine(o,null,null):0;a.shopifyLineIdx=(_li>=0?_li:0);}
+    else{var _li=(typeof fsPickLine==="function")?fsPickLine(o,varById(a.varianteId),a):0;
+         /* Repli sur la ligne 0 : on annule un retour, la paire DOIT
+            retrouver sa commande meme si plus rien ne la departage. */
+         a.shopifyLineIdx=(_li>=0?_li:0);}
     if(s.invoiced)a.shopifyInvoiced=s.invoiced;
     if(s.invoiceNum)a.shopifyInvoiceNum=s.invoiceNum;
     if(s.tracking)a.shopifyTracking=s.tracking;
@@ -10457,7 +10460,10 @@ function mergeDupOrders(){try{if(!Array.isArray(DB.shopDupOrders))DB.shopDupOrde
     if(a.archived||!a.shopifyOrderId||a.shopifyLineIdx!=null)return;
     var o=_shopOrders.find(function(x){return x&&x.id===a.shopifyOrderId;});
     if(!o)return;                       // commande hors de la page chargée : on n'y touche pas
-    var li=(typeof fsPickLine==="function")?fsPickLine(o,null,null):0;
+    var li=(typeof fsPickLine==="function")?fsPickLine(o,varById(a.varianteId),a):0;
+    /* Deja rattachee a la commande : il ne manque que le numero de ligne.
+       On la pose donc meme sans correspondance, sinon elle resterait
+       invisible sur la vente. */
     a.shopifyLineIdx=(li>=0?li:0);
   });
   // récupère copies + commandes annulées présentes dans le cache chargé
@@ -11798,13 +11804,63 @@ function fsLineMatch(l,v,a){
   const skuOk=(vskuN&&norm(l.sku)===vskuN)||(mskuN&&hay.includes(mskuN));
   const cands=fsSizeCandidates(v,a);
   const vt=numNorm(l.variantTitle);
-  const sizeOk=(vt&&cands.length)?cands.some(function(t){return t===vt||vt.indexOf(t)>=0;}):false;
+  /* La comparaison de taille était une INCLUSION : « 43 ».indexOf dans
+     « 43.5 » vaut 0, donc une paire en 43 correspondait à une ligne en 43.5.
+     Sur une commande mêlant les deux pointures, c'est précisément le cas où
+     il ne faut pas se tromper. On compare donc la valeur, pas le texte : à
+     l'identique, ou numériquement égale pour absorber « 43 EU » et « EU 43 »
+     que numNorm ramène déjà à « 43 ». */
+  const memeTaille=function(t){
+    if(!t)return false;
+    if(t===vt)return true;
+    var a1=parseFloat(t),b1=parseFloat(vt);
+    return isFinite(a1)&&isFinite(b1)&&Math.abs(a1-b1)<1e-9;
+  };
+  const sizeOk=(vt&&cands.length)?cands.some(memeTaille):false;
   return sizeOk||skuOk;   // taille OU sku (le SKU Shopify est souvent un ID numérique inutilisable)
 }
+/* ---------------------------------------------------------------------------
+   SUR QUELLE LIGNE DE LA COMMANDE POSER CETTE PAIRE ?
+
+   La fonction recevait déjà la variante et la pièce — et ne les regardait
+   pas. Elle rendait la PREMIÈRE ligne non servie, quelle que soit la paire.
+   Sur une commande à une ligne c'est toujours juste ; à deux lignes, la
+   première paire traitée prenait la ligne 1 même si elle correspondait à la
+   ligne 2, et la seconde héritait de la place restante. Les deux produits se
+   retrouvaient croisés.
+
+   Vu sur la commande #8074 : une Nike P-6000 en 43 posée sur la ligne ASICS,
+   et l'ASICS Gel-NYC en 43.5 sur la ligne Nike. L'ERP affichait même
+   l'avertissement « le produit assigné semble différent » sur les deux
+   lignes — il voyait le problème sans l'empêcher.
+
+   CE QU'ON FAIT MAINTENANT, dans l'ordre :
+
+     1. une ligne libre qui CORRESPOND à la paire (même modèle ou même
+        taille, via fsLineMatch) ;
+     2. sinon, s'il ne reste QU'UNE ligne libre, elle : le numéro de commande
+        a déjà prouvé le lien, et sur une commande d'une seule ligne il n'y a
+        rien à départager — c'est le cas courant, il ne doit pas régresser ;
+     3. sinon RIEN. Plusieurs lignes libres et aucune ne correspond : deviner
+        rendrait une erreur invisible. Non assignée, la paire reste affichée
+        comme à faire et se corrige en deux clics ; mal assignée, elle part en
+        facture sous le mauvais produit.
+   ------------------------------------------------------------------------- */
 function fsPickLine(o,v,a){
   if(!o)return -1;
-  for(let i=0;i<(o.lines||[]).length;i++){if(shopAssignedFor(o.id,i).length<(((o.lines[i]||{}).qty)||1))return i;}
-  return -1;   // toutes les lignes de la commande sont déjà servies
+  var lignes=(o.lines||[]);
+  var libres=[];
+  for(var i=0;i<lignes.length;i++){
+    if(shopAssignedFor(o.id,i).length<((lignes[i]||{}).qty||1))libres.push(i);
+  }
+  if(!libres.length)return -1;                 // toutes les lignes sont servies
+  if(v){
+    for(var k=0;k<libres.length;k++){
+      try{ if(fsLineMatch(lignes[libres[k]],v,a))return libres[k]; }catch(_){}
+    }
+  }
+  if(libres.length===1)return libres[0];       // rien à départager
+  return -1;                                   // on ne devine pas
 }
 /* ============================================================================
    SOURCING HUB — l'unique canal d'import fournisseur depuis le 28/10/2026.
@@ -11938,7 +11994,10 @@ function flowstockReconcile(silent){
        manualLink, que l'étape de détachement ci-dessus respecte). */
     if(a.shopifyReturnedFrom&&normNum(a.shopifyReturnedFrom)===onum)return;
     const o=_shopOrders.find(function(x){return x&&!x.cancelled&&normNum(x.name)===onum;});if(!o)return;
-    const idx=fsPickLine(o,null,null);if(idx<0)return; // commande pleine
+    /* La variante et la piece sont passees : sans elles, fsPickLine ne peut
+       que prendre la premiere place libre et croise les produits. */
+    const idx=fsPickLine(o,varById(a.varianteId),a);
+    if(idx<0)return;   // commande pleine, ou aucune ligne ne correspond
     a.shopifyOrderId=o.id;a.shopifyOrderName=o.name;a.shopifyLineIdx=idx;a.autoLinked=1;a.maj=today();n++;
   });
   if(n){logAct("Sourcing Hub","Rattachement Shopify",n+" pièce(s) mises à jour");save();renderSourcingHub();}
