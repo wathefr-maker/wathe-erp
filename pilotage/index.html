@@ -1131,9 +1131,21 @@ function reTagSet(id,tag){
 /* Les trois boutons, plus un pour reposer à vide. Servent sur la ligne de
    réassort ET dans le panneau d'une case du mur : « à liquider » doit pouvoir
    se poser sur une référence qui n'est pas dans l'onglet réassort. */
-function reTagSetHTML(m){
+function reTagSetHTML(m,ou){
   var pose=reTagDe(m);
-  var h=Object.keys(RE_TAGS).map(function(k){
+  /* OÙ SE POSE QUOI.
+     « À liquider » est une décision de rayon : elle se prend devant le mur,
+     en regardant la case et ce qu'elle rapporte. L'onglet réassort, lui, ne
+     parle que de ce qu'on reprend — y proposer « à liquider » reviendrait à
+     demander d'arrêter un produit au milieu de la liste de ce qu'on commande.
+     On la garde donc au mur.
+     Une exception : si elle est DÉJÀ posée, l'onglet réassort l'affiche quand
+     même. Sinon la ligne dirait « on écoule » sans que rien n'explique
+     pourquoi, et il faudrait retourner au mur pour revenir en arrière. */
+  var cles=Object.keys(RE_TAGS).filter(function(k){
+    return (k!=="liquider")||(ou==="mur")||(pose==="liquider");
+  });
+  var h=cles.map(function(k){
     return '<button class="reTgB'+(pose===k?' on '+RE_TAGS[k].cls:'')+'" title="'
       +esc(RE_TAGS[k].d)+'" onclick="reTagSet('+m.id+',\''+k+'\')">'
       +esc(RE_TAGS[k].t)+'</button>';}).join("");
@@ -3067,7 +3079,7 @@ function murReglage(){
        références qui ne sont PAS dans l'onglet réassort : si le seul endroit
        pour la poser était cet onglet, il faudrait d'abord déclarer essentiel
        un produit qu'on veut justement arrêter de reprendre. */
-    +'<div class="murTgL">Étiquette'+reTagSetHTML(m)+'</div>'
+    +'<div class="murTgL">Étiquette'+reTagSetHTML(m,"mur")+'</div>'
     +'<div class="pnCorps">'
       +tete
       +bloc("Ce que la case rapporte",equation)
