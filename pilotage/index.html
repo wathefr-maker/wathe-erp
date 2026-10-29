@@ -293,6 +293,55 @@ body{background:var(--bg,#f8fafc);margin:0}
 .sz.vide{background:#fef2f2;border-color:#fecaca}
 .sz.vide b,.sz.vide i{color:#b91c1c}
 
+/* LES TROIS ÉTIQUETTES DE RÉASSORT.
+   Elles ne disent pas un niveau — ça, c'est le travail de la couleur de la
+   case et des pastilles ok/warn/bad. Elles disent une INTENTION, posée à la
+   main : garder en rayon, suivre parce que ça marche, faire partir. Trois
+   formes nettement différentes pour qu'on ne les confonde pas avec un verdict :
+     TODS        creuse et grise — le basique est l'état par défaut, il n'a
+                 aucune raison de crier.
+     Best seller remplie dans l'accent du tableau, celui qui dit déjà « c'est
+                 celle-là ».
+     À liquider  la seule pleine et sombre. C'est la seule qui RETOURNE le
+                 comportement de l'outil, c'est donc la seule qui doit sauter
+                 aux yeux — et l'encre ne risque pas d'être lue comme un
+                 score, contrairement à un rouge ou un ambre. */
+.reTg,.murTg{display:inline-block;border-radius:4px;font-weight:800;
+  letter-spacing:.02em;white-space:nowrap;vertical-align:middle}
+.reTg{margin-right:7px;padding:2px 7px;font-size:10px;line-height:1.5}
+.murTg{float:right;margin:0 0 0 5px;
+  padding:0 calc(4px * var(--mz,1));font-size:calc(8.5px * var(--mz,1));
+  line-height:calc(14px * var(--mz,1))}
+.tg-tods{background:#fff;color:#64748b;box-shadow:inset 0 0 0 1px #cbd5e1}
+/* LE BOUTON CHOISI.
+   Les trois teintes ci-dessus et .reTgB ont la MÊME spécificité (une classe).
+   .reTgB venant après, son fond blanc écrasait tranquillement celui de
+   .tg-best et de .tg-liq : seul TODS s'allumait, parce qu'il était le seul à
+   avoir une règle à deux classes. On redit donc les trois états choisis en
+   .reTgB.on.<teinte>, à spécificité égale entre eux — pas une seule règle
+   qui compterait sur l'ordre du fichier.
+   Et TODS, creux en pastille (un basique n'a pas à crier), se remplit ici :
+   dans un sélecteur, la règle est choisi = plein, pas choisi = creux. */
+.reTgB.on.tg-tods{background:#e2e8f0;color:#334155;box-shadow:none}
+.reTgB.on.tg-best{background:var(--violet-soft);color:#1d4ed8}
+.reTgB.on.tg-liq {background:var(--ink);color:#fff}
+.tg-best{background:var(--violet-soft);color:#1d4ed8}
+.tg-liq {background:var(--ink);color:#fff}
+/* Le sélecteur, sur la ligne de réassort : trois cases à cocher qui s'excluent,
+   et on voit laquelle est prise sans avoir à ouvrir quoi que ce soit. */
+.reTgSet{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.reTgB{border:1px solid var(--line);background:#fff;color:#94a3b8;
+  padding:2px 7px;border-radius:4px;font:800 10px/1.5 inherit;
+  letter-spacing:.02em;cursor:pointer;white-space:nowrap}
+.reTgB:hover{border-color:#cbd5e1;color:var(--muted)}
+.reTgB.on{border-color:transparent}
+.reTgB.reTgX{font-size:12px;line-height:1.2;padding:1px 6px;color:#94a3b8}
+/* Dans le panneau d'une case : libellé à gauche, boutons à droite, sur la
+   même ligne que la position — c'est un réglage, pas une donnée. */
+.murTgL{display:flex;align-items:center;gap:10px;padding:0 18px 12px;
+  font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--muted);
+  text-transform:uppercase}
+.murTgL .reTgSet{margin-top:0}
 .bdg{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap}
 .bdg.warn{background:#fef3c7;color:#92400e}
 .bdg.ok{background:#dcfce7;color:#166534}
@@ -555,8 +604,12 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murFmt input{width:56px;padding:5px 7px;border:1px solid var(--line);border-radius:8px;font-size:13px;
   font-family:inherit;text-align:right}
 
-/* Panneau d'une case. */
-.murRg{border-color:#bfdbfe}
+/* Panneau d'une case, et panneau « Poser un modele ».
+   Ils s'appelaient .murRg — le nom de la PASTILLE de rang, juste au-dessus.
+   Ils heritaient donc de son float:right, de ses 16 px de cote et de son
+   fond vert : le panneau de recherche se repliait en une barre verte
+   posee en travers du mur. Deux choses differentes, deux noms. */
+.murPan{border-color:#bfdbfe}
 
 /* Recherche d'un modèle à poser. */
 .murQ{width:calc(100% - 36px);margin:15px 18px 0;padding:9px 12px;border:1px solid var(--line);
@@ -1026,12 +1079,90 @@ function reMatch(q){q=String(q||"").toLowerCase().trim();if(!q)return [];var tok
 function reAddSug(){var inp=document.getElementById("reAddSearch"),box=document.getElementById("reAddSug");if(!inp||!box)return;var q=(inp.value||"").trim();if(!q){box.style.display="none";box.innerHTML="";return;}var list=reMatch(q).slice(0,14);if(!list.length){box.innerHTML='<div style="padding:9px 12px;color:var(--muted);font-size:13px">Aucun modèle trouvé pour « '+esc(q)+' ».</div>';box.style.display="block";return;}box.innerHTML=list.map(function(m){return '<div class="reSug" data-id="'+m.id+'" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px"><b>'+esc(m.fr||m.sku||"?")+'</b> <span class="muted">'+esc(m.sku||"")+(m.marque?" · "+esc(m.marque):"")+'</span></div>';}).join("");box.style.display="block";[].slice.call(box.querySelectorAll(".reSug")).forEach(function(el){el.onmousedown=function(e){e.preventDefault();reAddPick(+el.dataset.id);};el.onmouseenter=function(){el.style.background="#f8fafc";};el.onmouseleave=function(){el.style.background="";};});}
 function reAddPick(id){_reSel=id;var m=modeleById(id)||{};var inp=document.getElementById("reAddSearch");if(inp)inp.value=(m.fr||m.sku||"");var box=document.getElementById("reAddSug");if(box){box.style.display="none";box.innerHTML="";}}
 function reAdd(){var m=_reSel?modeleById(_reSel):null;if(!m){var inp=document.getElementById("reAddSearch");var mm=reMatch(inp&&inp.value);if(mm.length===1)m=mm[0];else if(mm.length>1){alert("Plusieurs produits correspondent — choisis-en un dans la liste.");return;}}if(!m){alert("Aucun produit trouvé. Tape un nom ou un SKU, puis choisis-le dans la liste.");return;}m.essentiel=true;m.cibles=m.cibles||{};if(!m.todsGrille){m.todsGrille=(m.grille&&DB.grilles[m.grille])?m.grille:(reGrilleKeys()[0]||"");}_reSel=null;_reOpen=m.id;var inp2=document.getElementById("reAddSearch");if(inp2)inp2.value="";logAct("TODS","Ajout essentiel",(m.fr||m.sku||""));save();renderReassort();}
+/* ---------------------------------------------------------------------------
+   LES TROIS ÉTIQUETTES
+
+   « Produit essentiel » disait qu'on suivait la référence, pas POURQUOI. Or
+   les deux raisons de réassortir ne se pilotent pas pareil :
+
+     TODS        un basique : il doit être là en permanence, quelle que soit
+                 sa performance du moment. On le reprend même mou.
+     Best seller on le reprend PARCE QU'il cartonne. Le jour où il ralentit,
+                 la raison de le reprendre disparaît avec.
+     À liquider  l'inverse des deux : on écoule, on ne reprend plus.
+
+   « À liquider » n'est donc pas une nuance d'affichage. Une référence qu'on
+   écoule et qu'on réassortit en même temps, c'est de l'argent qui tourne en
+   rond : son manque est ramené à zéro, et c'est dit sur la ligne.
+
+   L'étiquette vit sur la fiche modèle (m.reTag), à côté de m.essentiel. Les
+   produits suivis avant l'arrivée des étiquettes sont des TODS : c'est ce que
+   l'onglet voulait dire quand il n'y avait qu'une catégorie. */
+var RE_TAGS={
+  tods:    {t:"TODS",        cls:"tg-tods", d:"Basique — à toujours avoir en rayon"},
+  best:    {t:"Best seller", cls:"tg-best", d:"Réassorti parce qu'il cartonne"},
+  liquider:{t:"À liquider",  cls:"tg-liq",  d:"On écoule — plus de réassort"}
+};
+function reTagDe(m){
+  var t=m&&m.reTag;
+  if(t&&RE_TAGS[t])return t;
+  return (m&&m.essentiel)?"tods":"";      // le défaut historique
+}
+function reTagSet(id,tag){
+  var m=modeleById(id);if(!m)return;
+  if(tag&&!RE_TAGS[tag])return;
+  if(reTagDe(m)===tag)return;            // deja pose, rien a ecrire
+  if(tag){
+    m.reTag=tag;
+    /* Étiqueter une référence qu'on ne suivait pas revient à la suivre — sauf
+       « à liquider », qui est justement l'inverse et doit pouvoir se poser sur
+       n'importe quelle référence du mur. */
+    if(tag!=="liquider")m.essentiel=true;
+  }else{
+    /* Reposer à vide. Un clic de travers sur « à liquider » couperait le
+       réassort sans rien dire : il faut pouvoir revenir en arrière. Sur une
+       référence suivie, vide veut dire TODS — c'est ce que « essentiel »
+       signifiait avant les étiquettes. */
+    delete m.reTag;
+  }
+  logAct("TODS","Étiquette",(m.fr||m.sku||"")+" → "+(tag?RE_TAGS[tag].t:"aucune"));
+  save();try{renderReassort();}catch(e){}try{renderMur();}catch(e){}
+}
+/* Les trois boutons, plus un pour reposer à vide. Servent sur la ligne de
+   réassort ET dans le panneau d'une case du mur : « à liquider » doit pouvoir
+   se poser sur une référence qui n'est pas dans l'onglet réassort. */
+function reTagSetHTML(m){
+  var pose=reTagDe(m);
+  var h=Object.keys(RE_TAGS).map(function(k){
+    return '<button class="reTgB'+(pose===k?' on '+RE_TAGS[k].cls:'')+'" title="'
+      +esc(RE_TAGS[k].d)+'" onclick="reTagSet('+m.id+',\''+k+'\')">'
+      +esc(RE_TAGS[k].t)+'</button>';}).join("");
+  if(pose)h+='<button class="reTgB reTgX" title="Retirer l\'étiquette" '
+    +'onclick="reTagSet('+m.id+',\'\')">×</button>';
+  return '<div class="reTgSet">'+h+'</div>';
+}
+/* La pastille, telle qu'elle apparaît sur une case du mur et sur une ligne de
+   réassort. Rien si la référence n'est pas étiquetée : une pastille vide
+   n'apprend rien et mange la place du nom. */
+function reTagBadge(m,taille){
+  var t=reTagDe(m);if(!t)return "";
+  var d=RE_TAGS[t];
+  return '<span class="'+(taille||"reTg")+' '+d.cls+'" title="'+esc(d.d)+'">'
+    +esc(d.t)+'</span>';
+}
 function reToggleRow(id){_reOpen=(_reOpen==id)?null:(+id);renderReassort();}
 function reSetGrille(id,g){var m=modeleById(id);if(!m)return;m.todsGrille=g;save();renderReassort();}
 function reSizeToggle(id,size,on){var m=modeleById(id);if(!m)return;m.cibles=m.cibles||{};if(on){if(m.cibles[size]==null)m.cibles[size]=1;}else{delete m.cibles[size];}save();renderReassort();}
 function reSetCible(id,size,val){var m=modeleById(id);if(!m)return;m.cibles=m.cibles||{};m.cibles[size]=Math.max(0,parseInt(val,10)||0);save();renderReassort();}
 function reRemove(id){var m=modeleById(id);if(!m)return;if(!confirm("Retirer « "+(m.fr||m.sku||"")+" » des produits essentiels ?"))return;m.essentiel=false;if(_reOpen==id)_reOpen=null;save();renderReassort();}
-function reRows(){var rows=[];reEssentiels().forEach(function(m){reModelRows(m).forEach(function(r){rows.push(r);});});return rows;}
+function reRows(){
+  var rows=[];
+  reEssentiels().forEach(function(m){
+    if(reTagDe(m)==="liquider")return;   // on écoule : rien à recommander
+    reModelRows(m).forEach(function(r){rows.push(r);});
+  });
+  return rows;
+}
 /* Ramène une clé de taille (US brut OU EU) à sa pointure US canonique, pour
    dédoublonner les cibles qui désignent la même pointure (ex. "9" US == "42.5" EU). */
 function reCanonSize(m,key){
@@ -1142,9 +1273,14 @@ function reProduits(){
   return reEssentiels().map(function(m){
     var sizes=reCardSizes(m);
     var suivies=sizes.filter(function(s){return s.on;});
-    return {m:m, sizes:sizes, suivies:suivies,
-      manque:suivies.reduce(function(n,s){return n+s.manque;},0),
-      nbTaillesManque:suivies.filter(function(s){return s.manque>0;}).length};
+    /* Une référence qu'on écoule ne se réassortit pas. On garde ses tailles
+       et ses cibles — elles resserviront si tu la remets en TODS — mais le
+       manque tombe à zéro, sinon elle continuerait à réclamer des paires
+       qu'on cherche justement à faire partir. */
+    var liq=(reTagDe(m)==="liquider");
+    return {m:m, sizes:sizes, suivies:suivies, liquider:liq,
+      manque:liq?0:suivies.reduce(function(n,s){return n+s.manque;},0),
+      nbTaillesManque:liq?0:suivies.filter(function(s){return s.manque>0;}).length};
   }).sort(function(a,b){
     // Ce qui manque passe devant : c'est ce qu'on vient voir.
     if(a.manque!==b.manque)return b.manque-a.manque;
@@ -1177,13 +1313,28 @@ function reRenderLignes(prods){
 
     var ligne='<div class="rr'+(mq>0?" urg":"")+(reglage?" reg":"")+'">'
       +'<div class="rrP">'
+        /* Pas de pastille ici : le bloc du nom est en nowrap + ellipse, et la
+           pastille lui prenait assez de place pour couper « adidas Samba OG
+           Cloud White » en « adidas Samba OG Clou… ». Elle ne disait rien que
+           le sélecteur, juste en dessous, ne dise déjà en montrant le bouton
+           allumé. Sur le mur c'est l'inverse : il n'y a pas de sélecteur, la
+           pastille y est le seul porteur de l'information. */
         +'<div class="rrN">'+esc(m.fr||m.sku||"?")+'</div>'
         +'<div class="rrS">'+esc(m.sku||"")+(m.marque?(' · '+esc(m.marque)):'')+'</div>'
+        /* Le choix se fait ICI, sur la ligne, pas dans le panneau replié :
+           c'est une décision qu'on prend en balayant la liste, pas en
+           ouvrant une fiche. */
+        +reTagSetHTML(m)
       +'</div>'
       +'<div class="rrZ">'+milieu+'</div>'
       +'<div class="rrE">'
-        +(mq>0?('<span class="bdg warn">+'+acPl(mq,"paire")+'</span>')
-              :(suivies.length?'<span class="bdg ok">au niveau</span>':'<span class="bdg neu">—</span>'))
+        +(P.liquider
+          ? '<span class="bdg neu" title="Produit à liquider : on écoule le stock, '
+            +'ses tailles et ses cibles sont gardées mais ne déclenchent plus rien.">'
+            +'on écoule</span>'
+          : (mq>0?('<span class="bdg warn">+'+acPl(mq,"paire")+'</span>')
+                 :(suivies.length?'<span class="bdg ok">au niveau</span>'
+                                 :'<span class="bdg neu">—</span>')))
         +'<button class="pcGear" onclick="reToggleRow('+m.id+')" title="'
           +(reglage?"Fermer le réglage":"Régler les tailles et la cible")+'">'
           +(reglage?'Fermer':'Régler')+'</button>'
@@ -1326,6 +1477,13 @@ var AM_DEFAUT={
   rMin:0.5,          // rendement visé sur UNE saison : plancher
   rBon:0.75,         // rendement visé sur UNE saison : confortable
   minPieces:3,       // en dessous, pas assez d'historique pour juger
+  /* LA SORTIE DE SECOURS DU « TROP JEUNE ».
+     Une reference jugee sur 90 jours d'epreuve reste muette pendant trois
+     mois. Or trois paires parties en un mois ne demandent pas qu'on
+     attende : elles ont deja repondu. On ouvre donc une seconde fenetre,
+     plus courte, qui ne sert QUE de rattrapage — la fenetre longue reste
+     la reference des que la cohorte est assez fournie. */
+  joursVite:30,      // la fenetre d'epreuve courte, en jours
   ruptureMax:0.30,   // part de jours sans stock au-delà de laquelle on suspend
   /* Objectif de marge par case et par mois. À 0, le mur se juge contre
      lui-même, découpé en trois tiers : aucun chiffre venu d'ailleurs n'a de
@@ -1508,6 +1666,11 @@ function amModeles(){
   var jFin=amJour(today()), jDeb=jFin-(c.fenetre-1);
   var finCohorte=amJour(amMoins(c.jours));            // entrée au plus tard ici
   var debutCohorte=amJour(amMoins(c.fenetre+c.jours)); // et au plus tôt là
+  /* Les mêmes bornes pour la fenêtre courte : une pièce n'y entre que si
+     elle a EU ses joursVite pour se vendre. Sans cette borne, une paire
+     arrivée hier compterait comme « pas vendue en 30 jours ». */
+  var finVite=amJour(amMoins(c.joursVite));
+  var debutVite=amJour(amMoins(c.fenetre+c.joursVite));
   _amExclus.flowstock=0;_amExclus.depot=0;_amExclus.sansIssue=0;_amExclus.pieces=0;
 
   /* Les variantes rangées par modèle, une fois pour toutes : la rupture par
@@ -1526,6 +1689,7 @@ function amModeles(){
       segment:acFamille(m)+" · ",
       stock:0, valeur:0, ageMax:null, stockParT:{},
       cohorte:0, cohorteOk:0, delais:[],
+      cohorteV:0, cohorteVOk:0,   // la même mesure sur la fenêtre courte
       vendues:0, marge:0, ratios:[], ratiosTheo:[], caVentes:[], vts:[],
       vies:[], aUnePiece:false});
   };
@@ -1584,6 +1748,13 @@ function amModeles(){
       if(jV!=null&&(jV-jE)<=c.jours)o.cohorteOk++;
       if(jV!=null)o.delais.push(jV-jE);
     }
+    /* La même chose sur la fenêtre courte. Indépendante de la longue : une
+       pièce entrée il y a 40 jours compte ici et pas là-bas, et c'est tout
+       l'intérêt — c'est elle qui porte l'information récente. */
+    if(issueConnue&&jE!=null&&jE<=finVite&&jE>=debutVite){
+      o.cohorteV++;
+      if(jV!=null&&(jV-jE)<=c.joursVite)o.cohorteVOk++;
+    }
 
     // --- ventes de la fenêtre, pour le rendement
     if(jV!=null&&jV>=jDeb&&jV<=jFin){
@@ -1612,6 +1783,7 @@ function amModeles(){
     if(!o.stock&&!o.vendues&&!o.cohorte)return;   // référence sans vie : hors sujet
 
     o.ecoul=(o.cohorte>0)?(o.cohorteOk/o.cohorte):null;
+    o.ecoulV=(o.cohorteV>0)?(o.cohorteVOk/o.cohorteV):null;
     o.delaiMedian=acMediane(o.delais);
     /* La marge rapportée au COÛT, et non au prix de vente : c'est elle qui dit
        combien d'euros rapporte un euro engagé, donc elle qui fixe le seuil. */
@@ -1862,6 +2034,12 @@ function amModeles(){
 
     o.sMin=amSeuilEcoul(o.margeCout,c.rMin,c.jours);
     o.sBon=amSeuilEcoul(o.margeCout,c.rBon,c.jours);
+    /* Les mêmes seuils ramenés à la fenêtre courte. On ne réutilise PAS ceux
+       de 90 jours : exiger en 30 jours ce qu'on attend en 90 condamnerait
+       d'office toute référence jugée au rattrapage. amSeuilEcoul prend déjà
+       la durée en paramètre, c'est exactement à ça qu'elle sert. */
+    o.sMinV=amSeuilEcoul(o.margeCout,c.rMin,c.joursVite);
+    o.sBonV=amSeuilEcoul(o.margeCout,c.rBon,c.joursVite);
     var V=amVerdict(o);
     o.verdict=V;
     out.push(o);
@@ -1909,9 +2087,56 @@ function amSeuilEcoul(margeCout,objectif,jours){
 
 function amVerdict(o){
   var c=amCfg();
+  /* LE RATTRAPAGE DES RÉFÉRENCES RÉCENTES.
+
+     Juger sur 90 jours d'épreuve a un prix : une référence reste « trop
+     jeune » pendant trois mois, donc invisible dans le classement, donc
+     jamais réassortie — même quand elle part vite. C'est exactement le
+     moment où l'information vaut le plus cher.
+
+     On ouvre donc une sortie : si la référence a écoulé au moins minPieces
+     paires en joursVite, elle est jugée tout de suite, mais SUR LA FENÊTRE
+     COURTE — ses propres seuils, pas ceux des 90 jours. Exiger en 30 jours
+     ce qu'on attend en 90 reviendrait à la condamner pour avoir été jugée
+     tôt.
+
+     La fenêtre longue reprend la main dès que sa cohorte est assez fournie :
+     le rattrapage n'est pas un second barème permanent, c'est une avance. */
+  var vite=(o.cohorte<c.minPieces)&&(o.cohorteVOk>=c.minPieces)&&(o.ecoulV!=null);
+  if(vite){
+    /* D'abord la marge, avant tout seuil. Sans marge, amSeuilEcoul rend null,
+       et « o.ecoulV >= null » se lit « >= 0 » : la comparaison est vraie quoi
+       qu'il arrive, et une référence qui ne rapporte rien décrochait
+       « monter » — l'exact inverse de ce qu'il faut faire. Le chemin long
+       posait déjà cette question, mais plus bas ; le rattrapage passait
+       devant. Il la pose donc lui aussi, en premier. */
+    if(!(o.margeCout>0))
+      return {cls:"bad",txt:"marge nulle",rang:0,jeuneVite:1,
+        pourquoi:"Vendu sans marge, ou prix de vente non renseigné : elle a beau "
+          +"partir vite, rien ne dit qu'il faille en reprendre."};
+    var dit=" — jugé sur "+c.joursVite+" jours ("+o.cohorteVOk+" paire"
+      +(o.cohorteVOk>1?"s":"")+" parties sur "+o.cohorteV+"), la cohorte de "
+      +c.jours+" jours étant encore trop mince.";
+    if(o.ecoulV>=o.sBonV)
+      return {cls:"ok",txt:"monter",rang:5,jeuneVite:1,
+        pourquoi:"Au-dessus du seuil confortable à "+c.joursVite+" jours ("
+          +amPct(o.sBonV)+")"+dit};
+    if(o.ecoulV>=o.sMinV)
+      return {cls:"ok",txt:"reprendre",rang:4,jeuneVite:1,
+        pourquoi:"Au-dessus du seuil de rentabilité à "+c.joursVite+" jours ("
+          +amPct(o.sMinV)+")"+dit};
+    /* En dessous du seuil, on ne tranche PAS dans le dur sur 30 jours : la
+       mesure est trop courte pour condamner. On signale, et la fenêtre
+       longue conclura. */
+    return {cls:"warn",txt:"à surveiller",rang:2,jeuneVite:1,
+      pourquoi:"Sous le seuil de "+amPct(o.sMinV)+" à "+c.joursVite+" jours"+dit
+        +" Trop court pour couper : on attend la cohorte complète."};
+  }
   if(o.cohorte<c.minPieces)
     return {cls:"neu",txt:"trop jeune",rang:3,
-      pourquoi:"Moins de "+c.minPieces+" pièces ont eu leurs "+c.jours+" jours d'épreuve."};
+      pourquoi:"Moins de "+c.minPieces+" pièces ont eu leurs "+c.jours
+        +" jours d'épreuve, et moins de "+c.minPieces+" paires parties en "
+        +c.joursVite+" jours."};
   /* Plus de stock et plus une vente sur la fenêtre : la référence est déjà
      sortie du rayon. L'annoncer « affamée », c'est demander de réassortir
      quelque chose qu'on a volontairement arrêté. */
@@ -1968,6 +2193,10 @@ function amReglages(){
         +'" onchange="amCfgSet(\'rBon\',+this.value||0.75)"></label>'
       +'<label>Pièces minimum pour juger <input type="number" min="1" value="'+c.minPieces
         +'" onchange="amCfgSet(\'minPieces\',Math.max(1,parseInt(this.value,10)||3))"></label>'
+      +'<label>Épreuve courte, pour les récents <input type="number" min="7" max="90" value="'+c.joursVite
+        +'" onchange="amCfgSet(\'joursVite\',Math.max(7,Math.min(90,+this.value||30)))"> j'
+        +'<i class="adSgI">'+c.minPieces+' paires parties en '+c.joursVite
+        +' j suffisent à juger, sans attendre les '+c.jours+' j</i></label>'
       +'<label>Rupture tolérée <input type="number" min="0" max="90" value="'+Math.round(c.ruptureMax*100)
         +'" onchange="amCfgSet(\'ruptureMax\',Math.max(0,Math.min(0.9,(+this.value||30)/100)))"> %</label>'
       +'<label>Fenêtre d\'analyse <input type="number" min="60" max="1095" value="'+c.fenetre
@@ -2662,9 +2891,14 @@ function murCase(r,c){
     +'ondragover="murDragOver(event,this)" ondragleave="murDragLeave(this)" '
     +'ondrop="murDeposer(event,'+r+','+c+')" '
     +'onclick="murEditer('+m.id+')" title="'+esc(bulle)+'">'
+    /* Rang et étiquette se posent tous deux dans le coin, en gommettes : le
+       rang d'abord, collé au bord, l'étiquette à sa gauche. Elles mangent un
+       bout de la première ligne du nom — c'est voulu, le nom complet reste
+       dans l'infobulle et l'intention se lit sans ouvrir la case. */
     +'<div class="murCn">'
       +(rang?('<span class="murRg r'+rang+'" title="'+rang
         +(rang===1?'re':'e')+' meilleure référence du mur">'+rang+'</span>'):'')
+      +reTagBadge(m,"murTg")
       +esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCv">'+((x.margeMois==null)?"—":amEur(x.margeMois))
       +'<span>par mois</span>'+marque+'</div>'
@@ -2817,7 +3051,7 @@ function murReglage(){
       ? (', et plus une seule paire pendant '+(x.jours-x.joursDispo)+' jours.')
       : '.')+'</p>';
 
-  return '<div class="adCard murRg">'
+  return '<div class="adCard murPan">'
     +'<div class="adH"><div class="adHt">'+esc(m.fr||m.sku||"?")+'</div>'
       +'<div class="adHs">'+esc(m.sku||"")+(m.marque?(" · "+esc(m.marque)):"")+'</div>'
       +'<button class="btn mini" onclick="murRetirer('+m.id+')">Retirer du mur</button></div>'
@@ -2829,6 +3063,11 @@ function murReglage(){
       +'<button onclick="murBouger('+m.id+',0,1)" title="Vers la droite">→</button>'
       +'</span>'
       +'<i>une case occupée échange sa place</i></div>'
+    /* L'étiquette se pose aussi d'ici. « À liquider » concerne surtout des
+       références qui ne sont PAS dans l'onglet réassort : si le seul endroit
+       pour la poser était cet onglet, il faudrait d'abord déclarer essentiel
+       un produit qu'on veut justement arrêter de reprendre. */
+    +'<div class="murTgL">Étiquette'+reTagSetHTML(m)+'</div>'
     +'<div class="pnCorps">'
       +tete
       +bloc("Ce que la case rapporte",equation)
@@ -2841,7 +3080,7 @@ function murReglage(){
 
 function murPose(){
   if(!_murSel)return "";
-  return '<div class="adCard murRg">'
+  return '<div class="adCard murPan">'
     +'<div class="adH"><div class="adHt">Poser un modèle</div>'
       +'<div class="adHs">Rangée '+(_murSel.r+1)+', place '+(_murSel.c+1)
       +' — cherche par SKU, par nom ou par marque.</div>'
