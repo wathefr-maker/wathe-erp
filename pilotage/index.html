@@ -499,7 +499,14 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murC.cible,.murVideC.cible{outline:2px dashed var(--violet);outline-offset:2px;background:#f4f7ff}
 
 .murCn{font-size:calc(12px * var(--mz,1));font-weight:700;line-height:1.3;
-  height:calc(31px * var(--mz,1));overflow:hidden}
+  height:calc(31px * var(--mz,1));overflow:hidden;
+  /* Deux lignes, et des points de suspension s'il en faudrait une troisième.
+     La hauteur reste fixe pour que les cases d'une rangée s'alignent, mais
+     sans l'ellipse le nom était tranché net au milieu d'un mot — ça se lit
+     comme un bug, pas comme un choix. Le nom entier reste dans l'infobulle.
+     Le cas arrive dès que le panneau de droite est ouvert : les cases
+     rétrécissent et un nom long passerait sur trois lignes. */
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 /* Le montant : la seule chose grande de la case. */
 .murCv{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;
   margin-top:calc(9px * var(--mz,1));font-size:calc(28px * var(--mz,1));font-weight:800;
@@ -636,6 +643,23 @@ body{background:var(--bg,#f8fafc);margin:0}
    fond vert : le panneau de recherche se repliait en une barre verte
    posee en travers du mur. Deux choses differentes, deux noms. */
 .murPan{border-color:#bfdbfe}
+/* LE MUR ET SON PANNEAU, CÔTE À CÔTE.
+   Le panneau était posé au-dessus du mur : cliquer sur une case la faisait
+   descendre hors de l'écran, et on lisait un commentaire sans voir ce qu'il
+   commentait. À droite, la case reste sous les yeux, et le panneau suit le
+   défilement — on passe d'une case à l'autre sans remonter. */
+.murLay{display:flex;align-items:flex-start;gap:18px}
+.murCol{flex:1 1 auto;min-width:0}
+.murPan2{flex:0 0 380px;width:380px;position:sticky;top:14px;
+  max-height:calc(100vh - 28px);overflow-y:auto;overscroll-behavior:contain}
+.murPan2 .adCard{margin-bottom:0}
+/* Sous 1100 px, deux colonnes ne tiennent plus : le panneau repasse sous le
+   mur plutôt que de l'étrangler. Il reste donc lisible sur un portable, et
+   c'est le mur qu'on fait défiler, pas le texte qu'on écrase. */
+@media (max-width:1100px){
+  .murLay{display:block}
+  .murPan2{width:auto;position:static;max-height:none;margin-top:16px}
+}
 
 /* Recherche d'un modèle à poser. */
 .murQ{width:calc(100% - 36px);margin:15px 18px 0;padding:9px 12px;border:1px solid var(--line);
@@ -2602,13 +2626,29 @@ function murCalc(m){
      rien : c'est peut-être la nouveauté, un client qui a pris trois tailles, ou
      un vrai succès. Sous ce seuil d'observation, on affiche la projection mais
      on refuse de la colorer — on ne condamne ni ne sacre une référence qui n'a
-     pas encore eu le temps de parler. */
-  var jeune=(jours==null||jours<MUR_JOURS_MINI);
+     pas encore eu le temps de parler.
+
+     SAUF QUAND ELLE A DÉJÀ PARLÉ. Une référence qui a écoulé minPieces paires
+     avant d'avoir ses trente jours ne demande pas qu'on attende : elle a
+     répondu. Trois clients différents, ce n'est plus l'effet de nouveauté ni
+     un client qui prend trois tailles. On la juge donc tout de suite — elle
+     se colore, elle entre au classement, elle compte dans l'échelle et au
+     podium, au lieu de rester grise et invisible pendant un mois, c'est-à-dire
+     exactement pendant la période où on aurait pu la réassortir.
+
+     Le seuil est le même que celui de l'écran d'analyse (minPieces, réglable),
+     pour qu'un seul réglage commande les deux. */
+  var vendues=(o&&o.vendues)?o.vendues:0;
+  var aParle=(vendues>=amCfg().minPieces);
+  var jeune=(jours==null)||(jours<MUR_JOURS_MINI&&!aParle);
+  /* Jugée malgré son âge : ce n'est pas rien, et la case doit pouvoir le dire
+     plutôt que de faire passer trois semaines pour une saison. */
+  var viteJuge=(jours!=null&&jours<MUR_JOURS_MINI&&aParle);
 
   return {m:m,o:o,prof:prof,vSai:vSai,cout:cout,margeCout:mcAff,caVente:caVente,
     margeVente:margeVente, ventesMois:ventesMois, margeMois:margeMois,
     rendement:rend,capital:capital,margeSai:margeSai,
-    jours:jours, joursDispo:joursDispo, jeune:jeune,
+    jours:jours, joursDispo:joursDispo, jeune:jeune, viteJuge:viteJuge,
     rupture:(o?o.rupture:null), vendues:(o?o.vendues:null),
     passees:(o?o.passees:null),
     /* La rupture à la maille taille, et ce qu'elle a coûté. */
@@ -2643,6 +2683,10 @@ function murNum(x){
    Un mois : assez pour qu'un modèle ait croisé des clients de toutes tailles,
    trop peu pour qu'un emballement de nouveauté passe pour une tendance. */
 var MUR_JOURS_MINI=30;
+/* La largeur du panneau de droite. Elle vit ici et dans le CSS : c'est le
+   seul chiffre que les deux doivent partager, puisque renderMur en a besoin
+   pour calculer le zoom des cases. */
+var MUR_PAN_L=380;
 
 /* Bandes de couleur, calées sur les mêmes seuils que le reste de la plateforme.
    Un modèle trop récent reste neutre : le colorer reviendrait à juger. */
@@ -2687,8 +2731,26 @@ var _murMjRef=0, _murMjMax=0, _murT1=null, _murT2=null, _murTop=[];
 
    En dessous de trois références jugeables, aucun découpage : trois tiers
    dans deux valeurs ne veulent rien dire. */
+/* CE QUI A LE DROIT DE PESER SUR LES MOYENNES.
+
+   Juger une référence récente est une chose ; la laisser peser sur les
+   chiffres d'ensemble en est une autre. Quatre paires en treize jours donnent
+   430 €/mois une fois ramenées au mois — c'est arithmétiquement exact et
+   statistiquement creux. Lâchée dans les agrégats, une telle référence :
+     · étire l'échelle, et toutes les autres paraissent molles à côté ;
+     · prend la tête du podium, qui répond à « laquelle je recommande » en
+       comparant treize jours à cinq mois ;
+     · fait grimper le rendement du mur, exactement le défaut que la tuile
+       documentait déjà (« un rendement de 11 pour un mur qui en vaut 1,2 »).
+
+   Elle garde donc sa couleur, son rang de valeur et sa place dans la lecture
+   — c'est tout l'intérêt du rattrapage, on la voit et on la réassortit — mais
+   elle ne sert pas d'étalon aux autres tant qu'elle n'a pas ses trente jours. */
+function murEtalon(x){
+  return !!x && !x.jeune && !x.viteJuge && x.margeMois!=null;
+}
 function murMjEchelle(L){
-  var J=(L||[]).filter(function(x){return !x.jeune&&x.margeMois!=null;});
+  var J=(L||[]).filter(murEtalon);
   var vals=J.map(function(x){return +x.margeMois||0;});
   _murMjMax=vals.reduce(function(n,v){return Math.max(n,v);},0);
   var cible=+((amCfg().mjCible)||0);
@@ -2957,7 +3019,7 @@ function murLegende(){
    sors » mais aussi « laquelle je recommande » : les trois meilleures, nommées
    et chiffrées, répondent à la seconde en une ligne. */
 function murPodium(L){
-  var J=(L||[]).filter(function(x){return !x.jeune&&x.margeMois!=null&&x.margeMois>0;})
+  var J=(L||[]).filter(function(x){return murEtalon(x)&&x.margeMois>0;})
     .sort(function(a,b){return b.margeMois-a.margeMois;}).slice(0,3);
   if(J.length<2)return "";
   return '<div class="murPd"><span class="murPdT">Les meilleures</span>'
@@ -2974,7 +3036,7 @@ function murTuiles(L){
      référence reçue il y a quatre jours projette un rythme énorme : la laisser
      entrer dans la moyenne faisait afficher un rendement de 11 pour un mur qui
      en vaut 1,2, et un chiffre pareil ne se discute pas, il se jette. */
-  var J=L.filter(function(x){return !x.jeune&&x.margeMois!=null;});
+  var J=L.filter(murEtalon);
   var capJ=J.reduce(function(n,x){return n+x.capital;},0);
   var mj=J.reduce(function(n,x){return n+(x.margeMois||0);},0);
   var mg=J.reduce(function(n,x){return n+(x.margeSai||0);},0);
@@ -3038,7 +3100,11 @@ function murCase(r,c){
   var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune);
   var rang=murRang(m.id);          // 1, 2 ou 3 pour le podium du mur, 0 sinon
   var ouvert=(_murEdit===String(m.id));
-  var marque=x.jeune?'<i>jeune</i>':(x.estime?'<i>est.</i>':'');
+  var marque=x.jeune?'<i>jeune</i>'
+            :(x.viteJuge?('<i title="Jugée sur '+x.jours+' jours seulement, parce '
+               +'qu\'elle a déjà écoulé '+x.vendues+' paires : assez pour parler.">'
+               +x.jours+' j</i>')
+            :(x.estime?'<i>est.</i>':''));
   /* Un rythme ne dit pas sur quoi il a été observé. On pose donc sous la barre
      les deux faits bruts : combien de paires ont tenu le rayon cette saison, et
      combien sont parties. Sans eux, 60 €/mois obtenus sur deux paires se lisent
@@ -3051,6 +3117,8 @@ function murCase(r,c){
     +(x.passees?("\n"+x.passees+" paire"+(x.passees>1?"s":"")+" passée"+(x.passees>1?"s":"")
       +" en rayon sur la saison, "+x.vendues+" vendue"+(x.vendues>1?"s":"")
       +((x.o&&x.o.stock!=null)?(", "+x.o.stock+" encore en stock"):"")):"")
+    +(x.viteJuge?("\nJugée après "+x.jours+" jours seulement : "+x.vendues
+       +" paires déjà parties, c'est assez pour ne plus attendre."):"")
     +(x.margeMois!=null?("\n"+amEur(x.margeMois)+" de marge par mois au catalogue"
       +(x.jeune?" (projection sur très peu de recul)":" : "
         +amNum(x.ventesMois,1)+" ventes par mois × "+amEur(x.margeVente)+" de marge")):"")
@@ -3282,7 +3350,24 @@ function renderMur(){
      rétrécissent et la typo doit suivre, sinon les noms de modèles débordent et
      les montants passent à la ligne. En dessous, on ne grossit pas : une case
      de 200 px pour afficher « 80 €/mois » ferait vide. */
-  var mz=Math.min(1,Math.max(0.74,8/Math.max(1,f.places)));
+  /* LE PANNEAU PASSE À DROITE.
+     Posé en haut, il repoussait le mur hors de l'écran : on cliquait sur une
+     case, et la case disparaissait sous le panneau qui venait de s'ouvrir
+     pour en parler. À droite, la case reste visible pendant qu'on la lit, et
+     on passe de l'une à l'autre sans remonter. */
+  var panneau=!!(_murEdit||_murSel);
+
+  /* LE ZOOM SE MESURE, IL NE SE DEVINE PLUS.
+     L'ancien calcul — 8/places — supposait que le mur occupait toujours toute
+     la largeur. Avec un panneau de 380 px à droite, il aurait gardé la même
+     typographie dans un espace plus étroit, et les noms auraient débordé.
+     On part donc de la largeur réellement disponible, pour une case de
+     référence de 200 px. Les bornes ne bougent pas : jamais plus gros que la
+     taille nominale, jamais plus petit que 0,74 — en dessous ce n'est plus
+     lisible, et le mur se met à défiler, ce qui est préférable. */
+  var large=body.clientWidth||1200;
+  if(panneau)large-=MUR_PAN_L+18;        // le panneau et la gouttière
+  var mz=Math.min(1,Math.max(0.74,(large-32)/Math.max(1,f.places)/200));
   var rangees="";
   for(var r=0;r<f.rangees;r++){
     var cases="";
@@ -3290,8 +3375,9 @@ function renderMur(){
     // La planche vient APRÈS les boîtes : elles sont posées dessus.
     rangees+='<div class="murR">'+cases+'</div><div class="murP"></div>';
   }
-  body.innerHTML=murTuiles(L)
-    +murPose()+murReglage()
+  body.innerHTML='<div class="murLay'+(panneau?" ouvert":"")+'">'
+    +'<div class="murCol">'
+    +murTuiles(L)
     +'<div class="adCard">'
       +'<div class="adH"><div class="adHt">Le mur</div>'
         +'<label class="murFmt">Rangées<input type="number" min="1" max="20" value="'+f.rangees+'" '
@@ -3304,7 +3390,12 @@ function renderMur(){
       +murPodium(L)
       +murLegende()
     +'</div>'
-    +amReglages();
+    +amReglages()
+    +'</div>'
+    /* Le panneau ne sort du flux que lorsqu'il existe : une colonne vide de
+       380 px rétrécirait le mur pour ne rien montrer. */
+    +(panneau?('<aside class="murPan2">'+murPose()+murReglage()+'</aside>'):'')
+  +'</div>';
 }
 
 /* L'EN-TÊTE D'UNE LISTE : son nom, ce qu'elle veut dire, son compte, son
