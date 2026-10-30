@@ -352,6 +352,11 @@ body{background:var(--bg,#f8fafc);margin:0}
 .reTgB:hover{border-color:#cbd5e1;color:var(--muted)}
 .reTgB.on{border-color:transparent}
 .reTgB.reTgX{font-size:12px;line-height:1.2;padding:1px 6px;color:#94a3b8}
+/* L'étiquette du sélecteur dans la barre d'outils du réglage, qui mélange
+   des boutons de natures différentes : sans ce mot, on ne sait pas de quoi
+   parlent les deux premiers. */
+.pcLbl{font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--muted);
+  text-transform:uppercase;margin-right:-2px}
 /* Dans le panneau d'une case : libellé à gauche, boutons à droite, sur la
    même ligne que la position — c'est un réglage, pas une donnée. */
 .murTgL{display:flex;align-items:center;gap:10px;padding:0 18px 12px;
@@ -1344,18 +1349,39 @@ function reCardSizes(m){
     if(!on&&v.eu!=null&&cibles[String(v.eu).trim()]!=null){on=true;ck=String(v.eu).trim();}
     var cible=on?(+cibles[ck]||0):0;
     var st=boutiqueStockOfSize(m.id,key);
-    out.push({v:v,key:key,ck:ck,label:vSizeTxt(v)||key,on:on,
+    out.push({v:v,key:key,ck:ck,label:reTailleTxt(v)||key,on:on,
       cible:cible,stock:st,manque:on?Math.max(0,cible-st):0});
   });
   return out;
 }
 
+/* LE LIBELLÉ D'UNE TAILLE DANS LE RÉASSORT : L'EU, ET RIEN D'AUTRE.
+
+   vSizeTxt écrit « 10.5 (EU 44.5) » : utile là où on manipule des fiches
+   venues de l'étranger, illisible dans une liste de courses. Une rangée de
+   pastilles « 9 (EU 42.5) · 10 (EU 44) · 10.5 (EU 44.5) » demande de lire
+   deux nombres pour en retenir un seul — et c'est l'EU qu'on a en tête en
+   rayon. On garde donc vSizeTxt pour le reste de l'ERP, et le réassort dit
+   l'EU. La taille US reste accessible dans la bulle de la pastille, pour les
+   fiches où elle sert encore. */
+function reTailleTxt(v){
+  if(!v)return "";
+  try{
+    var s=vEUUS(v);
+    if(s&&s.eu)return String(s.eu);
+  }catch(_){}
+  return String(v.taille==null?"":v.taille);
+}
 /* Pastille de taille. En lecture, la couleur suffit à dire s'il faut commander. */
 function rePastille(m,s){
   var cls="sz";
   if(s.manque>0)cls+=(s.stock===0?" vide":" bas");
   else cls+=" ok";
-  return '<span class="'+cls+'" title="'+esc(s.label)+' — '+s.stock+' en stock pour une cible de '+s.cible+'">'
+  /* L'US n'est plus écrite sur la pastille, mais elle n'est pas perdue : la
+     bulle la rappelle quand elle diffère de l'EU. */
+  var detail="";
+  try{var t=vSizeTxt(s.v); if(t&&t!==s.label)detail=" ("+t+")";}catch(_){}
+  return '<span class="'+cls+'" title="'+esc(s.label)+esc(detail)+' — '+s.stock+' en stock pour une cible de '+s.cible+'">'
     +'<em>'+esc(s.label)+'</em>'
     +'<b>'+s.stock+'/'+s.cible+'</b>'
     +(s.manque>0?('<i>+'+s.manque+'</i>'):'')
@@ -1365,7 +1391,10 @@ function rePastille(m,s){
 /* Pastille en mode réglage : cochable, cible éditable. */
 function rePastilleEdit(m,s){
   var j=reJse(s.on?s.ck:s.key);
-  return '<div class="tz ed'+(s.on?" on":"")+'">'
+  var detail="";
+  try{var t=vSizeTxt(s.v); if(t&&t!==s.label)detail=t;}catch(_){}
+  return '<div class="tz ed'+(s.on?" on":"")+'"'
+    +(detail?(' title="'+esc(detail)+'"'):'')+'>'
     +'<label class="tzChk"><input type="checkbox" '+(s.on?"checked":"")
       +' onchange="reSizeToggle('+m.id+',\''+j+'\',this.checked)">'
       +'<span class="tzT">'+esc(s.label)+'</span></label>'
@@ -1441,10 +1470,11 @@ function reRenderLignes(prods,tag){
            pastille y est le seul porteur de l'information. */
         +'<div class="rrN">'+esc(m.fr||m.sku||"?")+'</div>'
         +'<div class="rrS">'+esc(m.sku||"")+(m.marque?(' · '+esc(m.marque)):'')+'</div>'
-        /* Le choix se fait ICI, sur la ligne, pas dans le panneau replié :
-           c'est une décision qu'on prend en balayant la liste, pas en
-           ouvrant une fiche. */
-        +reTagSetHTML(m)
+        /* Plus de boutons d'étiquette sous le nom. Dans une liste déjà
+           coupée en deux, ils répétaient sur chaque ligne ce que le titre de
+           la section dit une fois, et deux boutons par ligne sur vingt
+           lignes font quarante boutons pour une poignée de clics par mois.
+           Le changement de liste vit dans « Régler », et sur le mur. */
       +'</div>'
       +'<div class="rrZ">'+milieu+'</div>'
       +'<div class="rrE">'
@@ -1468,6 +1498,9 @@ function reRenderLignes(prods,tag){
       +'<div class="rrEd">'
         +'<div class="tzs ed">'+P.sizes.map(function(x){return rePastilleEdit(m,x);}).join("")+'</div>'
         +'<div class="pcTools">'
+          /* Changer de liste est un réglage, au même titre que la grille :
+             rare, réfléchi, et pas un geste qu'on fait en balayant l'écran. */
+          +'<span class="pcLbl">Liste</span>'+reTagSetHTML(m)
           +'<button class="btn mini" onclick="reToggleAll('+m.id+',true)">Tout suivre</button>'
           +'<button class="btn mini" onclick="reToggleAll('+m.id+',false)">Ne rien suivre</button>'
           +'<select class="pcGr" onchange="reSetGrille('+m.id+',this.value)" title="Grille de tailles suivie">'
