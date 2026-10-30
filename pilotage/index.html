@@ -2731,23 +2731,22 @@ var _murMjRef=0, _murMjMax=0, _murT1=null, _murT2=null, _murTop=[];
 
    En dessous de trois références jugeables, aucun découpage : trois tiers
    dans deux valeurs ne veulent rien dire. */
-/* CE QUI A LE DROIT DE PESER SUR LES MOYENNES.
+/* CE QUI COMPTE DANS LES CHIFFRES D'ENSEMBLE.
 
-   Juger une référence récente est une chose ; la laisser peser sur les
-   chiffres d'ensemble en est une autre. Quatre paires en treize jours donnent
-   430 €/mois une fois ramenées au mois — c'est arithmétiquement exact et
-   statistiquement creux. Lâchée dans les agrégats, une telle référence :
-     · étire l'échelle, et toutes les autres paraissent molles à côté ;
-     · prend la tête du podium, qui répond à « laquelle je recommande » en
-       comparant treize jours à cinq mois ;
-     · fait grimper le rendement du mur, exactement le défaut que la tuile
-       documentait déjà (« un rendement de 11 pour un mur qui en vaut 1,2 »).
+   Une seule règle, et c'est la jeunesse : une référence qui n'a pas encore
+   parlé ne pèse sur rien. Dès qu'elle a parlé — ses trente jours, OU
+   minPieces paires parties avant, le rattrapage — elle compte comme les
+   autres, partout : l'échelle, le podium, le rendement du mur.
 
-   Elle garde donc sa couleur, son rang de valeur et sa place dans la lecture
-   — c'est tout l'intérêt du rattrapage, on la voit et on la réassortit — mais
-   elle ne sert pas d'étalon aux autres tant qu'elle n'a pas ses trente jours. */
+   Ce qui se paie : son rythme est extrapolé d'une courte période. Quatre
+   paires en treize jours font 430 €/mois, exact et nerveux. Une telle
+   référence peut donc prendre la tête du podium et tirer l'échelle vers le
+   haut. C'est assumé — trois clients différents ne sont ni l'effet de
+   nouveauté ni un client qui prend trois tailles, et une référence qui part
+   vite mérite d'être vue tout de suite, pas dans trois semaines. La case
+   porte son âge (« 13 j ») pour qu'on sache sur quoi le chiffre est bâti. */
 function murEtalon(x){
-  return !!x && !x.jeune && !x.viteJuge && x.margeMois!=null;
+  return !!x && !x.jeune && x.margeMois!=null;
 }
 function murMjEchelle(L){
   var J=(L||[]).filter(murEtalon);
