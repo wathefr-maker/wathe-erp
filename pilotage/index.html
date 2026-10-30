@@ -384,6 +384,11 @@ body{background:var(--bg,#f8fafc);margin:0}
 .tzChk{display:flex;align-items:center;gap:7px;cursor:pointer}
 .tzChk input{width:15px;height:15px;cursor:pointer;flex:0 0 auto}
 .tz.ed .tzT{display:block;font-size:13px;color:#334155;font-weight:700}
+/* Le rappel de la pointure EU, sous la pointure US cochée. Aligné sur le
+   texte et non sur la case à cocher : c'est une précision sur le nombre
+   au-dessus, pas une seconde ligne de formulaire. */
+.tzEu{display:block;margin:2px 0 0 22px;font-size:11px;color:var(--muted);
+  font-weight:600;line-height:1}
 .tzIn{width:100%;box-sizing:border-box;margin-top:7px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;
   font-size:14px;font-weight:700;text-align:center;font-family:inherit}
 .tzSt{display:block;font-size:11px;color:var(--muted);margin-top:4px;text-align:center}
@@ -1391,13 +1396,28 @@ function rePastille(m,s){
 /* Pastille en mode réglage : cochable, cible éditable. */
 function rePastilleEdit(m,s){
   var j=reJse(s.on?s.ck:s.key);
-  var detail="";
-  try{var t=vSizeTxt(s.v); if(t&&t!==s.label)detail=t;}catch(_){}
-  return '<div class="tz ed'+(s.on?" on":"")+'"'
-    +(detail?(' title="'+esc(detail)+'"'):'')+'>'
+  /* LA LECTURE ET LE RÉGLAGE NE DEMANDENT PAS LA MÊME CHOSE.
+     Dans la liste, on balaie huit pointures d'affilée : l'EU seul, sinon on
+     lit deux nombres pour en retenir un. Ici, on COCHE des tailles et on fixe
+     des cibles une par une — et c'est exactement le moment où la pointure US
+     compte, parce que c'est elle qui est écrite sur la boîte du fournisseur.
+     Le réglage garde donc l'écriture complète. */
+  /* Deux nombres, deux lignes. « 8.5 (EU 42) » sur une seule ligne ne tient
+     pas dans une case de 104 px à côté d'une coche : il passait à la ligne au
+     milieu de la parenthèse et faisait grandir toutes les cases. On met donc
+     l'US en gros — c'est elle qui est écrite sur la boîte du fournisseur, et
+     c'est elle qu'on coche — et l'EU en rappel juste dessous. La ligne de
+     rappel n'apparaît que si les deux diffèrent. */
+  var us=s.label, eu="";
+  try{
+    var p=vEUUS(s.v);
+    if(p&&p.us&&p.eu&&p.us!==p.eu){ us=p.us; eu="EU "+p.eu; }
+  }catch(_){}
+  return '<div class="tz ed'+(s.on?" on":"")+'">'
     +'<label class="tzChk"><input type="checkbox" '+(s.on?"checked":"")
       +' onchange="reSizeToggle('+m.id+',\''+j+'\',this.checked)">'
-      +'<span class="tzT">'+esc(s.label)+'</span></label>'
+      +'<span class="tzT">'+esc(us)+'</span></label>'
+    +(eu?('<span class="tzEu">'+esc(eu)+'</span>'):'')
     +(s.on
       ?('<input class="tzIn" type="number" min="0" value="'+s.cible+'" '
         +'onchange="reSetCible('+m.id+',\''+j+'\',this.value)" title="Cible pour cette taille">'
