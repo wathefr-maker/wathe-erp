@@ -1094,7 +1094,38 @@ function reGridVariants(m){
 function reMatch(q){q=String(q||"").toLowerCase().trim();if(!q)return [];var toks=q.split(/[\s/]+/).filter(Boolean);return (DB.modeles||[]).filter(function(m){if(m.essentiel)return false;var sku=String(m.sku||"").toLowerCase();var hay=((m.fr||"")+" "+(m.marque||"")+" "+sku).toLowerCase();if(toks.every(function(t){return hay.indexOf(t)>=0;}))return true;if(sku&&toks.some(function(t){return t.length>=3&&sku.indexOf(t)>=0;}))return true;return false;});}
 function reAddSug(){var inp=document.getElementById("reAddSearch"),box=document.getElementById("reAddSug");if(!inp||!box)return;var q=(inp.value||"").trim();if(!q){box.style.display="none";box.innerHTML="";return;}var list=reMatch(q).slice(0,14);if(!list.length){box.innerHTML='<div style="padding:9px 12px;color:var(--muted);font-size:13px">Aucun modèle trouvé pour « '+esc(q)+' ».</div>';box.style.display="block";return;}box.innerHTML=list.map(function(m){return '<div class="reSug" data-id="'+m.id+'" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px"><b>'+esc(m.fr||m.sku||"?")+'</b> <span class="muted">'+esc(m.sku||"")+(m.marque?" · "+esc(m.marque):"")+'</span></div>';}).join("");box.style.display="block";[].slice.call(box.querySelectorAll(".reSug")).forEach(function(el){el.onmousedown=function(e){e.preventDefault();reAddPick(+el.dataset.id);};el.onmouseenter=function(){el.style.background="#f8fafc";};el.onmouseleave=function(){el.style.background="";};});}
 function reAddPick(id){_reSel=id;var m=modeleById(id)||{};var inp=document.getElementById("reAddSearch");if(inp)inp.value=(m.fr||m.sku||"");var box=document.getElementById("reAddSug");if(box){box.style.display="none";box.innerHTML="";}}
-function reAdd(){var m=_reSel?modeleById(_reSel):null;if(!m){var inp=document.getElementById("reAddSearch");var mm=reMatch(inp&&inp.value);if(mm.length===1)m=mm[0];else if(mm.length>1){alert("Plusieurs produits correspondent — choisis-en un dans la liste.");return;}}if(!m){alert("Aucun produit trouvé. Tape un nom ou un SKU, puis choisis-le dans la liste.");return;}m.essentiel=true;m.cibles=m.cibles||{};if(!m.todsGrille){m.todsGrille=(m.grille&&DB.grilles[m.grille])?m.grille:(reGrilleKeys()[0]||"");}_reSel=null;_reOpen=m.id;var inp2=document.getElementById("reAddSearch");if(inp2)inp2.value="";logAct("TODS","Ajout essentiel",(m.fr||m.sku||""));save();renderReassort();}
+/* ENTRER DANS LES LISTES DE RÉASSORT.
+
+   Il y a deux portes : le champ « Ajouter un produit » de l'onglet, et les
+   boutons TODS / Best seller d'une case du mur. Elles doivent mener à la même
+   pièce. Elles n'y menaient pas : seule la première posait la grille de
+   tailles et l'objet des cibles, si bien qu'une référence étiquetée depuis le
+   mur arrivait dans la liste sans grille, sans cible et sans taille suivie —
+   présente, mais incapable de réclamer quoi que ce soit.
+
+   La préparation vit donc ici, une fois, et les deux portes l'appellent.
+
+   Les cibles sont pré-remplies sur LE STOCK ACTUEL, taille par taille : c'est
+   le seul point de départ qui ne décide rien à ta place. « Garde ce que tu as
+   déjà » ne déclenche aucune commande le jour de l'ajout — le manque est nul
+   partout — et te laisse monter les cibles où tu veux vraiment de la
+   profondeur. Partir de zéro aurait donné une ligne muette ; partir d'un
+   chiffre inventé aurait commandé pour toi. */
+function rePreparer(m){
+  if(!m)return;
+  m.cibles=m.cibles||{};
+  if(!m.todsGrille)
+    m.todsGrille=(m.grille&&DB.grilles[m.grille])?m.grille:(reGrilleKeys()[0]||"");
+  /* On ne touche pas à un réglage existant : une référence déjà suivie qui
+     change d'étiquette garde ses tailles et ses cibles. */
+  if(Object.keys(m.cibles).length)return;
+  var pose=0;
+  reCardSizes(m).forEach(function(x){
+    if(x.stock>0){m.cibles[x.key]=x.stock;pose++;}
+  });
+  return pose;
+}
+function reAdd(){var m=_reSel?modeleById(_reSel):null;if(!m){var inp=document.getElementById("reAddSearch");var mm=reMatch(inp&&inp.value);if(mm.length===1)m=mm[0];else if(mm.length>1){alert("Plusieurs produits correspondent — choisis-en un dans la liste.");return;}}if(!m){alert("Aucun produit trouvé. Tape un nom ou un SKU, puis choisis-le dans la liste.");return;}m.essentiel=true;rePreparer(m);_reSel=null;_reOpen=m.id;var inp2=document.getElementById("reAddSearch");if(inp2)inp2.value="";logAct("TODS","Ajout essentiel",(m.fr||m.sku||""));save();renderReassort();}
 /* ---------------------------------------------------------------------------
    LES TROIS ÉTIQUETTES
 
@@ -1134,12 +1165,17 @@ function reTagSet(id,tag){
   var m=modeleById(id);if(!m)return;
   if(tag&&!RE_TAGS[tag])return;
   if(reTagDe(m)===tag)return;            // deja pose, rien a ecrire
+  var nouveau=false,posees=0;
   if(tag){
     m.reTag=tag;
     /* Étiqueter une référence qu'on ne suivait pas revient à la suivre — sauf
        « à liquider », qui est justement l'inverse et doit pouvoir se poser sur
        n'importe quelle référence du mur. */
-    if(tag!=="liquider")m.essentiel=true;
+    if(tag!=="liquider"){
+      nouveau=!m.essentiel;
+      m.essentiel=true;
+      posees=rePreparer(m)||0;   // grille, cibles, tailles suivies
+    }
   }else{
     /* Reposer à vide. Un clic de travers sur « à liquider » couperait le
        réassort sans rien dire : il faut pouvoir revenir en arrière. Sur une
@@ -1149,6 +1185,18 @@ function reTagSet(id,tag){
   }
   logAct("TODS","Étiquette",(m.fr||m.sku||"")+" → "+(tag?RE_TAGS[tag].t:"aucune"));
   save();try{renderReassort();}catch(e){}try{renderMur();}catch(e){}
+  /* Depuis le mur, la liste de réassort n'est pas à l'écran : sans un mot,
+     le clic n'aurait l'air de rien faire. On dit donc où la référence est
+     partie, et avec quelles cibles — c'est l'occasion d'aller les régler. */
+  if(nouveau)alert("« "+(m.fr||m.sku||"")+" » entre dans la liste "
+    +RE_TAGS[tag].t+".\n\n"
+    +(posees
+      ? ("Ses "+posees+" taille"+(posees>1?"s":"")+" en stock "
+         +(posees>1?"sont suivies":"est suivie")+", avec pour cible ce que tu as "
+         +"aujourd'hui : rien n'est à commander tant que tu n'as pas monté les "
+         +"cibles. Onglet Réassort, bouton « Régler ».")
+      : "Elle n'a aucune pièce en stock : ouvre « Régler » dans l'onglet "
+        +"Réassort pour choisir les tailles à suivre et leurs cibles."));
 }
 /* Les trois boutons, plus un pour reposer à vide. Servent sur la ligne de
    réassort ET dans le panneau d'une case du mur : « à liquider » doit pouvoir
