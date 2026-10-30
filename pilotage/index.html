@@ -251,6 +251,22 @@ body{background:var(--bg,#f8fafc);margin:0}
 /* ---- Réassort en lignes ---- */
 .reHead{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
 .reCount{font-size:14px;color:#334155}
+/* LES DEUX LISTES.
+   L'en-tête d'une section n'est pas une barre de plus : c'est un titre posé
+   au-dessus de son tableau, sans fond ni cadre, pour que la page garde un
+   seul niveau de boîtes. Ce qui sépare les deux listes, c'est le blanc entre
+   elles, pas un trait. */
+.reSec{margin-bottom:22px}
+.reSec:last-of-type{margin-bottom:0}
+.reSecH{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:0 4px 9px}
+.reSecT{font-size:14px;font-weight:800;line-height:1.2}
+.reSecS{font-size:12px;color:var(--muted);line-height:1.4}
+.reSecC{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--muted)}
+.reSecC b{color:var(--ink)}
+/* Le rappel de ce qu'on écoule : une phrase, pas une troisième liste. */
+.reEcoul{margin-top:16px;padding:11px 16px;border:1px solid var(--line);
+  border-radius:11px;background:#fff;font-size:12.5px;color:var(--muted);
+  line-height:1.5}
 .reCount b{font-size:16px}
 .reActs{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
 .reAdd{position:relative;min-width:250px}
@@ -1099,9 +1115,15 @@ function reAdd(){var m=_reSel?modeleById(_reSel):null;if(!m){var inp=document.ge
    produits suivis avant l'arrivée des étiquettes sont des TODS : c'est ce que
    l'onglet voulait dire quand il n'y avait qu'une catégorie. */
 var RE_TAGS={
-  tods:    {t:"TODS",        cls:"tg-tods", d:"Basique — à toujours avoir en rayon"},
-  best:    {t:"Best seller", cls:"tg-best", d:"Réassorti parce qu'il cartonne"},
-  liquider:{t:"À liquider",  cls:"tg-liq",  d:"On écoule — plus de réassort"}
+  /* d  : la bulle d'aide du bouton — elle parle D'UN produit.
+     ds : le sous-titre de la liste — il parle DES produits. Un même texte ne
+          peut pas faire les deux sans sonner faux à un endroit ou à l'autre. */
+  tods:    {t:"TODS",        cls:"tg-tods", d:"Basique — à toujours avoir en rayon",
+            ds:"Les basiques — à avoir en rayon quoi qu'il arrive"},
+  best:    {t:"Best seller", cls:"tg-best", d:"Réassorti parce qu'il cartonne",
+            ds:"Repris parce qu'ils cartonnent"},
+  liquider:{t:"À liquider",  cls:"tg-liq",  d:"On écoule — plus de réassort",
+            ds:"On écoule — aucune commande"}
 };
 function reTagDe(m){
   var t=m&&m.reTag;
@@ -1135,22 +1157,26 @@ function reTagSetHTML(m,ou){
   var pose=reTagDe(m);
   /* OÙ SE POSE QUOI.
      « À liquider » est une décision de rayon : elle se prend devant le mur,
-     en regardant la case et ce qu'elle rapporte. L'onglet réassort, lui, ne
-     parle que de ce qu'on reprend — y proposer « à liquider » reviendrait à
-     demander d'arrêter un produit au milieu de la liste de ce qu'on commande.
-     On la garde donc au mur.
-     Une exception : si elle est DÉJÀ posée, l'onglet réassort l'affiche quand
-     même. Sinon la ligne dirait « on écoule » sans que rien n'explique
-     pourquoi, et il faudrait retourner au mur pour revenir en arrière. */
+     en regardant la case et ce qu'elle rapporte. L'onglet réassort ne parle
+     que de ce qu'on reprend, et depuis qu'il est coupé en deux listes, une
+     référence à liquider n'y a même plus de ligne : elle est rappelée en une
+     phrase en bas de page. Le sélecteur n'y propose donc que TODS et Best
+     seller — proposer les trois ouvrirait une porte sans la pièce derrière. */
   var cles=Object.keys(RE_TAGS).filter(function(k){
-    return (k!=="liquider")||(ou==="mur")||(pose==="liquider");
+    return (k!=="liquider")||(ou==="mur");
   });
   var h=cles.map(function(k){
     return '<button class="reTgB'+(pose===k?' on '+RE_TAGS[k].cls:'')+'" title="'
       +esc(RE_TAGS[k].d)+'" onclick="reTagSet('+m.id+',\''+k+'\')">'
       +esc(RE_TAGS[k].t)+'</button>';}).join("");
-  if(pose)h+='<button class="reTgB reTgX" title="Retirer l\'étiquette" '
-    +'onclick="reTagSet('+m.id+',\'\')">×</button>';
+  /* Le « × » retire l'étiquette. Au mur, c'est utile : une référence peut
+     n'en porter aucune. Dans l'onglet réassort, non — sans étiquette une
+     référence suivie est un TODS, donc le × ferait exactement ce que fait
+     déjà le bouton TODS, en moins clair. Un bouton de moins par ligne, et
+     quatre fois moins de bruit dans une liste de quatre. */
+  if(pose&&ou==="mur")
+    h+='<button class="reTgB reTgX" title="Retirer l\'étiquette" '
+      +'onclick="reTagSet('+m.id+',\'\')">×</button>';
   return '<div class="reTgSet">'+h+'</div>';
 }
 /* La pastille, telle qu'elle apparaît sur une case du mur et sur une ligne de
@@ -1167,10 +1193,12 @@ function reSetGrille(id,g){var m=modeleById(id);if(!m)return;m.todsGrille=g;save
 function reSizeToggle(id,size,on){var m=modeleById(id);if(!m)return;m.cibles=m.cibles||{};if(on){if(m.cibles[size]==null)m.cibles[size]=1;}else{delete m.cibles[size];}save();renderReassort();}
 function reSetCible(id,size,val){var m=modeleById(id);if(!m)return;m.cibles=m.cibles||{};m.cibles[size]=Math.max(0,parseInt(val,10)||0);save();renderReassort();}
 function reRemove(id){var m=modeleById(id);if(!m)return;if(!confirm("Retirer « "+(m.fr||m.sku||"")+" » des produits essentiels ?"))return;m.essentiel=false;if(_reOpen==id)_reOpen=null;save();renderReassort();}
-function reRows(){
+function reRows(tag){
   var rows=[];
   reEssentiels().forEach(function(m){
-    if(reTagDe(m)==="liquider")return;   // on écoule : rien à recommander
+    var t=reTagDe(m);
+    if(t==="liquider")return;            // on écoule : rien à recommander
+    if(tag&&t!==tag)return;              // une seule liste à la fois
     reModelRows(m).forEach(function(r){rows.push(r);});
   });
   return rows;
@@ -1221,7 +1249,29 @@ function reModelRows(m){
 function reModelManque(m){return reModelRows(m).reduce(function(s,r){return s+r.manque;},0);}
 function reModelTracked(m){return reModelRows(m).length;}
 
-function reExport(){var lines=[["Produit","SKU","Taille","Cible","En stock","A recommander"]];reRows().forEach(function(r){if(r.manque>0)lines.push([r.m.fr||"",r.m.sku||"",r.size,r.cible,r.st,r.manque]);});if(lines.length<2){alert("Rien à recommander : tout est au niveau (ou au-dessus) de la cible.");return;}var csv=lines.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(";");}).join("\r\n");var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="reassort-tods-"+today()+".csv";document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);}
+/* UN BON DE COMMANDE PAR LISTE.
+   Les basiques et les best sellers ne se commandent pas ensemble : pas les
+   mêmes fournisseurs, pas les mêmes moments, pas la même décision. L'export
+   suit donc la liste d'où on a cliqué, et le nom du fichier le dit. */
+function reExport(tag){
+  var lines=[["Produit","SKU","Taille","Cible","En stock","A recommander"]];
+  reRows(tag).forEach(function(r){
+    if(r.manque>0)lines.push([r.m.fr||"",r.m.sku||"",r.size,r.cible,r.st,r.manque]);
+  });
+  if(lines.length<2){
+    alert("Rien à recommander dans « "+((RE_TAGS[tag]||{}).t||"cette liste")
+      +" » : tout est au niveau (ou au-dessus) de la cible.");
+    return;
+  }
+  var csv=lines.map(function(r){return r.map(function(c){
+    return '"'+String(c).replace(/"/g,'""')+'"';}).join(";");}).join("\r\n");
+  var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement("a");a.href=url;
+  a.download="reassort-"+(tag||"tout")+"-"+today()+".csv";
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+}
 /* ---- Réassort en cartes -----------------------------------------------------
    Une carte par produit essentiel, ses tailles en pastilles. Le tableau à lignes
    dépliables obligeait à ouvrir chaque produit pour savoir ce qui lui manquait ;
@@ -1308,10 +1358,20 @@ function reProduits(){
    gauche à chaque produit.
    Le réglage se déplie SOUS la ligne concernée, pour ne pas décaler les
    autres pendant qu'on y travaille. */
-function reRenderLignes(prods){
-  if(!prods.length)return '<div class="tablecard" style="padding:34px;text-align:center">'
-    +'<div style="font-weight:700;margin-bottom:5px">Aucun produit essentiel</div>'
-    +'<div class="muted" style="font-size:13px">Ajoute un produit ci-dessus, puis règle les tailles que tu veux toujours avoir en rayon.</div></div>';
+function reRenderLignes(prods,tag){
+  /* Une liste vide ne dit plus « aucun produit essentiel » : avec deux listes,
+     ce serait faux dès que l'autre est pleine. Elle dit comment la remplir. */
+  if(!prods.length){
+    var quoi=(tag==="best")
+      ? "Aucun best seller pour l'instant"
+      : "Aucun basique pour l'instant";
+    var comment=(tag==="best")
+      ? "Passe en « Best seller » une référence déjà suivie, ou ajoute-la ci-dessus."
+      : "Ajoute un produit ci-dessus, puis règle les tailles que tu veux toujours avoir en rayon.";
+    return '<div class="tablecard" style="padding:28px;text-align:center">'
+      +'<div style="font-weight:700;margin-bottom:5px">'+quoi+'</div>'
+      +'<div class="muted" style="font-size:13px">'+comment+'</div></div>';
+  }
 
   return '<div class="rl">'
     +'<div class="rlH"><div>Produit</div><div>Tailles suivies — stock / cible</div><div>À commander</div></div>'
@@ -2672,6 +2732,14 @@ function murRetirer(id){
   var m=modeleById(id);if(!m)return;
   if(!confirm("Retirer « "+(m.fr||m.sku||"")+" » du mur ?\n\nRien n'est modifié dans ton stock."))return;
   delete m.mur;
+  /* « À liquider » ne se pose et ne s'enlève QUE depuis le mur. Une référence
+     qui quitte le mur en la gardant deviendrait introuvable : plus de case
+     d'où la retirer, et pas de ligne dans l'onglet réassort. On la rend donc
+     à son état de base en même temps que sa case. */
+  if(m.reTag==="liquider"){
+    delete m.reTag;
+    try{logAct("TODS","Étiquette",(m.fr||m.sku||"")+" → aucune (sortie du mur)");}catch(e){}
+  }
   if(_murEdit===String(id))_murEdit=null;
   try{logAct("Mur","Retrait",(m.fr||m.sku||""));}catch(e){}
   save();renderMur();
@@ -3138,10 +3206,37 @@ function renderMur(){
     +amReglages();
 }
 
+/* L'EN-TÊTE D'UNE LISTE : son nom, ce qu'elle veut dire, son compte, son
+   export. Le compte est dit en paires manquantes, comme partout ailleurs. */
+function reSectionHTML(tag,prods){
+  var d=RE_TAGS[tag]||{t:tag,d:""};
+  var mq=prods.reduce(function(n,P){return n+P.manque;},0);
+  var compte=prods.length
+    ? (acPl(prods.length,"produit")+" · "
+       +(mq>0?('<b>'+acPl(mq,"paire")+'</b> à commander'):'tout est au niveau'))
+    : "aucun produit";
+  return '<div class="reSecH">'
+      +'<div><div class="reSecT">'+esc(d.t)+'</div>'
+        +'<div class="reSecS">'+esc(d.ds||d.d||"")+'</div></div>'
+      +'<div class="reSecC">'+compte+'</div>'
+      +(mq>0?('<button class="btn mini" onclick="reExport(\''+tag+'\')">'
+              +'Exporter cette liste</button>'):'')
+    +'</div>';
+}
+
 function renderReassort(){
   var body=document.getElementById("reBody");if(!body)return;
   var dup=(function(){try{return reDupSkuHtml();}catch(e){return "";}})();
-  var prods=reProduits();
+  var tous=reProduits();
+  /* DEUX LISTES, ET CE QU'ON ÉCOULE MIS DE CÔTÉ.
+     « À liquider » ne se gère que depuis le mur : ses lignes n'ont rien à
+     faire au milieu de ce qu'on commande. On les compte quand même, et une
+     ligne grise en bas le dit — sinon une référence suivie disparaîtrait de
+     l'écran sans que rien n'explique où elle est passée. */
+  var ecoules=tous.filter(function(P){return P.liquider;});
+  var prods=tous.filter(function(P){return !P.liquider;});
+  var parTag={tods:[],best:[]};
+  prods.forEach(function(P){ (parTag[reTagDe(P.m)]||parTag.tods).push(P); });
   var totalManque=prods.reduce(function(n,P){return n+P.manque;},0);
   var nbTailles=prods.reduce(function(n,P){return n+P.nbTaillesManque;},0);
   var nbProd=prods.length;
@@ -3162,10 +3257,25 @@ function renderReassort(){
           +'<div id="reAddSug" class="reSugBox" style="display:none"></div>'
         +'</div>'
         +'<button class="btn" onclick="reAdd()">Ajouter</button>'
-        +(totalManque>0?'<button class="btn v" onclick="reExport()">Exporter la commande</button>':'')
+        /* Plus de bouton d'export général : chaque liste a le sien, et deux
+           boutons qui s'appellent « exporter » sans dire quoi se confondent. */
       +'</div>'
     +'</div>'
-    +reRenderLignes(prods);
+    +'<div class="reSec">'+reSectionHTML("tods",parTag.tods)
+      +reRenderLignes(parTag.tods,"tods")+'</div>'
+    +'<div class="reSec">'+reSectionHTML("best",parTag.best)
+      +reRenderLignes(parTag.best,"best")+'</div>'
+    +(ecoules.length
+      ? (function(){
+          var pl=(ecoules.length>1);
+          return '<div class="reEcoul">'+acPl(ecoules.length,"produit")+' suivi'
+            +(pl?"s":"")+' '+(pl?"sont":"est")+' marqué'+(pl?"s":"")
+            +' « à liquider » : '
+            +ecoules.map(function(P){return esc(P.m.fr||P.m.sku||"?");}).join(", ")
+            +'. '+(pl?"Ils ne sont pas commandés et se règlent":
+                      "Il n'est pas commandé et se règle")+' depuis le mur.</div>';
+        })()
+      : '');
 }
 
 function reToggleAll(id,on){var m=modeleById(id);if(!m)return;var vars=reGridVariants(m);m.cibles=m.cibles||{};if(on){vars.forEach(function(v){var k=String(v.taille);if(m.cibles[k]==null)m.cibles[k]=1;});}else{vars.forEach(function(v){delete m.cibles[String(v.taille)];});}save();renderReassort();}
