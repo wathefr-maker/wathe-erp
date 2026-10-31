@@ -8,7 +8,15 @@
 <style>
 
   :root{--violet:#2563eb;--violet-2:#3b82f6;--violet-soft:#dbeafe;--ink:#1e1b29;--muted:#6b7280;--line:#eceaf1;--bg:#f6f5f9;
-    --green:#16a34a;--green-soft:#dcfce7;--blue:#2563eb;--blue-soft:#dbeafe;--slate-soft:#e5e7eb;--red:#dc2626;--amber:#d97706;--amber-soft:#fef3c7;
+    /* LE TIERS MOYEN.
+   Il était #b45309, un orange brûlé — exactement la teinte qui dit déjà
+   « à court du temps » et « € perdus » dans le texte des cases. Deux sens
+   dans une seule couleur : on ne savait plus si l'orange parlait du niveau
+   de la référence ou de l'argent qu'elle a laissé passer. Le tiers moyen
+   prend donc un jaune foncé, qui ne se confond ni avec cet orange ni avec
+   le rouge du tiers faible ; l'orange reste à l'alerte, son seul emploi. */
+--jaune:#ca8a04;
+--green:#16a34a;--green-soft:#dcfce7;--blue:#2563eb;--blue-soft:#dbeafe;--slate-soft:#e5e7eb;--red:#dc2626;--amber:#d97706;--amber-soft:#fef3c7;
     --shadow:0 1px 2px rgba(20,16,40,.05),0 4px 16px rgba(20,16,40,.05);}
   *{box-sizing:border-box}html,body{margin:0;padding:0}
   body{font-family:"Plus Jakarta Sans",sans-serif;color:var(--ink);background:var(--bg);font-size:14px}
@@ -586,7 +594,7 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murMo>span.der{color:#44403c}
 /* Pas assez de recul pour une courbe : un filet, au même endroit. */
 .murSp.vide{height:calc(4px * var(--mz,1));background:#e8e2d8}
-.murSp.vide.ok{background:#15803d} .murSp.vide.warn{background:#b45309}
+.murSp.vide.ok{background:#15803d} .murSp.vide.warn{background:var(--jaune)}
 .murSp.vide.bad{background:#b3261e}
 /* En grand, dans le panneau. */
 .murSp.grand{margin:0}
@@ -612,7 +620,7 @@ body{background:var(--bg,#f8fafc);margin:0}
 /* Le résultat, en tête. */
 .pnTete{padding:16px 0 2px;border-left:4px solid #cbd5e1;padding-left:14px;margin-top:12px}
 .pnTete.ok{border-left-color:#1f7a3d}
-.pnTete.warn{border-left-color:#b45309}
+.pnTete.warn{border-left-color:var(--jaune)}
 .pnTete.bad{border-left-color:#b3261e}
 .pnEur{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1;
   font-variant-numeric:tabular-nums}
@@ -666,7 +674,10 @@ body{background:var(--bg,#f8fafc);margin:0}
 .murC.eur .murCv{font-size:17px}
 .murLgI::before{content:"";width:11px;height:4px;border-radius:2px;background:#cbd5e1}
 .murLgI.ok::before{background:#16a34a}
-.murLgI.warn::before{background:#d97706}
+/* La pastille de la légende disait #d97706, encore un troisième orange : la
+   légende et les cases doivent porter exactement le même ton, sinon elle
+   n'explique plus rien. */
+.murLgI.warn::before{background:var(--jaune)}
 .murLgI.bad::before{background:#dc2626}
 
 .murFmt{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex:0 0 auto}
@@ -738,7 +749,8 @@ body{background:var(--bg,#f8fafc);margin:0}
 .amF.bad{border-color:#fecaca;color:#b91c1c}
 .amF.bad.on{background:#b91c1c;border-color:#b91c1c;color:#fff}
 .amF.warn{border-color:#fde68a;color:#92400e}
-.amF.warn.on{background:#b45309;border-color:#b45309;color:#fff}
+/* Sur le jaune, le blanc ne tient pas le contraste : l'encre, oui. */
+.amF.warn.on{background:var(--jaune);border-color:var(--jaune);color:var(--ink)}
 .amF.ok{border-color:#bbf7d0;color:#166534}
 .amF.ok.on{background:#166534;border-color:#166534;color:#fff}
 
@@ -2864,7 +2876,10 @@ function murBandeMj(mj,jeune){
    Le tracé s'étire en largeur (preserveAspectRatio="none") pour occuper toute
    la vignette quelle que soit sa taille ; vector-effect garde le trait d'une
    épaisseur constante malgré cet étirement. */
-var MUR_COUL={ok:"#15803d",warn:"#b45309",bad:"#b3261e",neu:"#8b8278"};
+/* warn : le jaune foncé du tiers moyen, le même que --jaune en CSS. Il vit
+   ici en dur parce que ces teintes partent dans des SVG tracés à la main,
+   où une variable CSS ne serait pas lue. */
+var MUR_COUL={ok:"#15803d",warn:"#ca8a04",bad:"#b3261e",neu:"#8b8278"};
 
 function murCourbe(mois,cls,grand){
   if(!mois||!mois.length)return "";
