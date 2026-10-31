@@ -322,47 +322,84 @@ body{background:var(--bg,#f8fafc);margin:0}
                  comportement de l'outil, c'est donc la seule qui doit sauter
                  aux yeux — et l'encre ne risque pas d'être lue comme un
                  score, contrairement à un rouge ou un ambre. */
-.reTg,.murTg{display:inline-block;border-radius:4px;font-weight:800;
-  letter-spacing:.02em;white-space:nowrap;vertical-align:middle}
-.reTg{margin-right:7px;padding:2px 7px;font-size:10px;line-height:1.5}
-.murTg{float:right;margin:0 0 0 5px;
-  padding:0 calc(4px * var(--mz,1));font-size:calc(8.5px * var(--mz,1));
-  line-height:calc(14px * var(--mz,1))}
-.tg-tods{background:#fff;color:#64748b;box-shadow:inset 0 0 0 1px #cbd5e1}
-/* LE BOUTON CHOISI.
-   Les trois teintes ci-dessus et .reTgB ont la MÊME spécificité (une classe).
-   .reTgB venant après, son fond blanc écrasait tranquillement celui de
-   .tg-best et de .tg-liq : seul TODS s'allumait, parce qu'il était le seul à
-   avoir une règle à deux classes. On redit donc les trois états choisis en
-   .reTgB.on.<teinte>, à spécificité égale entre eux — pas une seule règle
-   qui compterait sur l'ordre du fichier.
-   Et TODS, creux en pastille (un basique n'a pas à crier), se remplit ici :
-   dans un sélecteur, la règle est choisi = plein, pas choisi = creux. */
-.reTgB.on.tg-tods{background:#e2e8f0;color:#334155;box-shadow:none}
-.reTgB.on.tg-best{background:var(--violet-soft);color:#1d4ed8}
-.reTgB.on.tg-liq {background:var(--ink);color:#fff}
+/* Les trois teintes. Elles servent au bandeau d'une case et au curseur de
+   l'interrupteur ; chaque emploi redit ce qu'il lui faut à sa propre
+   spécificité, pour que l'ordre du fichier ne décide de rien. */
+.tg-tods{background:#e2e8f0;color:#334155}
 .tg-best{background:var(--violet-soft);color:#1d4ed8}
 .tg-liq {background:var(--ink);color:#fff}
-/* Le sélecteur, sur la ligne de réassort : trois cases à cocher qui s'excluent,
-   et on voit laquelle est prise sans avoir à ouvrir quoi que ce soit. */
-.reTgSet{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
-.reTgB{border:1px solid var(--line);background:#fff;color:#94a3b8;
-  padding:2px 7px;border-radius:4px;font:800 10px/1.5 inherit;
-  letter-spacing:.02em;cursor:pointer;white-space:nowrap}
-.reTgB:hover{border-color:#cbd5e1;color:var(--muted)}
-.reTgB.on{border-color:transparent}
-.reTgB.reTgX{font-size:12px;line-height:1.2;padding:1px 6px;color:#94a3b8}
-/* L'étiquette du sélecteur dans la barre d'outils du réglage, qui mélange
-   des boutons de natures différentes : sans ce mot, on ne sait pas de quoi
-   parlent les deux premiers. */
+
+/* LE BANDEAU D'UNE CASE.
+   La pastille était posée en haut à droite du nom : elle se battait avec la
+   gommette de rang pour le même coin, et prenait au nom la place de quelques
+   lettres. En bandeau pleine largeur au-dessus du nom, elle ne dispute rien
+   à personne, se lit d'un balayage sur tout le mur — et le rang vient s'y
+   loger, ce qui libère le coin.
+   Les marges négatives le font saigner jusqu'aux bords de la case, par-dessus
+   son padding : un bandeau qui s'arrête avant le bord n'est plus un bandeau,
+   c'est une barre posée dessus. */
+.murTg{display:flex;align-items:center;gap:calc(5px * var(--mz,1));
+  margin:calc(-11px * var(--mz,1)) calc(-12px * var(--mz,1))
+         calc(8px * var(--mz,1));
+  padding:calc(4px * var(--mz,1)) calc(10px * var(--mz,1));
+  font-size:calc(9px * var(--mz,1));font-weight:800;letter-spacing:.04em;
+  line-height:calc(13px * var(--mz,1));white-space:nowrap;overflow:hidden;
+  /* Hauteur imposée, et pas seulement déduite du texte : un bandeau vide
+     n'a pas de ligne de texte, il se serait donc aplati, et les montants
+     d'une rangée auraient fini à deux hauteurs différentes — exactement ce
+     que le bandeau permanent est censé empêcher. */
+  min-height:calc(21px * var(--mz,1))}
+/* Le bandeau d'une case sans étiquette : invisible, mais présent, pour que
+   les rangées restent alignées. Il porte encore le rang. */
+.murTg.tg-nu{background:transparent}
+/* Le rang dans le bandeau. Sur un bandeau coloré il se contente d'être plus
+   dense que le mot à côté : deux fonds superposés feraient un timbre collé
+   sur une étiquette. Sur un bandeau vide il n'a rien derrière lui, et
+   reprend donc sa gommette verte, celle du podium. */
+.murTgR{margin-left:auto;font-weight:800;opacity:.72;
+  font-size:calc(9.5px * var(--mz,1))}
+.tg-nu .murTgR{opacity:1;color:#fff;background:#15803d;border-radius:3px;
+  min-width:calc(16px * var(--mz,1));height:calc(14px * var(--mz,1));
+  padding:0 calc(3px * var(--mz,1));display:flex;align-items:center;
+  justify-content:center;font-size:calc(9.5px * var(--mz,1))}
+.tg-nu .murTgR.r2{background:#4b7a58}
+.tg-nu .murTgR.r3{background:#6f8a77}
+/* L'INTERRUPTEUR À TROIS POSITIONS.
+   Trois boutons côte à côte se ressemblaient : trois rectangles blancs bordés
+   de gris, dont l'un très légèrement rempli. Rien ne disait qu'il fallait en
+   choisir UN, ni lequel était pris. Une piste creusée avec un seul curseur
+   dedans dit les deux par sa seule forme. */
+.segm{display:flex;background:#f1f5f9;border-radius:10px;padding:3px;gap:3px}
+.segB{flex:1;border:0;background:transparent;border-radius:8px;cursor:pointer;
+  font:800 12.5px/1 inherit;color:#64748b;padding:9px 4px;white-space:nowrap;
+  letter-spacing:0;text-transform:none;
+  transition:background .12s,color .12s}
+.segB:hover{color:#334155}
+/* Les trois positions prises, dites à spécificité égale : .segB vient après
+   .tg-* et son fond transparent les écraserait sinon — exactement le défaut
+   déjà rencontré avec les anciens boutons. */
+.segB.on.tg-tods{background:#fff;color:#1e293b;box-shadow:0 1px 3px rgba(15,23,42,.14)}
+.segB.on.tg-best{background:var(--violet);color:#fff}
+.segB.on.tg-liq {background:var(--ink);color:#fff}
+/* La phrase sous la piste : ce que le choix veut dire, et le retrait écrit en
+   toutes lettres plutôt qu'une croix muette. */
+.segDit{display:flex;align-items:baseline;gap:10px;margin-top:8px;
+  font-size:12px;line-height:1.4;font-weight:500;color:var(--muted);
+  text-transform:none;letter-spacing:0}
+.segX{margin-left:auto;border:0;background:transparent;color:#94a3b8;
+  font:700 11.5px/1.4 inherit;text-decoration:underline;cursor:pointer;
+  white-space:nowrap;padding:0;text-transform:none;letter-spacing:0}
+.segX:hover{color:var(--red)}
+/* Le mot qui annonce l'interrupteur dans la barre d'outils du réglage, qui
+   mélange des boutons de natures différentes. */
 .pcLbl{font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--muted);
   text-transform:uppercase;margin-right:-2px}
-/* Dans le panneau d'une case : libellé à gauche, boutons à droite, sur la
-   même ligne que la position — c'est un réglage, pas une donnée. */
-.murTgL{display:flex;align-items:center;gap:10px;padding:0 18px 12px;
-  font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--muted);
-  text-transform:uppercase}
-.murTgL .reTgSet{margin-top:0}
+/* Dans le panneau d'une case, l'étiquette est un bloc à elle : un titre, la
+   piste sur toute la largeur, la phrase dessous. Sur une seule ligne, la
+   piste aurait été écrasée contre le bord. */
+.murTgL{padding:0 18px 14px}
+.murTgT{font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:9px}
 .bdg{display:inline-block;padding:3px 11px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap}
 .bdg.warn{background:#fef3c7;color:#92400e}
 .bdg.ok{background:#dcfce7;color:#166534}
@@ -1235,6 +1272,17 @@ function reTagSet(id,tag){
 /* Les trois boutons, plus un pour reposer à vide. Servent sur la ligne de
    réassort ET dans le panneau d'une case du mur : « à liquider » doit pouvoir
    se poser sur une référence qui n'est pas dans l'onglet réassort. */
+/* L'INTERRUPTEUR À TROIS POSITIONS.
+
+   Les trois boutons côte à côte se ressemblaient : trois rectangles blancs
+   bordés de gris, dont l'un très légèrement rempli. Rien ne disait qu'il
+   fallait en choisir UN, ni lequel était pris, et le « × » ne disait pas ce
+   qu'il retirait.
+
+   Un interrupteur dit les trois à la fois : une seule piste creusée, un seul
+   curseur dedans, donc un seul choix possible ; le curseur porte la couleur
+   de l'étiquette, donc on voit laquelle ; et une phrase dessous rappelle ce
+   que le choix veut dire, avec « retirer » écrit en toutes lettres. */
 function reTagSetHTML(m,ou){
   var pose=reTagDe(m);
   /* OÙ SE POSE QUOI.
@@ -1248,27 +1296,37 @@ function reTagSetHTML(m,ou){
     return (k!=="liquider")||(ou==="mur");
   });
   var h=cles.map(function(k){
-    return '<button class="reTgB'+(pose===k?' on '+RE_TAGS[k].cls:'')+'" title="'
+    return '<button class="segB'+(pose===k?' on '+RE_TAGS[k].cls:'')+'" title="'
       +esc(RE_TAGS[k].d)+'" onclick="reTagSet('+m.id+',\''+k+'\')">'
       +esc(RE_TAGS[k].t)+'</button>';}).join("");
-  /* Le « × » retire l'étiquette. Au mur, c'est utile : une référence peut
-     n'en porter aucune. Dans l'onglet réassort, non — sans étiquette une
-     référence suivie est un TODS, donc le × ferait exactement ce que fait
-     déjà le bouton TODS, en moins clair. Un bouton de moins par ligne, et
-     quatre fois moins de bruit dans une liste de quatre. */
-  if(pose&&ou==="mur")
-    h+='<button class="reTgB reTgX" title="Retirer l\'étiquette" '
-      +'onclick="reTagSet('+m.id+',\'\')">×</button>';
-  return '<div class="reTgSet">'+h+'</div>';
+  var piste='<div class="segm">'+h+'</div>';
+  /* Dans la barre d'outils du réassort, l'interrupteur voisine avec d'autres
+     boutons : la phrase et le lien de retrait l'alourdiraient, et retirer
+     l'étiquette n'y veut rien dire — sans étiquette, une référence suivie
+     EST un TODS. La piste suffit. */
+  if(ou!=="mur")return piste;
+  var dit=pose?esc(RE_TAGS[pose].d):"Aucune étiquette : au mur, mais pas suivie en réassort.";
+  return piste
+    +'<div class="segDit"><span>'+dit+'</span>'
+    +(pose?('<button class="segX" onclick="reTagSet('+m.id+',\'\')">retirer</button>'):'')
+    +'</div>';
 }
-/* La pastille, telle qu'elle apparaît sur une case du mur et sur une ligne de
-   réassort. Rien si la référence n'est pas étiquetée : une pastille vide
-   n'apprend rien et mange la place du nom. */
-function reTagBadge(m,taille){
-  var t=reTagDe(m);if(!t)return "";
-  var d=RE_TAGS[t];
-  return '<span class="'+(taille||"reTg")+' '+d.cls+'" title="'+esc(d.d)+'">'
-    +esc(d.t)+'</span>';
+/* LE BANDEAU D'UNE CASE DU MUR, avec le rang logé dedans.
+
+   Il est TOUJOURS posé, même vide. Le mur se lit en balayant une rangée pour
+   comparer les montants : si le bandeau n'existait que sur les cases
+   étiquetées, leur nom descendrait de vingt pixels et les gros chiffres ne
+   seraient plus sur la même ligne d'une case à l'autre. Une bande
+   transparente ne coûte que sa hauteur, et la rangée reste alignée.
+   Vide, il n'est pas pour autant inutile : c'est lui qui porte le rang. */
+function murBandeau(m,rang){
+  var t=reTagDe(m), d=t?RE_TAGS[t]:null;
+  return '<div class="murTg '+(d?d.cls:"tg-nu")+'"'
+    +(d?(' title="'+esc(d.d)+'"'):'')+'>'
+    +(d?esc(d.t):'')
+    +(rang?('<span class="murTgR r'+rang+'" title="'+rang+(rang===1?'re':'e')
+        +' meilleure référence du mur">'+rang+'</span>'):'')
+    +'</div>';
 }
 function reToggleRow(id){_reOpen=(_reOpen==id)?null:(+id);renderReassort();}
 function reSetGrille(id,g){var m=modeleById(id);if(!m)return;m.todsGrille=g;save();renderReassort();}
@@ -3098,6 +3156,7 @@ function murCase(r,c){
     +'title="Poser un modèle ici — ou y faire glisser une boîte">+</button>';
   var x=murCalc(m),B=murBandeMj(x.margeMois,x.jeune);
   var rang=murRang(m.id);          // 1, 2 ou 3 pour le podium du mur, 0 sinon
+  var bandeau=murBandeau(m,rang);  // vide si la référence n'est pas étiquetée
   var ouvert=(_murEdit===String(m.id));
   var marque=x.jeune?'<i>jeune</i>'
             :(x.viteJuge?('<i title="Jugée sur '+x.jours+' jours seulement, parce '
@@ -3139,15 +3198,10 @@ function murCase(r,c){
     +'ondragover="murDragOver(event,this)" ondragleave="murDragLeave(this)" '
     +'ondrop="murDeposer(event,'+r+','+c+')" '
     +'onclick="murEditer('+m.id+')" title="'+esc(bulle)+'">'
-    /* Rang et étiquette se posent tous deux dans le coin, en gommettes : le
-       rang d'abord, collé au bord, l'étiquette à sa gauche. Elles mangent un
-       bout de la première ligne du nom — c'est voulu, le nom complet reste
-       dans l'infobulle et l'intention se lit sans ouvrir la case. */
-    +'<div class="murCn">'
-      +(rang?('<span class="murRg r'+rang+'" title="'+rang
-        +(rang===1?'re':'e')+' meilleure référence du mur">'+rang+'</span>'):'')
-      +reTagBadge(m,"murTg")
-      +esc(m.fr||m.sku||"?")+'</div>'
+    /* L'étiquette en bandeau au-dessus du nom, et le rang dedans : le nom
+       récupère sa ligne entière, et le coin n'est plus disputé. */
+    +bandeau
+    +'<div class="murCn">'+esc(m.fr||m.sku||"?")+'</div>'
     +'<div class="murCv">'+((x.margeMois==null)?"—":amEur(x.margeMois))
       +'<span>par mois</span>'+marque+'</div>'
     /* Les deux facteurs du montant, sur une seule ligne grise : la marge par
@@ -3315,7 +3369,8 @@ function murReglage(){
        références qui ne sont PAS dans l'onglet réassort : si le seul endroit
        pour la poser était cet onglet, il faudrait d'abord déclarer essentiel
        un produit qu'on veut justement arrêter de reprendre. */
-    +'<div class="murTgL">Étiquette'+reTagSetHTML(m,"mur")+'</div>'
+    +'<div class="murTgL"><div class="murTgT">Étiquette</div>'
+      +reTagSetHTML(m,"mur")+'</div>'
     +'<div class="pnCorps">'
       +tete
       +bloc("Ce que la case rapporte",equation)
