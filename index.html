@@ -9861,7 +9861,12 @@ var RETOUR_COEF=[
      en deux mots — la table est comparée au NOM du fournisseur, et une
      orthographe de plus suffirait à faire disparaître la préconisation. */
   {match:/shoe\s*platform/i,  coef:1.5},
-  {match:/gold\s*sneakers/i,  coef:1.5}
+  /* « GoldSneakers » et « Golden Sneakers » sont deux fiches pour la MÊME
+     maison : le (en)? attrape les deux, et le \s* les deux orthographes en
+     un ou deux mots. La vraie correction serait de fusionner les deux fiches
+     fournisseur — ici on s'assure au moins que le coefficient ne dépende pas
+     de laquelle a été choisie à l'achat. */
+  {match:/gold(en)?\s*sneakers/i, coef:1.5}
 ];
 function retourCoef(fourId){
   var f=fourById(fourId)||{};
