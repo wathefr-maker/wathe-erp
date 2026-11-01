@@ -115,7 +115,6 @@
     font:800 14px/1 inherit;padding:13px 10px;cursor:pointer}
   .shopRetGo:hover{background:#000}
   .shopRetPied{font-size:11px;line-height:1.45;margin-top:8px;text-align:center}
-  .shopRetVerif{width:100%;margin-top:9px;padding:6px 10px;font-size:11.5px}
   @media (max-width:980px){
     .shopRetLay{grid-template-columns:1fr}
     .shopRetSide{position:static}
@@ -9749,8 +9748,6 @@ function shopReturnCard(o,summaryOnly){
       +'<button class="shopRetGo" id="shopRetBtn" onclick="shopProcessReturn()">Valider le retour</button>'
       +'<div class="shopRetPied muted">Le remboursement part vraiment sur Shopify, '
         +'sur le moyen de paiement d\'origine.</div>'
-      +'<button type="button" class="btn shopRetVerif" onclick="shopTesterRemboursement()">'
-        +'Vérifier l\'autorisation Shopify</button>'
     +'</div></aside>';
 
     h+='</div>';
@@ -9858,9 +9855,13 @@ function shopRetSetPen(type,val){
 /* Coefficients de remise en vente par fournisseur, appliqués au prix d'ACHAT.
    Fournisseur absent de la table = aucune préconisation, saisie manuelle. */
 var RETOUR_COEF=[
-  {match:/turum/i,        coef:1.8},
-  {match:/\bjkn\b/i,      coef:1.8},
-  {match:/gold\s*sneakers/i, coef:1.5}
+  {match:/turum/i,            coef:1.8},
+  /* ShoePlatform prend la place de JKN, au même coefficient que GoldSneakers.
+     Le \s* attrape aussi « Shoe Platform » si la fiche est un jour ressaisie
+     en deux mots — la table est comparée au NOM du fournisseur, et une
+     orthographe de plus suffirait à faire disparaître la préconisation. */
+  {match:/shoe\s*platform/i,  coef:1.5},
+  {match:/gold\s*sneakers/i,  coef:1.5}
 ];
 function retourCoef(fourId){
   var f=fourById(fourId)||{};
@@ -10001,9 +10002,12 @@ function shopRefundLines(o,pieces){
    entre deux retours, et une question de plus avant chaque remboursement
    n'apporterait rien. */
 var _shopPeutRembourser=null;
-/* Le même contrôle, déclenché à la main et sans rien engager. On oublie le
-   résultat mémorisé avant de redemander : on s'en sert justement après avoir
-   corrigé l'autorisation côté Shopify. */
+/* Le même contrôle, déclenché à la main et sans rien engager. Son bouton a
+   été retiré de la fenêtre une fois l'autorisation confirmée : on ne la
+   vérifie pas deux fois. La fonction reste pour la console, le jour où un
+   remboursement échouerait sans motif clair. On oublie le résultat mémorisé
+   avant de redemander, puisqu'on s'en sert justement après avoir corrigé
+   l'autorisation côté Shopify. */
 async function shopTesterRemboursement(){
   _shopPeutRembourser=null;
   var p=await shopPeutRembourser();
