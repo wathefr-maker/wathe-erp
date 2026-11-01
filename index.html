@@ -11023,22 +11023,153 @@ async function shopCancelPurgeFlowstock(pieces,orderName){
   return fsPieces.length;
 }
 
+/* ============================================================================
+   ANNULER, DES DEUX CÔTÉS
+
+   La fenêtre promettait déjà « l'annulation côté Shopify sera poussée
+   automatiquement » — et rien ne le faisait. La commande restait ouverte et
+   payée sur la boutique pendant que l'ERP la disait annulée, ses paires
+   remises en stock et sa facture supprimée. Même promesse creuse que pour le
+   remboursement, au même endroit.
+
+   L'ORDRE EST INVERSE DE CELUI DU REMBOURSEMENT, et pour une bonne raison.
+   Un remboursement refusé laisse un retour valable : la paire est bien
+   revenue, on la remet en stock, on rendra l'argent autrement. Une annulation
+   refusée, non : si Shopify garde la commande ouverte et que l'ERP la dit
+   annulée, les deux divergent — exactement ce qu'on cherche à supprimer.
+   Shopify parle donc EN PREMIER. S'il refuse, on n'annule rien, on explique
+   pourquoi, et on propose la seule issue honnête : n'annuler que dans l'ERP,
+   en sachant que la boutique ne suivra pas.
+
+   Les trois questions que pose Shopify — rembourser, prévenir, pour quel
+   motif — sont posées ici aussi, puisque c'est ici qu'on décide désormais. */
+
+/* La fenêtre, qui remplace le confirm(). Rend null si on renonce. */
+function shopCancelDialog(o,nbPaires,fact){
+  return new Promise(function(resolve){
+    var ov=document.createElement("div");
+    ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
+      +"display:flex;align-items:center;justify-content:center;padding:20px";
+    var paye=/PAID|PARTIALLY_PAID/.test(String(o.financial||""));
+    var tot=(o.total!=null?+o.total:0)||0;
+    ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;'
+      +'padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+      +'<div style="font-weight:800;font-size:17px;margin-bottom:3px">Annuler la commande '
+        +esc(o.name)+'</div>'
+      +'<div class="sub" style="margin-bottom:16px">'
+        +nbPaires+' paire'+(nbPaires>1?"s":"")+' repasse'+(nbPaires>1?"nt":"")+' en stock'
+        +(fact?(', la facture '+esc(fact.num||"")+' est supprimée'):'')+'.</div>'
+      +'<label style="display:block;font-size:12px;font-weight:700;margin-bottom:5px">'
+        +'Motif, demandé par Shopify</label>'
+      +'<select id="_scMotif" style="width:100%;padding:8px 10px;border:1px solid var(--line);'
+        +'border-radius:9px;font-family:inherit;font-size:13.5px;margin-bottom:14px">'
+        +'<option value="STAFF" selected>Erreur de la boutique</option>'
+        +'<option value="CUSTOMER">Demande du client</option>'
+        +'<option value="INVENTORY">Rupture de stock</option>'
+        +'<option value="DECLINED">Paiement refusé</option>'
+        +'<option value="FRAUD">Fraude</option>'
+        +'<option value="OTHER">Autre</option>'
+      +'</select>'
+      +'<label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;'
+        +'margin-bottom:9px;cursor:pointer"><input type="checkbox" id="_scRemb" checked>'
+        +'<span>Rembourser le client'
+        +(paye&&tot>0?(' <b>('+eur(tot)+')</b>'):'')
+        +'<i style="display:block;font-style:normal;font-size:11.5px;color:var(--muted);'
+        +'line-height:1.4">'+(paye
+          ?'La commande est payée : l\'argent repart sur le moyen de paiement d\'origine.'
+          :'La commande n\'est pas encaissée ; une autorisation bancaire en attente sera libérée de toute façon.')
+        +'</i></span></label>'
+      +'<label style="display:flex;gap:9px;align-items:center;font-size:13px;'
+        +'margin-bottom:18px;cursor:pointer"><input type="checkbox" id="_scMail" checked>'
+        +'<span>Prévenir le client par mail</span></label>'
+      +'<div style="display:flex;gap:9px;justify-content:flex-end">'
+        +'<button type="button" class="btn" id="_scNon">Renoncer</button>'
+        +'<button type="button" class="btn r" id="_scOui">Annuler la commande</button>'
+      +'</div></div>';
+    document.body.appendChild(ov);
+    var fin=function(v){try{document.body.removeChild(ov);}catch(_){}resolve(v);};
+    ov.querySelector("#_scNon").onclick=function(){fin(null);};
+    ov.querySelector("#_scOui").onclick=function(){
+      fin({motif:ov.querySelector("#_scMotif").value,
+           rembourser:ov.querySelector("#_scRemb").checked,
+           prevenir:ov.querySelector("#_scMail").checked});
+    };
+  });
+}
+
+/* L'appel au relais. Rend toujours un objet, jamais une exception. */
+async function shopEnvoyerAnnulation(o,ch,note){
+  try{
+    var r=await sb.functions.invoke("shopify-cancel",{body:{
+      action:"cancel", orderId:o.id, reason:ch.motif,
+      refund:!!ch.rembourser, restock:true, notify:!!ch.prevenir, note:note||""}});
+    if(r.error)return {ok:false,error:(r.error.message||"appel au relais échoué")};
+    var d=r.data||{};
+    if(!d.ok)return {ok:false,error:(d.error||JSON.stringify(d.userErrors||d)),
+                     expediee:!!d.expediee,dejaAnnulee:!!d.dejaAnnulee};
+    return d;
+  }catch(e){return {ok:false,error:(e&&e.message)||String(e)};}
+}
+
 async function shopRowCancel(orderId){
   const o=_shopOrders.find(x=>x.id===orderId);if(!o)return;
-  if(!confirm("Annuler la commande "+o.name+" ?\n\nLes paires assignées repassent en stock et la facture éventuelle est supprimée.\n\n(L'annulation côté Shopify sera poussée automatiquement à l'étape « écriture Shopify ».)"))return;
+  const pieces0=shopOrderPieces(o);
+  const fact0=(DB.factures||[]).find(f=>f.orderId===o.id);
+  const ch=await shopCancelDialog(o,pieces0.length,fact0);
+  if(!ch)return;
+
+  /* Shopify d'abord. Tant qu'il n'a pas accepté, l'ERP ne bouge pas. */
+  const rc=await shopEnvoyerAnnulation(o,ch,"Annulée depuis l'ERP");
+  if(!rc.ok){
+    var suite=rc.dejaAnnulee
+      ? "\n\nElle l'est peut-être déjà côté Shopify sans que l'ERP le sache : "
+        +"tu peux l'annuler ici seulement, pour remettre les deux d'accord."
+      : "\n\nTu peux quand même l'annuler dans l'ERP seul — mais la commande "
+        +"restera ouverte sur Shopify, et les deux ne diront plus la même chose.";
+    if(!confirm("Shopify a refusé l'annulation.\n\n"+(rc.error||"")+suite
+      +"\n\nAnnuler quand même dans l'ERP seulement ?"))return;
+  }
+
   const pieces=shopOrderPieces(o);
   pieces.forEach(function(a){a.statut="En Stock";a.dispo=1;delete a.manualLink;delete a.shopifyOrderId;delete a.shopifyOrderName;delete a.shopifyLineIdx;delete a.shopifyTracking;delete a.shopifyTrackingSent;delete a.shopifyInvoiced;delete a.shopifyInvoiceNum;a.maj=today();});
   DB.factures=(DB.factures||[]).filter(f=>f.orderId!==o.id);
   o.cancelled=1;o.cancelledAt=today();
   try{if(!Array.isArray(DB.shopCancelled))DB.shopCancelled=[];if(DB.shopCancelled.indexOf(o.id)<0)DB.shopCancelled.push(o.id);}catch(e){}
   try{if(window._shopCancelledIds instanceof Set)_shopCancelledIds.add(o.id);}catch(e){}await shopOverridesSave();
-  logAct("Annulation Shopify",o.name,pieces.length+" paire(s) remises en stock");
+  /* Ce que Shopify a fait de son côté, gardé sur la commande : sans ça, rien
+     à l'écran ne distingue une annulation poussée d'une annulation locale. */
+  if(rc.ok){
+    o.shopifyCancelledAt=today();
+    o.shopifyCancelRefund=!!ch.rembourser;
+    o.shopifyCancelJob=rc.jobId||null;
+    o.financial=ch.rembourser?"REFUNDED":(o.financial||"");
+  }
+  logAct("Annulation Shopify",o.name,pieces.length+" paire(s) remises en stock"
+    +(rc.ok?(" · poussée à Shopify"+(ch.rembourser?(" avec remboursement"
+      +(rc.montant?(" de "+eur(rc.montant)):"")):" sans remboursement")):" · ERP SEUL"));
   // Les paires venues de FlowStock pour cette commande n'ont plus d'objet : on propose.
   var _purg=0;try{_purg=await shopCancelPurgeFlowstock(pieces,o.name);}catch(_){}
   save();try{shopCacheSave();}catch(e){}renderShopRows();
-  alert("Commande "+o.name+" annulée côté ERP.\n"
-    +(pieces.length-_purg)+" paire(s) de nouveau en stock."
-    +(_purg?("\n"+_purg+" paire(s) retirée(s) du stock."):""));
+  /* LA VITRINE DOIT SUIVRE. Les paires remises en stock n'étaient jusqu'ici
+     resynchronisées QUE si elles venaient de FlowStock et se faisaient purger :
+     une paire ordinaire repassait en stock dans l'ERP sans que la boutique en
+     entende parler, et la taille restait épuisée en ligne. Shopify réintègre
+     bien de son côté pendant l'annulation, mais c'est l'ERP qui fait foi — on
+     repose donc la quantité absolue, après lui. */
+  var _reste=(DB.articles||[]).filter(function(a){
+    return a&&!a.archived&&a.dispo&&pieces.indexOf(a)>=0;});
+  if(_reste.length){
+    try{await shopSyncModelsForArticles(_reste);}
+    catch(e){console.warn("resynchro après annulation",e);}
+  }
+  alert("Commande "+o.name+(rc.ok?" annulée des deux côtés." : " annulée côté ERP SEULEMENT.")
+    +"\n"+(pieces.length-_purg)+" paire(s) de nouveau en stock."
+    +(_purg?("\n"+_purg+" paire(s) retirée(s) du stock."):"")
+    +(rc.ok
+      ? ("\n\nShopify : annulation "+(rc.fini?"effectuée":"lancée, elle s'applique dans la minute")
+         +(ch.rembourser?(", "+eur(rc.montant||0)+" remboursés"):", sans remboursement")
+         +(ch.prevenir?", client prévenu.":", sans mail au client."))
+      : "\n\n⚠️ La commande reste OUVERTE sur Shopify. Pense à l'y annuler à la main."));
 }
 function shopBottomBar(o){
   const ac=shopOrderAssignCount(o),assignedDone=ac.need>0&&ac.have>=ac.need,trackSent=shopOrderTrackingSent(o);
