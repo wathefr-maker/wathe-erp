@@ -9854,6 +9854,47 @@ function shopRetSetPen(type,val){
 }
 /* Coefficients de remise en vente par fournisseur, appliqués au prix d'ACHAT.
    Fournisseur absent de la table = aucune préconisation, saisie manuelle. */
+/* ============================================================================
+   UN FOURNISSEUR, UN NOM
+
+   L'import des achats rapproche les fournisseurs par leur nom, littéralement.
+   Or les sources n'écrivent pas toutes pareil : « GoldSneakers » pour
+   l'ancien flux, « Golden Sneakers » pour Sourcing Hub. Résultat, deux fiches
+   pour une seule maison, un chiffre d'affaires coupé en deux, et un
+   coefficient de remise en vente qui dépendait de laquelle avait été choisie.
+
+   Fusionner les fiches ne suffisait pas : le prochain import avec l'ancienne
+   orthographe en recréait une. Il faut que le rapprochement lui-même tolère
+   la variante.
+
+   Deux niveaux :
+     · la normalisation, qui règle les écarts bénins — casse, espaces en trop,
+       ponctuation. Elle suffit pour « VLTN SNS » contre « vltn  sns ».
+     · les alias, pour ce qu'aucune règle ne peut deviner. « goldsneakers » et
+       « goldensneakers » diffèrent de deux lettres au milieu d'un mot : seule
+       une table peut dire que c'est la même maison.
+
+   On n'y met que ce qu'on a constaté. Une table d'alias trop large finit par
+   fusionner deux vrais fournisseurs voisins, et ça ne se voit pas tout de
+   suite. */
+var FOUR_ALIAS=[
+  {match:/^gold(en)?sneakers$/, nom:"Golden Sneakers"}
+];
+function fourNomCanon(nom){
+  var n=String(nom==null?"":nom).toLowerCase()
+         .replace(/[^a-z0-9]+/g,"")      // casse, espaces, tirets, points
+         .trim();
+  if(!n)return "";
+  for(var i=0;i<FOUR_ALIAS.length;i++)
+    if(FOUR_ALIAS[i].match.test(n))return fourNomCanon2(FOUR_ALIAS[i].nom);
+  return n;
+}
+/* Le nom canonique d'un alias, sans repasser par la table : sinon un alias
+   dont la cible correspond à son propre motif tournerait en rond. */
+function fourNomCanon2(nom){
+  return String(nom==null?"":nom).toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
+}
+
 var RETOUR_COEF=[
   {match:/turum/i,            coef:1.8},
   /* ShoePlatform prend la place de JKN, au même coefficient que GoldSneakers.
@@ -12075,7 +12116,10 @@ function flowstockImport(txt,silent){
        return _sig(a.flowstockRef||a.customerOrderNumber||"",aItems)===_key;
      })){nDup++;try{if(p.purchase_id!=null){_fsKnownShared.add(String(p.purchase_id));}}catch(e){}return;}}
     const sname=((p.supplier||{}).name||"Fournisseur inconnu").trim();
-    let four=DB.fournisseurs.find(f=>(f.societe||f.nom||"").toLowerCase()===sname.toLowerCase());
+    /* Le rapprochement se fait sur le nom CANONIQUE, pas sur le nom brut :
+       deux sources qui écrivent la même maison autrement créaient deux fiches,
+       et la seconde réapparaissait à chaque import même après fusion. */
+    let four=DB.fournisseurs.find(f=>fourNomCanon(f.societe||f.nom||"")===fourNomCanon(sname));
     if(!four){const fid=newId(DB.fournisseurs);four={id:fid,type:"Professionnel",societe:sname,nom:sname,prenom:"",flowstockType:(p.supplier||{}).type||"",reg:"",pays:"France"};DB.fournisseurs.push(four);}
     // Identifiant DÉRIVÉ du purchase_id FlowStock, pas tiré au hasard.
     // C'est le verrou de fond : deux postes qui importent le même achat en même
