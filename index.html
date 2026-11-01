@@ -9591,7 +9591,17 @@ function shopReturnCard(o,summaryOnly){
        '<button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopRetSetPen(\'pct\',20)">−20 %</button>'+
        '<button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopRetSetPen(\'eur\',0)">Aucune</button></div>'+
        '<div class="muted" style="font-size:12px;margin-bottom:10px">Ou saisis le montant à la main. La pénalité = ce qui est retenu au client.</div>';
-    h+='<div style="margin-top:14px"><button class="btn r" onclick="shopProcessReturn()">Valider le retour</button></div>';
+    h+='<div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      +'<button class="btn r" onclick="shopProcessReturn()">Valider le retour</button>'
+      /* À vide, pour savoir avant de s'engager. Le contrôle a lieu de toute
+         façon au moment de valider, mais le découvrir là veut dire qu'on a
+         déjà le client au téléphone. */
+      +'<button type="button" class="btn" style="padding:6px 12px;font-size:12px" '
+        +'onclick="shopTesterRemboursement()">Vérifier l\'autorisation Shopify</button>'
+      +'</div>'
+      +'<div class="muted" style="font-size:12px;margin-top:6px">'
+      +'Valider enverra le remboursement à Shopify : l\'argent part vraiment, '
+      +'et le client reçoit le mail de Shopify.</div>';
   }else{h+='<div class="muted" style="font-size:12.5px;padding:6px 0">Aucune paire assignée à retourner.</div>';}
   if(past.length)h+='<div style="margin-top:14px;font-size:12.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>Retours déjà effectués :</b> '+past.map(a=>esc(a.ref)+(a.shopifyLost?" (perdu)":"")).join(", ")+'</span><button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopUndoReturn(\''+o.id+'\')">↺ Annuler le retour</button></div>';
   h+='</div>';
@@ -9602,7 +9612,19 @@ function shopUndoReturn(orderId){
   const o=_shopOrders.find(x=>x.id===orderId);if(!o)return;
   const rets=shopOrderReturns(o);
   if(!rets.length)return alert("Aucun retour à annuler pour cette commande.");
-  if(!confirm("Annuler le retour de "+rets.length+" paire(s) pour "+o.name+" ?\n\nLes paires sont remises sur la commande et l'avoir éventuel est supprimé.\n(Un remboursement déjà envoyé à Shopify n'est pas annulé automatiquement.)"))return;
+  /* L'argent déjà rendu ne revient pas. Le message générique d'avant — « un
+     remboursement n'est pas annulé automatiquement » — se lisait comme une
+     précaution de principe ; maintenant que l'ERP rembourse pour de vrai,
+     il faut dire le montant et la date, sinon on annule un retour en croyant
+     tout remettre à zéro. */
+  var _remb=o.shopifyRefundId
+    ? ("\n\n⚠️ "+eur(+o.shopifyRefundAmount||0)+" ont déjà été remboursés au client sur "
+       +"Shopify"+(o.shopifyRefundedAt?(" le "+o.shopifyRefundedAt):"")+". Cet argent NE "
+       +"revient PAS : annuler ici ne touche qu'à l'ERP. Pour le récupérer, il faut "
+       +"refacturer le client ou encaisser à nouveau.")
+    : "\n(Aucun remboursement n'a été envoyé à Shopify pour cette commande.)";
+  if(!confirm("Annuler le retour de "+rets.length+" paire(s) pour "+o.name+" ?\n\n"
+    +"Les paires sont remises sur la commande et l'avoir éventuel est supprimé."+_remb))return;
   rets.forEach(function(a){var s=a.shopifyReturnSnapshot||{};
     a.shopifyOrderId=(s.orderId!=null?s.orderId:o.id);
     a.shopifyOrderName=(s.orderName!=null?s.orderName:o.name);
@@ -9767,6 +9789,87 @@ function shopReturnReprice(pieces){
   });
 }
 
+/* ============================================================================
+   RENDRE L'ARGENT, DEPUIS L'ERP
+
+   Le retour était complet sauf sur un point, et la fenêtre le disait elle-même :
+   « le remboursement Shopify reste à faire manuellement ». L'ERP remettait la
+   paire en stock, éditait l'avoir, retenait la pénalité, republiait le
+   catalogue — et la commande Shopify restait « Payé » alors que le client avait
+   été remboursé. Deux comptabilités qui divergent, et un geste à ne pas
+   oublier.
+
+   Désormais le retour validé dans l'ERP rembourse pour de vrai. Trois règles
+   tenues par le code plus bas :
+
+   · ON NE COMMENCE PAS CE QU'ON NE PEUT PAS FINIR. L'autorisation Shopify est
+     vérifiée AVANT d'écrire quoi que ce soit. Sans elle, rien n'est appliqué —
+     plutôt qu'un retour enregistré à moitié, avec un avoir émis et un client
+     jamais remboursé.
+   · LE REMBOURSEMENT PASSE AVANT LA RESYNCHRO DU STOCK. Shopify réintègre la
+     paire de son côté quand on lui dit qu'elle est revenue ; l'ERP, lui, pose
+     une quantité ABSOLUE. Dans cet ordre, c'est l'ERP qui a le dernier mot et
+     le compte est juste. Dans l'autre, la taille se retrouvait à +1.
+   · UN ÉCHEC SE DIT. Le retour local reste valide et on explique quoi faire,
+     au lieu d'un « Retour validé » qui laisserait croire que l'argent est parti.
+   ========================================================================== */
+
+/* Les lignes de la commande Shopify correspondant aux paires retournées.
+   À calculer AVANT la boucle de retour : celle-ci efface shopifyLineIdx sur
+   les pièces, et sans cet index on ne sait plus à quelle ligne rendre. */
+function shopRefundLines(o,pieces){
+  var q={};
+  (pieces||[]).forEach(function(a){
+    var li=(o.lines||[])[a.shopifyLineIdx];
+    var sku=(li&&li.sku)||"";
+    if(!sku)return;
+    q[sku]=(q[sku]||0)+1;
+  });
+  return Object.keys(q).map(function(k){return {sku:k,quantity:q[k]};});
+}
+
+/* L'autorisation, demandée une seule fois par session : elle ne change pas
+   entre deux retours, et une question de plus avant chaque remboursement
+   n'apporterait rien. */
+var _shopPeutRembourser=null;
+/* Le même contrôle, déclenché à la main et sans rien engager. On oublie le
+   résultat mémorisé avant de redemander : on s'en sert justement après avoir
+   corrigé l'autorisation côté Shopify. */
+async function shopTesterRemboursement(){
+  _shopPeutRembourser=null;
+  var p=await shopPeutRembourser();
+  if(p.ok)alert("✅ L'ERP peut rembourser sur Shopify.\n\nAutorisations lues : "
+    +((p.scopes||[]).join(", ")||"—"));
+  else alert("❌ L'ERP ne peut pas rembourser.\n\n"+(p.hint||"")
+    +"\n\nLes retours resteront possibles, mais le remboursement devra se faire "
+    +"à la main dans Shopify.");
+}
+async function shopPeutRembourser(){
+  if(_shopPeutRembourser!==null)return _shopPeutRembourser;
+  try{
+    var r=await sb.functions.invoke("shopify-refund",{body:{action:"debug"}});
+    var d=r&&r.data;
+    if(d&&d.ok)_shopPeutRembourser={ok:!!d.canRefund,hint:d.hint||"",scopes:d.scopes||[]};
+    else _shopPeutRembourser={ok:false,hint:(d&&d.error)||(r&&r.error&&r.error.message)||"relais injoignable"};
+  }catch(e){_shopPeutRembourser={ok:false,hint:(e&&e.message)||String(e)};}
+  return _shopPeutRembourser;
+}
+
+/* L'appel lui-même. Rend {ok:true,...} ou {ok:false,error:"..."} — jamais une
+   exception : l'appelant a déjà modifié la base et doit pouvoir continuer. */
+async function shopEnvoyerRemboursement(o,lignes,montant,port,restock,note){
+  try{
+    var r=await sb.functions.invoke("shopify-refund",{body:{
+      action:"refund", orderId:o.id, lines:lignes,
+      amount:montant, shippingAmount:port, restock:!!restock,
+      notify:true, note:note||""}});
+    if(r.error)return {ok:false,error:(r.error.message||"appel au relais échoué")};
+    var d=r.data||{};
+    if(!d.ok)return {ok:false,error:(d.error||JSON.stringify(d.userErrors||d.errors||d))};
+    return d;
+  }catch(e){return {ok:false,error:(e&&e.message)||String(e)};}
+}
+
 async function shopProcessReturn(){
   const o=_shopOrders.find(x=>x.id===_shopCurOrderId);if(!o)return;
   const checked=[].slice.call(document.querySelectorAll(".shopRetChk:checked")).filter(c=>c.offsetParent!==null).map(c=>+c.value);
@@ -9775,7 +9878,29 @@ async function shopProcessReturn(){
   const prodOn=!!(document.getElementById("shopRetProd")||{}).checked;
   const g=shopRetGross();
   const totalInput=Math.round((parseFloat((document.getElementById("shopRetTotal")||{}).value)||0)*100)/100;
-  if(!confirm("Valider le retour de "+checked.length+" paire(s) ?"+(perdu?"\n\n⚠️ Colis perdu : les paires ne reviennent PAS en stock.":"\n\nRéceptionné : les paires reviennent en stock.")+(totalInput>0.005?("\n\nUn avoir de "+eur(totalInput)+" est créé (le remboursement Shopify reste à faire manuellement)."):"\n\nAucun remboursement.")))return;
+  /* L'autorisation d'abord, et seulement si de l'argent doit partir. Sans
+     elle, on s'arrête ici : RIEN n'est écrit. Un retour appliqué à moitié —
+     avoir émis, stock remis, client jamais remboursé — se répare à la main
+     pendant une heure. */
+  if(totalInput>0.005){
+    const perm=await shopPeutRembourser();
+    if(!perm.ok){
+      alert("Remboursement impossible, retour NON appliqué.\n\n"+(perm.hint||"")
+        +"\n\nRien n'a été modifié : tu peux relancer le retour une fois "
+        +"l'autorisation ajoutée.");
+      return;
+    }
+  }
+  if(!confirm("Valider le retour de "+checked.length+" paire(s) ?"
+    +(perdu?"\n\n⚠️ Colis perdu : les paires ne reviennent PAS en stock.":"\n\nRéceptionné : les paires reviennent en stock.")
+    +(totalInput>0.005
+      ?("\n\n💶 "+eur(totalInput)+" seront RÉELLEMENT remboursés au client sur Shopify"
+        +", et un avoir sera créé dans l'ERP."
+        +"\n\nLe client recevra le mail de remboursement de Shopify. Cette opération est irréversible.")
+      :"\n\nAucun remboursement.")))return;
+  /* Les lignes Shopify, AVANT la boucle qui efface shopifyLineIdx. */
+  const _piecesRet=checked.map(function(aid){return DB.articles.find(x=>x.id==aid);}).filter(Boolean);
+  const refundLines=shopRefundLines(o,_piecesRet);
   const refs=[];const restockMids=[];const restockPieces=[];
   checked.forEach(function(aid){const a=DB.articles.find(x=>x.id==aid);if(!a)return;if(a.ref)refs.push(a.ref);
     a.shopifyReturnSnapshot={orderId:a.shopifyOrderId,orderName:a.shopifyOrderName,lineIdx:a.shopifyLineIdx,invoiced:a.shopifyInvoiced,invoiceNum:a.shopifyInvoiceNum,tracking:a.shopifyTracking,trackingSent:a.shopifyTrackingSent,statut:a.statut,dispo:a.dispo,archived:a.archived};
@@ -9803,7 +9928,39 @@ async function shopProcessReturn(){
             +"sont bien celles facturees.";
     }
   }
-  logAct("Retour Shopify",o.name,checked.length+" paire(s)"+(perdu?" (perdu)":"")+(avNums.length?(" · avoir "+avNums.join(", ")):"")+(totalInput>0.005?(" · remb. "+eur(totalInput)):""));
+  /* LE REMBOURSEMENT. Il vient après l'écriture locale — le retour est acquis
+     dans l'ERP quoi qu'il arrive — et AVANT la resynchro du catalogue, pour
+     que la quantité absolue posée par l'ERP ait le dernier mot sur la
+     réintégration faite par Shopify. */
+  let rembMsg="", rembOk=false;
+  if(totalInput>0.005){
+    const note="Retour ERP "+o.name+" · "+checked.length+" paire(s)"
+      +(perdu?" (colis perdu)":"")+(avNums.length?(" · avoir "+avNums.join(", ")):"");
+    /* Ce qu'on DÉCLARE rendre, ligne par ligne, suit les cases cochées : si
+       « rembourser le(s) produit(s) » est décoché, c'est un remboursement de
+       port seul et aucune ligne ne part.
+       Ce qu'on IMPUTE, lui, reste totalInput — l'écart est la pénalité.
+       Colis perdu : on rembourse mais SANS réintégrer, la paire ne revient
+       pas et c'est au transporteur qu'on la réclame. */
+    const rr=await shopEnvoyerRemboursement(o, prodOn?refundLines:[], totalInput,
+      g.ship, !perdu, note);
+    if(rr.ok){
+      rembOk=true;
+      o.shopifyRefundId=rr.refundId||null;
+      o.shopifyRefundedAt=today();
+      o.shopifyRefundAmount=totalInput;
+      if(rr.financialStatus)o.financial=rr.financialStatus;
+      _piecesRet.forEach(function(a){a.shopifyRefundId=rr.refundId||null;a.shopifyRefundAmount=totalInput;});
+      rembMsg="\n\n💶 "+eur(totalInput)+" remboursés sur Shopify"
+        +(rr.unmatched&&rr.unmatched.length?("\n⚠️ Lignes non retrouvées : "+rr.unmatched.join(", ")):"");
+      try{shopCacheSave();}catch(_){}
+    }else{
+      rembMsg="\n\n⚠️ LE REMBOURSEMENT SHOPIFY A ÉCHOUÉ — le client n'a PAS été remboursé.\n"
+        +(rr.error||"")+"\n\nLe retour est enregistré dans l'ERP (stock, avoir). "
+        +"Fais le remboursement depuis Shopify, ou corrige le problème et relance.";
+    }
+  }
+  logAct("Retour Shopify",o.name,checked.length+" paire(s)"+(perdu?" (perdu)":"")+(avNums.length?(" · avoir "+avNums.join(", ")):"")+(totalInput>0.005?(" · remb. "+eur(totalInput)+(rembOk?" envoyé à Shopify":" ÉCHEC Shopify")):""));
   await save();
   // Synchro Shopify des paires remises en stock. On passe par shopSyncModelsForArticles
   // (la meme fonction que le cochage manuel "Dispo Shopify") et NON par shopResyncIds :
@@ -9818,7 +9975,7 @@ async function shopProcessReturn(){
   }
   if(window.ovShop&&ovShop.classList)ovShop.classList.remove("show");_shopModalStep=null;
   renderShopRows();if(document.getElementById("view-shopifyD")&&!document.getElementById("view-shopifyD").classList.contains("hide"))openShopifyOrder(o.id);
-  alert("Retour validé."+(avNums.length?("\n\nAvoir(s) : "+avNums.join(", ")):(avSkip?("\n\n"+avSkip):"")));
+  alert("Retour validé."+(avNums.length?("\n\nAvoir(s) : "+avNums.join(", ")):(avSkip?("\n\n"+avSkip):""))+rembMsg);
 }
 function shopTrkToggleMulti(){
   var box=document.getElementById("shopTrkRows"),chk=document.getElementById("shopTrkMulti");
@@ -10128,6 +10285,15 @@ function shopReturnedBanner(o){
     +'</div>'
     +'<div class="muted" style="font-size:12px;margin-bottom:7px">'
       +'Elles ne sont plus rattachées à la commande et ne comptent plus dans les paires à assigner.</div>'
+    /* L'argent, dit noir sur blanc. Sans cette ligne, rien à l'écran ne
+       distingue un retour remboursé d'un retour où le client attend encore —
+       et c'est la seule des deux situations qui coûte un client. */
+    +(o.shopifyRefundId
+      ? ('<div style="font-size:12.5px;font-weight:700;color:#166534;margin-bottom:7px">'
+         +'💶 '+esc(eur(+o.shopifyRefundAmount||0))+' remboursés au client sur Shopify'
+         +(o.shopifyRefundedAt?(' le '+esc(o.shopifyRefundedAt)):'')+'.</div>')
+      : ('<div style="font-size:12.5px;font-weight:700;color:#b91c1c;margin-bottom:7px">'
+         +'Aucun remboursement envoyé à Shopify pour cette commande.</div>'))
     +'<div style="font-size:12.5px;line-height:1.55">'+lignes+'</div>'
   +'</div>';
 }
