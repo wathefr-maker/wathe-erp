@@ -51,6 +51,75 @@
   .backbtn:hover{background:var(--bg)}
   .detail{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   .dcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 20px}
+
+  /* ====== LA FENÊTRE DE RETOUR, SUR LE MODÈLE DE CELLE DE SHOPIFY ======
+     Les paires à gauche, le décompte à droite, le montant sur le bouton.
+     Passer d'un écran à l'autre ne demande plus de réapprendre où regarder. */
+  .shopRetLay{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;
+    align-items:start;margin-top:6px}
+  .shopRetMain{min-width:0}
+  .shopRetBloc{border:1px solid var(--line);border-radius:12px;padding:13px 15px;
+    margin-bottom:12px}
+  .shopRetTit{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:10px}
+  /* Les deux issues du retour, en pavés cliquables plutôt qu'en boutons radio
+     nus : l'écart entre « réceptionné » et « colis perdu » vaut la place. */
+  .shopRetOpt{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;
+    border:1px solid var(--line);border-radius:10px;cursor:pointer;margin-bottom:7px}
+  .shopRetOpt:last-child{margin-bottom:0}
+  .shopRetOpt:hover{background:#f8fafc}
+  .shopRetOpt:has(input:checked){border-color:var(--violet);background:var(--violet-soft)}
+  .shopRetOpt input{margin-top:2px;flex:0 0 auto}
+  .shopRetOpt b{display:block;font-size:13px}
+  .shopRetOpt i{display:block;font-style:normal;font-size:11.5px;color:var(--muted);
+    line-height:1.4;margin-top:1px}
+  /* Une paire = une ligne, comme un article de la fenêtre Shopify. */
+  .shopRetLigne{display:flex;align-items:center;gap:11px;padding:9px 2px;
+    border-bottom:1px solid #f1f5f9;cursor:pointer}
+  .shopRetLigne:last-child{border-bottom:0}
+  .shopRetNom{flex:1;min-width:0}
+  .shopRetNom b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .shopRetNom i{display:block;font-style:normal;font-size:11.5px;color:var(--muted)}
+  .shopRetPu{font-weight:700;font-size:13.5px;white-space:nowrap}
+  .shopRetEtq{padding:3px 9px;flex:0 0 auto}
+  /* Ce qui vient après, annoncé avant. */
+  .shopRetApres{font-size:12px;color:var(--muted);line-height:1.5;
+    background:#f8fafc;border-radius:10px;padding:10px 13px}
+
+  .shopRetSide{position:sticky;top:12px}
+  .shopRetCarte{border:1px solid var(--line);border-radius:12px;padding:14px 15px;
+    background:#fff}
+  .shopRetL{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;
+    margin-bottom:8px}
+  .shopRetPenL{color:var(--muted)}
+  .shopRetCase{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;
+    cursor:pointer;margin-bottom:8px;line-height:1.4}
+  .shopRetSep{height:1px;background:var(--line);margin:11px 0}
+  .shopRetTot{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    font-size:13.5px;font-weight:800;margin-bottom:3px}
+  .shopRetTot input{max-width:118px;font-size:17px;font-weight:800;text-align:right;
+    padding:7px 9px;border:1px solid var(--line);border-radius:9px;font-family:inherit}
+  .shopRetMax{font-size:11.5px;text-align:right;margin-bottom:10px;min-height:14px}
+  .shopRetRap{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .shopRetRap span{font-size:11px;width:100%;margin-bottom:2px}
+  .shopRetRap button{flex:1;min-width:0;border:1px solid var(--line);background:#fff;
+    border-radius:7px;padding:5px 2px;font:700 11px/1 inherit;cursor:pointer;
+    color:var(--muted);white-space:nowrap}
+  .shopRetRap button:hover{border-color:#cbd5e1;color:var(--ink)}
+  .shopRetNotif{border-top:1px solid var(--line);padding-top:11px;margin-bottom:11px}
+  /* Le bouton de Shopify : sombre, pleine largeur, le montant écrit dessus.
+     L'ancien était rouge et disait « Valider le retour » — rien n'y disait
+     que de l'argent partait. */
+  .shopRetGo{width:100%;border:0;border-radius:10px;background:var(--ink);color:#fff;
+    font:800 14px/1 inherit;padding:13px 10px;cursor:pointer}
+  .shopRetGo:hover{background:#000}
+  .shopRetPied{font-size:11px;line-height:1.45;margin-top:8px;text-align:center}
+  .shopRetVerif{width:100%;margin-top:9px;padding:6px 10px;font-size:11.5px}
+  @media (max-width:980px){
+    .shopRetLay{grid-template-columns:1fr}
+    .shopRetSide{position:static}
+  }
   .dcard h3{margin:0 0 6px;font-size:14px;font-weight:800}
   .drow{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
   .drow .k{color:var(--muted)}.drow .v{font-weight:600;text-align:right;word-break:break-word}
@@ -9561,49 +9630,135 @@ function shopTrackCard(o){
   }
   return h+'</div>';
 }
+/* ============================================================================
+   LA FENÊTRE DE RETOUR, DESSINÉE COMME CELLE DE SHOPIFY
+
+   Les deux écrans faisaient le même geste et ne se ressemblaient pas : d'un
+   côté un résumé à droite, un gros montant et un bouton noir « Rembourser
+   145,25 € » ; de l'autre une colonne unique et un bouton rouge « Valider le
+   retour » qui ne disait pas qu'il déplaçait de l'argent. Passer de l'un à
+   l'autre demandait de réapprendre où regarder.
+
+   On reprend donc la forme de Shopify — les paires à gauche, le décompte et
+   le bouton à droite, le montant écrit sur le bouton — et on garde ce que
+   l'ERP a en plus et que Shopify n'a pas : le colis perdu, les pénalités
+   rapides, et l'avoir.
+
+   Ce qui n'est PAS repris, volontairement :
+     · le motif de remboursement — l'ERP le remplit tout seul avec le numéro
+       de commande et celui de l'avoir, ce qui vaut mieux qu'un champ vide ;
+     · le choix de la méthode — on rembourse toujours sur le moyen de paiement
+       d'origine, et proposer un choix qui n'en est pas un ne sert personne.
+
+   La case « Remettre en stock » de Shopify reste ici DEUX boutons : entre
+   « réceptionné » et « colis perdu », l'ERP ne fait pas que du stock — il
+   archive la paire et la sort du catalogue. Une case à cocher dirait la
+   moitié de ce qui se passe.
+   ========================================================================== */
 function shopReturnCard(o,summaryOnly){
   const pieces=shopOrderPieces(o),past=shopOrderReturns(o);
   if(summaryOnly){
     if(!past.length)return "";
-    return '<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Retour de commande</h3><div style="font-size:12.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>Retours effectués :</b> '+past.map(a=>esc(a.ref)+(a.shopifyLost?" (perdu)":"")).join(", ")+'</span><button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopUndoReturn(\''+o.id+'\')">↺ Annuler le retour</button></div></div>';
+    return '<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Retour de commande</h3>'
+      +'<div style="font-size:12.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<span><b>Retours effectués :</b> '+past.map(a=>esc(a.ref)+(a.shopifyLost?" (perdu)":"")).join(", ")+'</span>'
+      +'<button type="button" class="btn" style="padding:4px 11px;font-size:12px" '
+      +'onclick="shopUndoReturn(\''+o.id+'\')">↺ Annuler le retour</button></div></div>';
   }
   const fact=(DB.factures||[]).find(f=>f.type!=="avoir"&&f.orderId===o.id);
   const ship=(fact&&+fact.shipping>0)?+fact.shipping:((o.shipping!=null&&+o.shipping>0)?+o.shipping:0);
   const cur=o.currency||"EUR";
+
   let h='<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Retour de commande</h3>';
-  if(pieces.length){
-    h+='<div style="margin:4px 0 14px"><div style="font-weight:700;margin-bottom:8px">État du retour</div>'+
-       '<label style="display:inline-flex;align-items:center;gap:8px;margin-right:22px;cursor:pointer"><input type="radio" name="shopRetState" value="recu" checked> Réceptionné à la boutique <span class="muted">(remis en stock)</span></label>'+
-       '<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="shopRetState" value="perdu"> Colis perdu <span class="muted">(non remis en stock)</span></label></div>';
-    h+='<div style="font-weight:700;margin:8px 0 6px">Paires concernées</div><div style="overflow-x:auto"><table><thead><tr><th style="width:36px"></th><th>Réf</th><th>Modèle</th><th>Taille</th><th style="text-align:right">Prix vente</th><th style="width:70px;text-align:center">Étiquette</th></tr></thead><tbody>'+
-      pieces.map(function(a){const v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};const pu=shopRefPrice(fact,a.ref,o);
-        return '<tr><td><input type="checkbox" class="shopRetChk" value="'+a.id+'" data-pu="'+pu+'" checked onchange="shopRetRecalc()"></td><td><b>'+esc(a.ref)+'</b></td><td>'+esc(m.fr||"")+'</td><td>'+szcellV(v)+'</td><td style="text-align:right">'+money(pu,cur)+'</td><td style="text-align:center"><button type="button" class="btn" title="R\u00e9imprimer l\'\u00e9tiquette" style="padding:3px 9px" onclick="event.stopPropagation();printLabelOne(\''+a.id+'\')">\ud83c\udff7\ufe0f</button></td></tr>';
-      }).join("")+'</tbody></table></div>';
-    h+='<div style="font-weight:700;margin:16px 0 8px">Remboursement</div>'+
-       '<label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="shopRetProd" checked onchange="shopRetRecalc()"> Rembourser le(s) produit(s)</label>';
-    if(ship>0)h+='<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer"><input type="checkbox" id="shopRetShipChk" onchange="shopRetRecalc()"> Rembourser les frais de port ('+money(ship,cur)+')</label>'+
-       '<div id="shopRetShipRow" style="display:none;margin:0 0 8px 26px"><label class="muted" style="font-size:12px;display:block">Montant port remboursé</label><input id="shopRetShipAmt" type="number" step="0.01" min="0" max="'+ship+'" value="'+ship+'" style="max-width:150px" oninput="shopRetRecalc()"></div>';
-    h+='<div style="margin:12px 0 4px"><label style="font-weight:600;display:block;margin-bottom:4px">Montant total remboursé au client ('+cur+')</label><input id="shopRetTotal" type="number" step="0.01" min="0" value="0" style="max-width:190px;font-size:16px;font-weight:700" oninput="shopRetPenalty()"> <span id="shopRetPenaltyLbl" class="muted" style="margin-left:10px"></span></div>'+
-       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:2px 0 6px"><span class="muted" style="font-size:12px">Pénalité rapide :</span>'+
-       '<button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopRetSetPen(\'eur\',10)">−10 €</button>'+
-       '<button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopRetSetPen(\'eur\',20)">−20 €</button>'+
-       '<button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopRetSetPen(\'pct\',10)">−10 %</button>'+
-       '<button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopRetSetPen(\'pct\',20)">−20 %</button>'+
-       '<button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopRetSetPen(\'eur\',0)">Aucune</button></div>'+
-       '<div class="muted" style="font-size:12px;margin-bottom:10px">Ou saisis le montant à la main. La pénalité = ce qui est retenu au client.</div>';
-    h+='<div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
-      +'<button class="btn r" onclick="shopProcessReturn()">Valider le retour</button>'
-      /* À vide, pour savoir avant de s'engager. Le contrôle a lieu de toute
-         façon au moment de valider, mais le découvrir là veut dire qu'on a
-         déjà le client au téléphone. */
-      +'<button type="button" class="btn" style="padding:6px 12px;font-size:12px" '
-        +'onclick="shopTesterRemboursement()">Vérifier l\'autorisation Shopify</button>'
-      +'</div>'
-      +'<div class="muted" style="font-size:12px;margin-top:6px">'
-      +'Valider enverra le remboursement à Shopify : l\'argent part vraiment, '
-      +'et le client reçoit le mail de Shopify.</div>';
-  }else{h+='<div class="muted" style="font-size:12.5px;padding:6px 0">Aucune paire assignée à retourner.</div>';}
-  if(past.length)h+='<div style="margin-top:14px;font-size:12.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><b>Retours déjà effectués :</b> '+past.map(a=>esc(a.ref)+(a.shopifyLost?" (perdu)":"")).join(", ")+'</span><button type="button" class="btn" style="padding:4px 11px;font-size:12px" onclick="shopUndoReturn(\''+o.id+'\')">↺ Annuler le retour</button></div>';
+  if(!pieces.length){
+    h+='<div class="muted" style="font-size:12.5px;padding:6px 0">Aucune paire assignée à retourner.</div>';
+  }else{
+    h+='<div class="shopRetLay">';
+
+    /* ---------------- Colonne de gauche : ce qui revient --------------- */
+    h+='<div class="shopRetMain">';
+    h+='<div class="shopRetBloc">'
+      +'<div class="shopRetTit">État du retour</div>'
+      +'<label class="shopRetOpt"><input type="radio" name="shopRetState" value="recu" checked '
+        +'onchange="shopRetRecalc()"><span><b>Réceptionné à la boutique</b>'
+        +'<i>La paire revient en stock et repart en vente.</i></span></label>'
+      +'<label class="shopRetOpt"><input type="radio" name="shopRetState" value="perdu" '
+        +'onchange="shopRetRecalc()"><span><b>Colis perdu</b>'
+        +'<i>La paire ne revient pas : elle sort du stock, et c\'est au transporteur '
+        +'qu\'on la réclame.</i></span></label>'
+      +'</div>';
+
+    h+='<div class="shopRetBloc"><div class="shopRetTit">Paires concernées</div>'
+      +pieces.map(function(a){
+        const v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};
+        const pu=shopRefPrice(fact,a.ref,o);
+        return '<label class="shopRetLigne">'
+          +'<input type="checkbox" class="shopRetChk" value="'+a.id+'" data-pu="'+pu+'" checked '
+            +'onchange="shopRetRecalc()">'
+          /* vSizeTxt et non szcellV : la seconde rend un bloc avec ses
+             propres lignes, et la pointure se retrouvait au-dessus de la
+             référence au lieu d'être à côté. Ici il faut du texte. */
+          +'<span class="shopRetNom"><b>'+esc(m.fr||m.sku||"?")+'</b>'
+            +'<i>'+esc(vSizeTxt(v)||v.taille||"")+' · '+esc(a.ref)+'</i></span>'
+          +'<span class="shopRetPu">'+money(pu,cur)+'</span>'
+          +'<button type="button" class="btn shopRetEtq" title="Réimprimer l\'étiquette" '
+            +'onclick="event.preventDefault();event.stopPropagation();printLabelOne(\''+a.id+'\')">🏷️</button>'
+          +'</label>';
+      }).join("")
+      +'</div>';
+
+    /* Ce qui vient APRÈS, annoncé avant : la fenêtre de remise en vente
+       s'ouvre une fois le retour validé, et tombait jusqu'ici sans prévenir. */
+    h+='<div class="shopRetApres">Après validation, une fenêtre te demandera le '
+      +'<b>prix de remise en vente</b> de chaque paire réceptionnée, avant la synchro '
+      +'de la boutique.</div>';
+    h+='</div>';
+
+    /* ---------------- Colonne de droite : le décompte ------------------ */
+    h+='<aside class="shopRetSide"><div class="shopRetCarte">'
+      +'<div class="shopRetTit">Résumé</div>'
+      +'<div class="shopRetL"><span>Sous-total des paires <b id="shopRetNb">0</b></span>'
+        +'<span id="shopRetSub">—</span></div>'
+      +'<label class="shopRetCase"><input type="checkbox" id="shopRetProd" checked '
+        +'onchange="shopRetRecalc()"> Rembourser le(s) produit(s)</label>';
+    if(ship>0){
+      h+='<label class="shopRetCase"><input type="checkbox" id="shopRetShipChk" '
+        +'onchange="shopRetRecalc()"> Rembourser les frais de port ('+money(ship,cur)+')</label>'
+        +'<div id="shopRetShipRow" style="display:none;margin:2px 0 8px 24px">'
+        +'<input id="shopRetShipAmt" type="number" step="0.01" min="0" max="'+ship+'" value="'+ship+'" '
+        +'style="max-width:120px" oninput="shopRetRecalc()"></div>';
+    }
+    h+='<div class="shopRetL shopRetPenL"><span>Pénalité retenue</span>'
+        +'<span id="shopRetPenaltyLbl">—</span></div>'
+      +'<div class="shopRetSep"></div>'
+      +'<div class="shopRetTot"><span>Total remboursé</span>'
+        +'<input id="shopRetTotal" type="number" step="0.01" min="0" value="0" '
+        +'oninput="shopRetPenalty()"></div>'
+      +'<div class="shopRetMax muted" id="shopRetMax"></div>'
+      +'<div class="shopRetRap"><span class="muted">Pénalité rapide</span>'
+        +'<button type="button" onclick="shopRetSetPen(\'eur\',10)">−10 €</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'eur\',20)">−20 €</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'pct\',10)">−10 %</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'pct\',20)">−20 %</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'eur\',0)">Aucune</button></div>'
+      /* La case de Shopify, enfin ici aussi : prévenir ou non le client est
+         une décision qui se prend retour par retour — un échange annoncé au
+         téléphone n'a pas besoin du mail automatique. */
+      +'<label class="shopRetCase shopRetNotif"><input type="checkbox" id="shopRetNotify" checked> '
+        +'Envoyer la notification au client une fois le remboursement finalisé</label>'
+      +'<button class="shopRetGo" id="shopRetBtn" onclick="shopProcessReturn()">Valider le retour</button>'
+      +'<div class="shopRetPied muted">Le remboursement part vraiment sur Shopify, '
+        +'sur le moyen de paiement d\'origine.</div>'
+      +'<button type="button" class="btn shopRetVerif" onclick="shopTesterRemboursement()">'
+        +'Vérifier l\'autorisation Shopify</button>'
+    +'</div></aside>';
+
+    h+='</div>';
+  }
+  if(past.length)h+='<div style="margin-top:14px;font-size:12.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    +'<span><b>Retours déjà effectués :</b> '+past.map(a=>esc(a.ref)+(a.shopifyLost?" (perdu)":"")).join(", ")+'</span>'
+    +'<button type="button" class="btn" style="padding:4px 11px;font-size:12px" '
+    +'onclick="shopUndoReturn(\''+o.id+'\')">↺ Annuler le retour</button></div>';
   h+='</div>';
   setTimeout(function(){try{shopRetRecalc();}catch(e){}},0);
   return h;
@@ -9672,13 +9827,27 @@ function shopRetRecalc(){
   var shipChk=document.getElementById("shopRetShipChk"),shipRow=document.getElementById("shopRetShipRow");
   if(shipChk&&shipRow)shipRow.style.display=shipChk.checked?"":"none";
   var g=shopRetGross();var t=document.getElementById("shopRetTotal");if(t){t.value=g.gross.toFixed(2);t.max=g.gross;}
+  /* Le résumé, comme sur Shopify : combien de paires, leur sous-total, et le
+     plafond. Sans le plafond écrit, le champ de montant n'a pas de repère. */
+  var n=0;document.querySelectorAll(".shopRetChk:checked").forEach(function(c){if(c.offsetParent!==null)n++;});
+  var nb=document.getElementById("shopRetNb");if(nb)nb.textContent="("+n+")";
+  var sub=document.getElementById("shopRetSub");if(sub)sub.textContent=eur(g.prod);
+  var mx=document.getElementById("shopRetMax");
+  if(mx)mx.textContent=g.gross>0.005?(eur(g.gross)+" remboursables au maximum"):"";
   shopRetPenalty();
 }
 function shopRetPenalty(){
   var t=document.getElementById("shopRetTotal");if(!t)return;var mx=parseFloat(t.max)||0;var v=parseFloat(t.value);if(isNaN(v))v=0;
   if(v>mx){v=mx;t.value=mx.toFixed(2);}if(v<0){v=0;t.value="0.00";}
   var pen=Math.round((mx-v)*100)/100;var lbl=document.getElementById("shopRetPenaltyLbl");
-  if(lbl)lbl.textContent=pen>0.005?("Pénalité retenue : "+eur(pen)):(mx>0.005?"Remboursement intégral":"");
+  /* Le libellé ne redit plus « Pénalité retenue » : c'est écrit en face, dans
+     le résumé. Il ne porte que le chiffre. */
+  if(lbl)lbl.textContent=pen>0.005?("− "+eur(pen)):"—";
+  /* LE MONTANT SUR LE BOUTON. C'est ce qui rend le geste sans ambiguïté :
+     on ne clique pas sur « valider », on clique sur « rembourser 172,29 € ».
+     À zéro, il n'y a pas de remboursement et le bouton le dit autrement. */
+  var b=document.getElementById("shopRetBtn");
+  if(b)b.textContent=(v>0.005)?("Rembourser "+eur(v)):"Valider le retour sans rembourser";
 }
 function shopRetSetPen(type,val){
   var g=shopRetGross();var gross=g.gross;var pen=(type==="pct")?Math.round(gross*val/100*100)/100:(+val||0);
@@ -9857,12 +10026,14 @@ async function shopPeutRembourser(){
 
 /* L'appel lui-même. Rend {ok:true,...} ou {ok:false,error:"..."} — jamais une
    exception : l'appelant a déjà modifié la base et doit pouvoir continuer. */
-async function shopEnvoyerRemboursement(o,lignes,montant,port,restock,note){
+async function shopEnvoyerRemboursement(o,lignes,montant,port,restock,note,notifier){
   try{
     var r=await sb.functions.invoke("shopify-refund",{body:{
       action:"refund", orderId:o.id, lines:lignes,
       amount:montant, shippingAmount:port, restock:!!restock,
-      notify:true, note:note||""}});
+      /* Prévenir le client se décide retour par retour : un échange annoncé
+         au téléphone n'a pas besoin du mail automatique de Shopify. */
+      notify:(notifier!==false), note:note||""}});
     if(r.error)return {ok:false,error:(r.error.message||"appel au relais échoué")};
     var d=r.data||{};
     if(!d.ok)return {ok:false,error:(d.error||JSON.stringify(d.userErrors||d.errors||d))};
@@ -9896,7 +10067,10 @@ async function shopProcessReturn(){
     +(totalInput>0.005
       ?("\n\n💶 "+eur(totalInput)+" seront RÉELLEMENT remboursés au client sur Shopify"
         +", et un avoir sera créé dans l'ERP."
-        +"\n\nLe client recevra le mail de remboursement de Shopify. Cette opération est irréversible.")
+        +(((document.getElementById("shopRetNotify")||{}).checked===false)
+          ? "\n\nLe client ne sera PAS prévenu par mail."
+          : "\n\nLe client recevra le mail de remboursement de Shopify.")
+        +" Cette opération est irréversible.")
       :"\n\nAucun remboursement.")))return;
   /* Les lignes Shopify, AVANT la boucle qui efface shopifyLineIdx. */
   const _piecesRet=checked.map(function(aid){return DB.articles.find(x=>x.id==aid);}).filter(Boolean);
@@ -9942,8 +10116,9 @@ async function shopProcessReturn(){
        Ce qu'on IMPUTE, lui, reste totalInput — l'écart est la pénalité.
        Colis perdu : on rembourse mais SANS réintégrer, la paire ne revient
        pas et c'est au transporteur qu'on la réclame. */
+    const prevenir=!((document.getElementById("shopRetNotify")||{}).checked===false);
     const rr=await shopEnvoyerRemboursement(o, prodOn?refundLines:[], totalInput,
-      g.ship, !perdu, note);
+      g.ship, !perdu, note, prevenir);
     if(rr.ok){
       rembOk=true;
       o.shopifyRefundId=rr.refundId||null;
