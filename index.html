@@ -10955,11 +10955,11 @@ async function shopRowDeleteDup(orderId){
    un import à moitié repris. Elles échappaient donc au retrait et restaient
    en stock sans rien derrière. On regarde maintenant les deux. */
 async function shopCancelPurgeFlowstock(pieces,orderName){
-  var fsPieces=(pieces||[]).filter(function(p){
-    if(p&&p.source==="flowstock")return true;          // le marqueur sur la paire
-    var ach=(DB.achats||[]).find(function(x){return x.id==p.achatId;});
-    return !!ach && ach.source==="flowstock";          // ou sur sa commande
-  });
+  /* La MÊME fonction que celle qui alimente l'annonce de la fenêtre : deux
+     listes calculées séparément finiraient par ne plus dire la même chose, et
+     c'est le genre d'écart qu'on ne remarque que le jour où une paire
+     disparaît sans avoir été annoncée. */
+  var fsPieces=shopPairesSourcingHub(pieces);
   if(!fsPieces.length)return 0;
 
   // Regroupement par commande fournisseur, pour savoir laquelle se vide entièrement.
@@ -11062,8 +11062,20 @@ async function shopCancelPurgeFlowstock(pieces,orderName){
    Les trois questions que pose Shopify — rembourser, prévenir, pour quel
    motif — sont posées ici aussi, puisque c'est ici qu'on décide désormais. */
 
+/* Les paires d'une commande qui viennent de Sourcing Hub. Même règle de
+   reconnaissance que le retrait lui-même — le marqueur sur la paire OU sur sa
+   commande fournisseur — pour que la fenêtre annonce exactement ce qui va se
+   produire, et pas une estimation. */
+function shopPairesSourcingHub(pieces){
+  return (pieces||[]).filter(function(p){
+    if(p&&p.source==="flowstock")return true;
+    var ach=(DB.achats||[]).find(function(x){return x.id==p.achatId;});
+    return !!ach && ach.source==="flowstock";
+  });
+}
+
 /* La fenêtre, qui remplace le confirm(). Rend null si on renonce. */
-function shopCancelDialog(o,nbPaires,fact){
+function shopCancelDialog(o,nbPaires,fact,fsPieces){
   return new Promise(function(resolve){
     var ov=document.createElement("div");
     ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
@@ -11074,9 +11086,33 @@ function shopCancelDialog(o,nbPaires,fact){
       +'padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
       +'<div style="font-weight:800;font-size:17px;margin-bottom:3px">Annuler la commande '
         +esc(o.name)+'</div>'
-      +'<div class="sub" style="margin-bottom:16px">'
-        +nbPaires+' paire'+(nbPaires>1?"s":"")+' repasse'+(nbPaires>1?"nt":"")+' en stock'
-        +(fact?(', la facture '+esc(fact.num||"")+' est supprimée'):'')+'.</div>'
+      +(function(){
+        /* Deux sorts différents selon l'origine, et il faut le dire avant de
+           valider : une paire ordinaire revient en stock, une paire Sourcing
+           Hub en SORT — commandée pour une commande qui n'existe plus, elle
+           n'est jamais arrivée en boutique. C'est la seule partie de
+           l'annulation qui détruit quelque chose ; elle se faisait jusqu'ici
+           après coup, sans qu'on l'ait vue venir. */
+        var nFs=(fsPieces||[]).length, nOrd=nbPaires-nFs;
+        var h='<div class="sub" style="margin-bottom:14px">';
+        if(nOrd>0)h+=nOrd+' paire'+(nOrd>1?"s":"")+' repasse'+(nOrd>1?"nt":"")+' en stock';
+        if(nOrd>0&&fact)h+=', la facture '+esc(fact.num||"")+' est supprimée';
+        else if(fact)h+='La facture '+esc(fact.num||"")+' est supprimée';
+        if(nOrd>0||fact)h+='.';
+        h+='</div>';
+        if(nFs>0){
+          h+='<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;'
+            +'padding:10px 13px;margin-bottom:16px;font-size:12.5px;line-height:1.5">'
+            +'<b style="color:#b91c1c">'+nFs+' paire'+(nFs>1?"s":"")+' Sourcing Hub '
+            +(nFs>1?"seront supprimées":"sera supprimée")+' de l\'ERP</b><br>'
+            +'<span class="muted">Commandée'+(nFs>1?"s":"")+' chez un fournisseur pour '
+            +'cette commande client, '+(nFs>1?"elles ne sont":"elle n'est")+' jamais '
+            +'arrivée'+(nFs>1?"s":"")+' en boutique. '
+            +esc((fsPieces||[]).map(function(p){return p.ref;}).join(", "))
+            +'</span></div>';
+        }
+        return h;
+      })()
       +'<label style="display:block;font-size:12px;font-weight:700;margin-bottom:5px">'
         +'Motif, demandé par Shopify</label>'
       +'<select id="_scMotif" style="width:100%;padding:8px 10px;border:1px solid var(--line);'
@@ -11133,7 +11169,8 @@ async function shopRowCancel(orderId){
   const o=_shopOrders.find(x=>x.id===orderId);if(!o)return;
   const pieces0=shopOrderPieces(o);
   const fact0=(DB.factures||[]).find(f=>f.orderId===o.id);
-  const ch=await shopCancelDialog(o,pieces0.length,fact0);
+  const fs0=shopPairesSourcingHub(pieces0);
+  const ch=await shopCancelDialog(o,pieces0.length,fact0,fs0);
   if(!ch)return;
 
   /* Shopify d'abord. Tant qu'il n'a pas accepté, l'ERP ne bouge pas. */
