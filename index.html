@@ -10945,10 +10945,20 @@ async function shopRowDeleteDup(orderId){
    Une commande fournisseur n'est marquée annulée que si TOUTES ses paires sont
    concernées : un achat groupé dont une seule ligne part avec la commande
    annulée reste une commande valide pour le reste. */
+/* Une paire venue de Sourcing Hub et dont la commande client est annulée n'a
+   plus d'objet : elle n'est jamais arrivée en boutique, et la garder en stock
+   ferait vendre quelque chose qu'on n'a pas. On la retire.
+
+   DEUX FAÇONS DE LA RECONNAÎTRE, et il en manquait une. Le marqueur était lu
+   sur la COMMANDE FOURNISSEUR ; or six paires de la base portent le marqueur
+   sur elles-mêmes sans que leur commande existe encore — un achat supprimé,
+   un import à moitié repris. Elles échappaient donc au retrait et restaient
+   en stock sans rien derrière. On regarde maintenant les deux. */
 async function shopCancelPurgeFlowstock(pieces,orderName){
   var fsPieces=(pieces||[]).filter(function(p){
+    if(p&&p.source==="flowstock")return true;          // le marqueur sur la paire
     var ach=(DB.achats||[]).find(function(x){return x.id==p.achatId;});
-    return !!ach && ach.source==="flowstock";
+    return !!ach && ach.source==="flowstock";          // ou sur sa commande
   });
   if(!fsPieces.length)return 0;
 
@@ -10961,14 +10971,22 @@ async function shopCancelPurgeFlowstock(pieces,orderName){
     var pcs=parAchat[aid];
     return {ach:ach,pcs:pcs,total:total,complet:pcs.length>=total};
   });
+  /* Plus de question posée. Une paire commandée chez un fournisseur pour une
+     commande client qui n'existe plus n'a aucune raison de rester en stock,
+     et la question se posait à chaque annulation pour une réponse toujours
+     identique.
+     En contrepartie on écrit tout au journal AVANT de supprimer : les
+     références des paires, et le détail par commande fournisseur. Une
+     suppression silencieuse doit laisser une trace quelque part, et c'est le
+     seul endroit où ces lignes survivront à l'effacement. */
   var detail=lots.map(function(L){
-    return "  · "+(L.ach.ref||L.ach.flowstockRef||"commande fournisseur")+" — "+L.pcs.length+" paire(s)"
-      +(L.complet?" — commande entière, sera marquée annulée"
-                 :(" sur "+L.total+" — commande conservée"));
-  }).join("\n");
-  if(!confirm("Commande "+orderName+" annulée.\n\n"+fsPieces.length
-    +" paire(s) proviennent de commandes fournisseur :\n"+detail
-    +"\n\nOK = retirer ces paires du stock.\nAnnuler = les garder en stock."))return 0;
+    return (L.ach.ref||L.ach.flowstockRef||"commande fournisseur")+" ("+L.pcs.length+" paire(s)"
+      +(L.complet?", commande entière → annulée":(" sur "+L.total+", commande conservée"))+")";
+  }).join(" · ");
+  try{logAct("Annulation Shopify","Paires Sourcing Hub retirées",
+    orderName+" · "+fsPieces.length+" paire(s) : "
+    +fsPieces.map(function(p){return p.ref;}).join(", ")
+    +(detail?(" — "+detail):""));}catch(_e){}
 
   /* Sortie de la caisse AVANT suppression : une fois la pièce effacée de l'ERP,
      le cron ne la voit plus et sa quantité resterait à jamais dans Rezomatic. */
