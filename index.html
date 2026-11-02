@@ -12375,57 +12375,112 @@ function fsNormalizeSizes(){
   if(nv){try{save();}catch(e){}try{renderModeles();}catch(e){}try{renderSourcingHub();}catch(e){}try{fillSelects();}catch(e){}}
   return nv;
 }
-function fsLineMatch(l,v,a){
-  if(!l)return false;
-  const norm=s2=>String(s2||"").toLowerCase().replace(/[^a-z0-9.]/g,"");
-  const numNorm=s2=>String(s2||"").replace(",",".").replace(/[^0-9.]/g,"");
-  const vskuN=norm(shopVarSku(v)),mskuN=norm((modeleById(v.modeleId)||{}).sku);
-  const hay=norm(l.sku)+"#"+norm(l.title)+"#"+norm(l.variantTitle);
-  const skuOk=(vskuN&&norm(l.sku)===vskuN)||(mskuN&&hay.includes(mskuN));
-  const cands=fsSizeCandidates(v,a);
-  const vt=numNorm(l.variantTitle);
-  /* La comparaison de taille était une INCLUSION : « 43 ».indexOf dans
-     « 43.5 » vaut 0, donc une paire en 43 correspondait à une ligne en 43.5.
-     Sur une commande mêlant les deux pointures, c'est précisément le cas où
-     il ne faut pas se tromper. On compare donc la valeur, pas le texte : à
-     l'identique, ou numériquement égale pour absorber « 43 EU » et « EU 43 »
-     que numNorm ramène déjà à « 43 ». */
-  const memeTaille=function(t){
-    if(!t)return false;
-    if(t===vt)return true;
-    var a1=parseFloat(t),b1=parseFloat(vt);
-    return isFinite(a1)&&isFinite(b1)&&Math.abs(a1-b1)<1e-9;
-  };
-  const sizeOk=(vt&&cands.length)?cands.some(memeTaille):false;
-  return sizeOk||skuOk;   // taille OU sku (le SKU Shopify est souvent un ID numérique inutilisable)
-}
-/* ---------------------------------------------------------------------------
+/* ============================================================================
    SUR QUELLE LIGNE DE LA COMMANDE POSER CETTE PAIRE ?
 
-   La fonction recevait déjà la variante et la pièce — et ne les regardait
-   pas. Elle rendait la PREMIÈRE ligne non servie, quelle que soit la paire.
-   Sur une commande à une ligne c'est toujours juste ; à deux lignes, la
-   première paire traitée prenait la ligne 1 même si elle correspondait à la
-   ligne 2, et la seconde héritait de la place restante. Les deux produits se
-   retrouvaient croisés.
+   Trois défauts successifs au même endroit, chacun découvert par un
+   croisement en production :
 
-   Vu sur la commande #8074 : une Nike P-6000 en 43 posée sur la ligne ASICS,
-   et l'ASICS Gel-NYC en 43.5 sur la ligne Nike. L'ERP affichait même
-   l'avertissement « le produit assigné semble différent » sur les deux
-   lignes — il voyait le problème sans l'empêcher.
+   1. #8074 — la fonction recevait la variante et la pièce et ne les REGARDAIT
+      pas : elle rendait la première ligne non servie. Corrigé.
+   2. #8074 encore — la taille se comparait par inclusion, « 43 » étant
+      contenu dans « 43.5 ». Corrigé : on compare des valeurs.
+   3. #8167 — DEUX LIGNES DE MÊME POINTURE. Une Kobe Forever Lower Merion
+      Away et une AF1 '07 LV8 Light Armory, toutes deux en 45.5. Le
+      rapprochement rendait « vrai » dès que la TAILLE collait — un simple
+      OU entre la taille et le SKU — donc les deux lignes convenaient à
+      chaque paire, la première servie prenait la première place, et les
+      produits se retrouvaient échangés. L'ERP affichait d'ailleurs sur les
+      deux lignes « le produit assigné semble différent » : il voyait le
+      problème sans l'empêcher, pour la deuxième fois.
 
-   CE QU'ON FAIT MAINTENANT, dans l'ordre :
+   CE QUI CHANGE : un rapprochement n'est plus vrai ou faux, il a une FORCE,
+   et c'est la plus forte qui gagne — pas la première rencontrée.
 
-     1. une ligne libre qui CORRESPOND à la paire (même modèle ou même
-        taille, via fsLineMatch) ;
-     2. sinon, s'il ne reste QU'UNE ligne libre, elle : le numéro de commande
-        a déjà prouvé le lien, et sur une commande d'une seule ligne il n'y a
-        rien à départager — c'est le cas courant, il ne doit pas régresser ;
-     3. sinon RIEN. Plusieurs lignes libres et aucune ne correspond : deviner
-        rendrait une erreur invisible. Non assignée, la paire reste affichée
-        comme à faire et se corrige en deux clics ; mal assignée, elle part en
-        facture sous le mauvais produit.
-   ------------------------------------------------------------------------- */
+     3 · le SKU de variante Shopify est exactement celui de la paire. Aucun
+         doute possible : c'est le même objet des deux côtés.
+     2 · le modèle se reconnaît — son SKU apparaît dans la ligne, ou les deux
+         noms se ressemblent assez pour trancher.
+     1 · seule la pointure correspond. Suffisant quand une seule ligne reste,
+         insuffisant dès qu'il y en a deux.
+     0 · rien.
+
+   Et quand rien ne départage, on ne pose pas la paire. Une paire non
+   assignée se voit et se règle en dix secondes ; une paire posée au mauvais
+   endroit part en facture et chez le client.
+   ========================================================================== */
+
+/* Les mots porteurs d'un nom de produit. On jette ce que toutes les paires
+   ont en commun — la marque, les mots de liaison, les pointures — parce que
+   « nike air force 1 » est présent des deux côtés et ne départage rien. */
+var FS_MOTS_VIDES={nike:1,adidas:1,asics:1,puma:1,jordan:1,air:1,low:1,high:1,
+  mid:1,og:1,the:1,de:1,la:1,le:1,and:1,et:1,x:1,men:1,women:1,mens:1,womens:1,
+  gs:1,ps:1,td:1,us:1,eu:1};
+function fsMots(s){
+  var t=String(s==null?"":s).toLowerCase()
+        .replace(/[^a-z0-9]+/g," ").trim();
+  if(!t)return [];
+  var vus={},out=[];
+  t.split(" ").forEach(function(m){
+    if(!m||m.length<3)return;          // « 1 », « 07 » : du bruit
+    if(FS_MOTS_VIDES[m])return;
+    if(/^\d+$/.test(m))return;         // les nombres sont des pointures ou des codes
+    if(vus[m])return;vus[m]=1;out.push(m);
+  });
+  return out;
+}
+/* Ressemblance entre deux noms : la part des mots porteurs du plus court qui
+   se retrouvent dans l'autre. On prend le plus court comme dénominateur pour
+   qu'un nom de boutique plus bavard que celui de l'ERP ne soit pas pénalisé. */
+function fsSim(a1,b1){
+  var A=fsMots(a1),B=fsMots(b1);
+  if(!A.length||!B.length)return 0;
+  var set={};B.forEach(function(m){set[m]=1;});
+  var n=0;A.forEach(function(m){if(set[m])n++;});
+  return n/Math.min(A.length,B.length);
+}
+
+/* La force du rapprochement d'une ligne avec une paire, et la ressemblance
+   des noms, qui sert à départager à force égale. */
+function fsLineForce(l,v,a){
+  if(!l)return {q:0,sim:0};
+  var norm=function(x){return String(x||"").toLowerCase().replace(/[^a-z0-9.]/g,"");};
+  var numNorm=function(x){return String(x||"").replace(",",".").replace(/[^0-9.]/g,"");};
+  var m=modeleById(v&&v.modeleId)||{};
+  var sim=fsSim(m.fr||m.sku||"", (l.title||"")+" "+(l.variantTitle||""));
+
+  /* 3 — le SKU de variante. Shopify met un identifiant numérique dans le
+     champ « sku » de la ligne, inutilisable ; le VRAI SKU vit sur la
+     variante, au format « IB0018-600-45.5 », exactement celui que l'ERP
+     fabrique. Quand la commande le porte, il tranche tout seul. */
+  var vsku=norm(shopVarSku(v));
+  if(vsku&&norm(l.varSku)===vsku)return {q:3,sim:sim};
+
+  /* 2 — le modèle. Son SKU écrit quelque part dans la ligne, ou des noms qui
+     se ressemblent franchement. */
+  var msku=norm(m.sku);
+  var hay=norm(l.varSku)+"#"+norm(l.sku)+"#"+norm(l.title)+"#"+norm(l.variantTitle);
+  if(msku&&msku.length>=4&&hay.indexOf(msku)>=0)return {q:2,sim:sim};
+  if(sim>=0.6)return {q:2,sim:sim};
+
+  /* 1 — la pointure seule. */
+  var cands=[];
+  try{cands=fsSizeCandidates(v,a)||[];}catch(_){}
+  var vt=numNorm(l.variantTitle);
+  var memeTaille=function(t){
+    if(!t)return false;
+    if(t===vt)return true;
+    var x=parseFloat(t),y=parseFloat(vt);
+    return isFinite(x)&&isFinite(y)&&Math.abs(x-y)<1e-9;
+  };
+  if(vt&&cands.length&&cands.some(memeTaille))return {q:1,sim:sim};
+  return {q:0,sim:sim};
+}
+
+/* Gardée pour les appelants qui veulent une réponse oui/non. Elle ne sert
+   plus à choisir une ligne : c'est fsPickLine qui compare les forces. */
+function fsLineMatch(l,v,a){return fsLineForce(l,v,a).q>0;}
+
 function fsPickLine(o,v,a){
   if(!o)return -1;
   var lignes=(o.lines||[]);
@@ -12434,12 +12489,35 @@ function fsPickLine(o,v,a){
     if(shopAssignedFor(o.id,i).length<((lignes[i]||{}).qty||1))libres.push(i);
   }
   if(!libres.length)return -1;                 // toutes les lignes sont servies
-  if(v){
-    for(var k=0;k<libres.length;k++){
-      try{ if(fsLineMatch(lignes[libres[k]],v,a))return libres[k]; }catch(_){}
-    }
-  }
   if(libres.length===1)return libres[0];       // rien à départager
+  if(!v)return -1;
+
+  var notes=libres.map(function(i){
+    var f={q:0,sim:0};
+    try{f=fsLineForce(lignes[i],v,a);}catch(_){}
+    return {i:i,q:f.q,sim:f.sim};
+  }).sort(function(x,y){return (y.q-x.q)||(y.sim-x.sim);});
+
+  var best=notes[0],second=notes[1];
+  if(best.q===0)return -1;                     // aucune ligne ne convient
+
+  /* Une force strictement supérieure tranche. */
+  if(best.q>second.q)return best.i;
+
+  /* Force égale sur deux lignes RIGOUREUSEMENT IDENTIQUES : il n'y a rien à
+     deviner. Le client a commandé deux fois le même produit dans la même
+     pointure, les deux lignes sont interchangeables, et refuser de choisir
+     ne protège de rien — ça oblige seulement à les poser à la main. */
+  var memeLigne=function(x,y){
+    var n=function(t){return String(t||"").toLowerCase().replace(/[^a-z0-9]/g,"");};
+    return n(x.title)===n(y.title)&&n(x.variantTitle)===n(y.variantTitle);
+  };
+  if(best.q>=2&&memeLigne(lignes[best.i],lignes[second.i]))return best.i;
+
+  /* Sinon c'est le nom qui départage, et il doit le faire NETTEMENT. Deux
+     lignes qui se valent sur la pointure et dont les noms se tiennent dans un
+     mouchoir, c'est exactement le cas où deviner coûte cher. */
+  if(best.sim>=0.34&&(best.sim-second.sim)>=0.2)return best.i;
   return -1;                                   // on ne devine pas
 }
 /* ============================================================================
