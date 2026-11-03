@@ -9583,6 +9583,9 @@ function shopStepperMini(o){
 function shopTrackCard(o){
   const trk=shopOrderTracking(o),pieces=shopOrderPieces(o);
   let h='<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Tracking / Suivi de livraison</h3>';
+  /* Le bandeau GLS, sous try : une erreur du module d'étiquettes ne doit
+     jamais empêcher la carte de suivi de s'afficher. */
+  try{h+=glsBandeau(o);}catch(_e){}
   if(!pieces.length){h+='<div class="muted" style="font-size:12.5px;padding:6px 0">Assigne d\'abord les paires de la commande pour pouvoir saisir un suivi.</div>';}
   else{
     h+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'+
@@ -10327,6 +10330,647 @@ function shopClearTracking(){
   shopOrderPieces(o).forEach(function(a){delete a.shopifyTracking;delete a.shopifyTrackingSent;a.maj=today();});
   save();shopRefresh();
 }
+
+/* ============================================================================
+   LES ÉTIQUETTES GLS
+
+   Jusqu'ici, expédier voulait dire : aller sur l'outil GLS, retaper l'adresse
+   du client, imprimer, revenir dans l'ERP, recopier le numéro de suivi. Quatre
+   occasions de se tromper pour un geste qu'on fait vingt fois par jour.
+
+   Désormais l'ERP demande l'étiquette, et le numéro de suivi se remplit tout
+   seul. Le reste — l'envoi à Shopify, la notification du client — passe par le
+   chemin qui existait déjà et qui marche : shopPushFulfillmentGroups.
+
+   TROIS CHOSES QU'IL FAUT SAVOIR POUR LIRE CE QUI SUIT.
+
+   1. Les clés GLS ne sont PAS ici. Ce dépôt est public, et une clé publiée
+      permettrait à n'importe qui d'éditer des étiquettes facturées sur notre
+      compte. Tout passe par la fonction Supabase « gls-label ».
+
+   2. Une étiquette ne se re-télécharge JAMAIS. L'API GLS n'offre aucune
+      méthode pour la récupérer après coup, et sa fonction « réimpression »
+      annule l'ancienne en émettant un NOUVEAU numéro de suivi. On conserve
+      donc le PDF dans la table gls_etiquettes, qui est volontairement hors de
+      ARR_TABLES : l'ERP charge ses tables entièrement au démarrage, et
+      quelques centaines de PDF l'étoufferaient.
+
+   3. Les paires Sourcing Hub n'ont pas d'étiquette. Elles partent de chez le
+      fournisseur, pas de Vichy. Elles sont montrées à part, et leur suivi se
+      saisit à la main quand le fournisseur le communique.
+   ========================================================================== */
+
+var GLS_POIDS_PAIRE = 2;      // kg par paire, le défaut ; modifiable par colis
+var GLS_POIDS_MAX   = 20;
+var GLS_ENV         = "sandbox";  // « prod » seulement quand GLS aura validé nos étiquettes
+var _gls = null;                  // l'état de la fenêtre ouverte, ou null
+
+/* Un appel au relais. Toute erreur revient en français dans {ok:false,error},
+   jamais sous forme d'exception : la fenêtre doit pouvoir l'afficher telle
+   quelle sans que le reste de l'ERP s'arrête. */
+async function glsAppel(action,corps){
+  try{
+    var env={env:GLS_ENV};
+    var r=await sb.functions.invoke("gls-label",{body:Object.assign({action:action},env,corps||{})});
+    if(r.error)return {ok:false,error:(r.error.message||"appel au relais échoué")};
+    return r.data||{ok:false,error:"réponse vide du relais"};
+  }catch(e){return {ok:false,error:String((e&&e.message)||e)};}
+}
+
+/* Les paires que NOUS expédions. Celles du Sourcing Hub partent de chez le
+   fournisseur : pas d'étiquette GLS pour elles. On réutilise la règle qui
+   sert déjà à l'annulation plutôt que d'en écrire une seconde, qui finirait
+   par diverger. */
+function glsPiecesExpediables(o){
+  var pieces=shopOrderPieces(o);
+  var hub=shopPairesSourcingHub(pieces),exclus={};
+  hub.forEach(function(p){exclus[p.id]=1;});
+  return pieces.filter(function(p){return !exclus[p.id];});
+}
+
+/* Le destinataire, tel que Shopify nous le donne.
+   address2 (« Appt 3306 », « Bât B ») ne va PAS dans la rue : GLS limite Street
+   à 35 caractères et prévoit Name2 pour ce complément. Mélanger les deux fait
+   tronquer l'adresse, donc rater la livraison. */
+function glsDestinataire(o){
+  var s=(o&&o.shipTo)||{},c=(o&&o.customer)||{};
+  return {
+    nom:  (s.name||((c.firstName||"")+" "+(c.lastName||"")).trim()||"").trim(),
+    nom2: (s.address2||"").trim(),
+    rue:  (s.address1||"").trim(),
+    cp:   (s.zip||"").trim(),
+    ville:(s.city||"").trim(),
+    pays: (s.country||"FR").trim().toUpperCase(),
+    email:(c.email||"").trim(),
+    tel:  ((o&&o.phone)||s.phone||c.phone||"").trim()
+  };
+}
+
+/* Ce qui manque pour que GLS accepte. On le dit en français, avant l'appel :
+   GLS refuserait aussi, mais en parlant de « Shipment.Consignee.Address.eMail ». */
+var GLS_CHAMPS=[["nom","le nom"],["rue","la rue"],["cp","le code postal"],
+  ["ville","la ville"],["pays","le pays"],["email","l'e-mail"],["tel","le téléphone mobile"]];
+function glsManque(d){
+  return GLS_CHAMPS.filter(function(c){return !String((d||{})[c[0]]||"").trim();})
+                   .map(function(c){return c[1];});
+}
+
+/* La répartition par défaut : tout dans un seul colis. C'est le moins cher —
+   GLS facture au colis — et c'est le cas courant. */
+function glsRepartitionDefaut(pieces){
+  if(!pieces.length)return [];
+  return [{pieces:pieces.map(function(p){return p.id;}),
+           poids:Math.min(GLS_POIDS_MAX,GLS_POIDS_PAIRE*pieces.length)}];
+}
+
+/* Déplacer une paire d'un colis à l'autre. cible vaut un index de colis, ou
+   -1 pour « nouveau colis ». Les colis vidés disparaissent, et les poids
+   suivent le nombre de paires tant que l'utilisateur n'y a pas touché. */
+function glsDeplacer(colis,pieceId,cible,poidsForces){
+  var out=colis.map(function(c){return {pieces:c.pieces.filter(function(x){return x!==pieceId;}),poids:c.poids};});
+  if(cible<0||cible>=out.length)out.push({pieces:[pieceId],poids:GLS_POIDS_PAIRE});
+  else out[cible].pieces.push(pieceId);
+  out=out.filter(function(c){return c.pieces.length;});
+  // Le poids suit le nombre de paires, sauf là où il a été fixé à la main.
+  out.forEach(function(c,i){
+    if(!(poidsForces||{})[i])c.poids=Math.min(GLS_POIDS_MAX,GLS_POIDS_PAIRE*c.pieces.length);
+  });
+  return out;
+}
+
+/* Le libellé court d'une paire, pour les listes. */
+function glsNomPaire(a){
+  var v=varById(a.varianteId)||{};
+  var m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
+  return {titre:(m.fr||m.sku||a.ref||"—"),detail:(a.ref||"")+" · "+(typeof vSizeTxt==="function"?vSizeTxt(v):(v.taille||""))};
+}
+
+/* ---------------------------------------------------------------------------
+   LES PDF, CONSERVÉS
+   Écrits après l'édition, lus à la demande. Jamais chargés au démarrage.
+   --------------------------------------------------------------------------- */
+async function glsSauverEtiquettes(o,res,repartition){
+  var lignes=(res.etiquettes||[]).map(function(e,i){
+    return {track_id:e.trackId,commande:o.name,
+      data:{pdf:e.pdf||"",service:res.service,poids:e.poids,colis:e.colis,
+            parcelShopId:res.parcelShopId||null,env:res.env,orderId:o.id,
+            pieces:((repartition[i]||{}).pieces)||[]}};
+  }).filter(function(l){return l.track_id;});
+  if(!lignes.length)return {ok:false,error:"aucune étiquette à conserver"};
+  try{
+    var r=await sb.from("gls_etiquettes").upsert(lignes);
+    if(r.error)throw r.error;
+    return {ok:true,n:lignes.length};
+  }catch(e){return {ok:false,error:String((e&&e.message)||e)};}
+}
+async function glsLireEtiquette(trackId){
+  try{
+    var r=await sb.from("gls_etiquettes").select("data").eq("track_id",trackId).maybeSingle();
+    if(r.error)throw r.error;
+    return (r.data&&r.data.data)||null;
+  }catch(e){return null;}
+}
+
+/* Ouvrir un PDF conservé. On fabrique un lien et on le clique : un
+   window.open après un await se fait manger par le bloqueur de pop-ups. */
+function glsPdfUrl(b64){
+  var bin=atob(b64),n=bin.length,arr=new Uint8Array(n);
+  for(var i=0;i<n;i++)arr[i]=bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([arr],{type:"application/pdf"}));
+}
+async function glsRouvrir(trackId){
+  var d=await glsLireEtiquette(trackId);
+  if(!d||!d.pdf){alert("Étiquette introuvable dans l'ERP pour le suivi "+trackId+".");return;}
+  var a=document.createElement("a");
+  a.href=glsPdfUrl(d.pdf);a.target="_blank";a.rel="noopener";
+  document.body.appendChild(a);a.click();a.remove();
+}
+
+/* ---------------------------------------------------------------------------
+   LA FENÊTRE D'EXPÉDITION
+
+   Un seul écran, qui change de forme selon ce qu'il manque : l'adresse reste
+   repliée quand elle est complète, et s'ouvre d'elle-même dès qu'un champ
+   obligatoire manque. On ne fait pas chercher à l'utilisateur ce que GLS
+   refusera ; on le lui montre.
+   --------------------------------------------------------------------------- */
+function glsFermer(){
+  if(_gls&&_gls.ov&&_gls.ov.parentNode)_gls.ov.parentNode.removeChild(_gls.ov);
+  _gls=null;
+}
+function glsOuvrir(orderId){
+  var o=_shopOrders.find(function(x){return x.id===orderId;});
+  if(!o){alert("Commande introuvable.");return;}
+  var pieces=glsPiecesExpediables(o);
+  var hub=shopPairesSourcingHub(shopOrderPieces(o));
+  if(!pieces.length){
+    alert(hub.length
+      ? "Toutes les paires de cette commande partent de chez le fournisseur (Sourcing Hub).\n\nLeur suivi se saisit à la main, dans la carte Tracking."
+      : "Assigne d'abord les paires de la commande.");
+    return;
+  }
+  var dest=glsDestinataire(o);
+  _gls={o:o,dest:dest,pieces:pieces,hub:hub,
+        service:"flexdelivery",relais:null,liste:null,rayon:20,
+        colis:glsRepartitionDefaut(pieces),poidsForces:{},
+        editAdresse:glsManque(dest).length>0,
+        busy:"",erreur:"",fait:null};
+
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
+    +"display:flex;align-items:center;justify-content:center;padding:20px";
+  ov.addEventListener("mousedown",function(e){if(e.target===ov&&!_gls.busy)glsFermer();});
+  var box=document.createElement("div");
+  box.style.cssText="background:#fff;border-radius:16px;max-width:1000px;width:100%;"
+    +"max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)";
+  ov.appendChild(box);document.body.appendChild(ov);
+  _gls.ov=ov;_gls.box=box;
+  glsRender();
+}
+
+function glsMode(s){ if(_gls&&!_gls.busy){_gls.service=s;_gls.erreur="";glsRender();} }
+function glsEditAdresse(){ if(_gls){_gls.editAdresse=!_gls.editAdresse;glsRender();} }
+function glsChamp(k,v){ if(_gls){_gls.dest[k]=v;glsRender();} }
+function glsPoids(i,v){ if(_gls&&_gls.colis[i]){_gls.colis[i].poids=+v;_gls.poidsForces[i]=true;glsRender();} }
+function glsBouger(id,cible){
+  if(!_gls)return;
+  _gls.colis=glsDeplacer(_gls.colis,+id,+cible,_gls.poidsForces);
+  _gls.poidsForces={};   // la répartition a changé : les poids repartent du défaut
+  glsRender();
+}
+function glsRayon(v){ if(_gls){_gls.rayon=+v;glsRender();} }
+
+async function glsChercherRelais(){
+  if(!_gls||_gls.busy)return;
+  _gls.busy="relais";_gls.erreur="";glsRender();
+  var r=await glsAppel("parcelshops",{destinataire:_gls.dest,rayon:_gls.rayon,max:15});
+  if(!_gls)return;                       // fenêtre fermée entre-temps
+  _gls.busy="";
+  if(!r.ok){_gls.erreur=r.error||"recherche impossible";_gls.liste=[];}
+  else{_gls.liste=r.relais||[];_gls.ecartes=r.ecartesFermeture||0;}
+  glsRender();
+}
+function glsChoisirRelais(id){
+  if(!_gls||!_gls.liste)return;
+  _gls.relais=_gls.liste.find(function(s){return s.id===id;})||null;
+  glsRender();
+}
+
+/* L'édition. L'ordre compte : GLS d'abord, l'ERP ensuite. Une étiquette
+   refusée ne doit rien laisser derrière elle, et un numéro de suivi écrit
+   dans l'ERP sans étiquette en face serait pire que rien. */
+async function glsValider(){
+  if(!_gls||_gls.busy)return;
+  var trous=glsManque(_gls.dest);
+  if(trous.length){_gls.erreur="Il manque "+trous.join(", ")+".";_gls.editAdresse=true;glsRender();return;}
+  if(_gls.service==="shopdelivery"&&!_gls.relais){_gls.erreur="Choisis un point relais.";glsRender();return;}
+
+  var o=_gls.o,repartition=_gls.colis.slice();
+  _gls.busy="etiquette";_gls.erreur="";glsRender();
+
+  var r=await glsAppel("label",{
+    reference:o.name,
+    service:_gls.service,
+    parcelShopId:_gls.relais?_gls.relais.id:undefined,
+    destinataire:_gls.dest,
+    colis:repartition.map(function(c){return {poids:c.poids};})
+  });
+  if(!_gls)return;
+  if(!r.ok){_gls.busy="";_gls.erreur=r.error||"GLS a refusé l'étiquette.";glsRender();return;}
+
+  /* GLS a dit oui. On écrit maintenant, et dans cet ordre : les numéros de
+     suivi sur les paires, la conservation des PDF, puis l'envoi à Shopify par
+     le chemin qui existait déjà. */
+  var groupes=[];
+  (r.etiquettes||[]).forEach(function(e,i){
+    var ids=((repartition[i]||{}).pieces)||[];
+    var paires=ids.map(function(id){return DB.articles.find(function(a){return a.id===id;});})
+                  .filter(Boolean);
+    var url=(typeof shopTrackUrl==="function")?shopTrackUrl("GLS",e.trackId):"";
+    paires.forEach(function(a){
+      a.shopifyTracking={company:"GLS",number:e.trackId,url:url};
+      a.shopifyTrackingSent=1;a.glsEtiquette=e.trackId;a.maj=today();
+    });
+    if(paires.length)groupes.push({company:"GLS",number:e.trackId,url:url,pieces:paires});
+  });
+
+  try{logAct("Étiquette GLS",o.name,(r.etiquettes||[]).length+" étiquette(s) : "
+    +(r.trackIds||[]).join(" · ")+(_gls.relais?(" · relais "+_gls.relais.nom):""));}catch(_){}
+  save();
+
+  var cons=await glsSauverEtiquettes(o,r,repartition);
+  if(!_gls)return;
+  _gls.busy="";
+  _gls.fait={res:r,conserve:cons};
+  glsRender();
+
+  // L'envoi à Shopify suit son propre cours : il prévient lui-même en cas
+  // d'échec, et l'étiquette reste valable quoi qu'il arrive.
+  if(!o.duplicated&&groupes.length){try{shopPushFulfillmentGroups(o,groupes);}catch(_){}}
+}
+
+/* Les horaires du jour : c'est la seule chose qui compte au moment où on
+   choisit. Savoir qu'un relais ouvre le mardi n'aide pas un vendredi. */
+var GLS_JOURS_FR=["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+function glsHoraireDuJour(s){
+  var j=GLS_JOURS_FR[new Date().getDay()];
+  var h=((s&&s.horaires)||[]).find(function(x){return x.jour===j;});
+  if(!h||!h.plages||!h.plages.length)return "fermé aujourd'hui";
+  return "aujourd'hui "+h.plages.join(" et ");
+}
+
+function glsRender(){
+  if(!_gls||!_gls.box)return;
+  var g=_gls,o=g.o,d=g.dest;
+  var SEC='style="margin:0 0 11px;font-size:11.5px;color:var(--muted);font-weight:700;'
+    +'text-transform:uppercase;letter-spacing:.4px"';
+
+  /* --- en-tête, toujours le même --- */
+  var h='<div style="display:flex;align-items:center;gap:11px;padding:18px 22px;border-bottom:1px solid var(--line)">'
+    +'<span style="background:#061ab1;color:#fff;font-weight:800;font-size:11px;letter-spacing:.6px;padding:4px 7px;border-radius:5px">GLS</span>'
+    +'<b style="font-size:16px">Expédier la commande '+esc(o.name)+'</b>'
+    +'<span class="muted" style="font-size:12.5px;font-weight:600">'+esc(d.nom||"—")+' · '
+      +g.pieces.length+' paire'+(g.pieces.length>1?"s":"")+'</span>'
+    +'<button class="btn" onclick="glsFermer()" aria-label="Fermer" style="margin-left:auto;border:none;background:transparent;font-size:19px;color:var(--muted);padding:4px 8px">×</button>'
+    +'</div>';
+
+  /* --- écran de réussite : les étiquettes sont là, on les ouvre --- */
+  if(g.fait){
+    var r=g.fait.res;
+    h+='<div style="padding:22px">'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+      +'<span style="color:var(--green);font-size:19px;font-weight:800">✓</span>'
+      +'<b style="font-size:15px">'+(r.etiquettes||[]).length+' étiquette'
+        +((r.etiquettes||[]).length>1?"s":"")+' éditée'+((r.etiquettes||[]).length>1?"s":"")+'</b>'
+      +(r.env==="sandbox"?'<span style="font-size:11px;font-weight:800;color:#92400e;background:#fef3c7;padding:3px 9px;border-radius:999px">BAC À SABLE</span>':'')
+      +'</div>';
+    (r.etiquettes||[]).forEach(function(e){
+      var u="";try{u=e.pdf?glsPdfUrl(e.pdf):"";}catch(_){}
+      h+='<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--line);border-radius:11px;margin-bottom:9px">'
+        +'<div style="flex:1;min-width:0"><b style="font-size:13.5px">Colis '+e.colis+'</b>'
+        +'<div class="muted" style="font-size:12px;margin-top:2px">Suivi '+esc(e.trackId)+' · '+esc(e.poids)+' kg</div></div>'
+        +(u?'<a href="'+u+'" target="_blank" rel="noopener" style="text-decoration:none;font-weight:700;font-size:13px;background:var(--violet);color:#fff;border-radius:9px;padding:10px 14px">Ouvrir l\'étiquette</a>'
+           :'<span class="muted" style="font-size:12px">PDF indisponible</span>')
+        +'</div>';
+    });
+    h+='<p class="muted" style="font-size:12px;line-height:1.6;margin:12px 0 0">'
+      +(g.fait.conserve&&g.fait.conserve.ok
+        ? 'Les étiquettes sont conservées dans l\'ERP : tu pourras les rouvrir depuis la carte Tracking. '
+        : '<b style="color:var(--red)">Les PDF n\'ont pas pu être conservés</b> ('+esc((g.fait.conserve&&g.fait.conserve.error)||"")+') — imprime-les maintenant, GLS ne les redonnera pas. ')
+      +'Les numéros de suivi sont enregistrés et partent vers Shopify.</p>'
+      +'<div style="margin-top:16px;text-align:right"><button class="btn v" onclick="glsFermer();shopRefresh()">Terminé</button></div>'
+      +'</div>';
+    g.box.innerHTML=h;return;
+  }
+
+  /* --- colonne de gauche --- */
+  var manque=glsManque(d);
+  var gauche='';
+
+  if(g.erreur){
+    gauche+='<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:11px 13px;'
+      +'margin-bottom:16px;font-size:12.5px;line-height:1.5;color:#b91c1c">'+esc(g.erreur)+'</div>';
+  }
+
+  if(g.editAdresse){
+    /* Un champ obligatoire resté vide se signale en orange. L'attribut style
+       se construit en UNE fois : en ajouter un second laissait le navigateur
+       garder le premier, et le surlignage ne s'affichait jamais. */
+    var champ=function(k,lib,larg,obl){
+      var vide=obl&&!String(d[k]||"").trim();
+      var st="width:100%;box-sizing:border-box;border:1px solid "
+        +(vide?"#fcd34d;background:#fffbeb":"var(--line);background:#fff")
+        +";border-radius:9px;padding:8px 10px;font:inherit;font-weight:600;color:var(--ink)";
+      return '<label style="grid-column:span '+larg+';display:block;margin:0">'
+        +'<span style="display:block;font-size:11.5px;font-weight:700;margin-bottom:5px;color:'
+          +(vide?"#92400e":"var(--muted)")+'">'+lib+(vide?" \u2014 obligatoire":"")+'</span>'
+        +'<input style="'+st+'" value="'+esc(d[k]||"")+'" onchange="glsChamp(\''+k+'\',this.value)">'
+        +'</label>';
+    };
+    gauche+='<div style="margin-bottom:18px"><h3 '+SEC+'>Destinataire</h3>'
+      +'<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:11px">'
+      +champ("nom","Nom",6,true)+champ("nom2","Complément (étage, bâtiment)",6,false)
+      +champ("rue","Rue",6,true)
+      +champ("cp","Code postal",2,true)+champ("ville","Ville",2,true)+champ("pays","Pays",2,true)
+      +champ("email","E-mail",3,true)+champ("tel","Téléphone mobile",3,true)
+      +'</div>'
+      +(manque.length?'<p style="margin:9px 0 0;font-size:12px;color:#92400e;line-height:1.5">GLS a besoin de '+esc(manque.join(", "))+'. Le téléphone lui sert à prévenir le client de sa livraison.</p>':'')
+      +'<div style="margin-top:9px"><button class="btn" style="font-size:12.5px;padding:7px 11px" onclick="glsEditAdresse()">Replier l\'adresse</button></div>'
+      +'</div>';
+  }else{
+    gauche+='<div style="display:flex;gap:10px;align-items:center;background:var(--bg);border:1px solid var(--line);'
+      +'border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:18px">'
+      +'<span style="color:var(--green);font-weight:800;font-size:15px">✓</span>'
+      +'<span><b>'+esc(d.nom)+'</b> · '+esc([d.rue,d.nom2].filter(Boolean).join(", "))+', '
+        +esc(d.cp)+' '+esc(d.ville)+', '+esc(d.pays)+' · '+esc(d.tel)+'</span>'
+      +'<button class="btn" style="margin-left:auto;padding:6px 10px;font-size:12px" onclick="glsEditAdresse()">Modifier</button>'
+      +'</div>';
+  }
+
+  /* mode de livraison */
+  var carte=function(val,titre,sous){
+    var on=g.service===val;
+    return '<label style="flex:1;display:flex;gap:10px;align-items:flex-start;border:1px solid '
+      +(on?"var(--violet);background:var(--violet-soft)":"var(--line)")
+      +';border-radius:11px;padding:11px 13px;cursor:pointer;margin:0">'
+      +'<input type="radio" name="glsMode" '+(on?"checked":"")+' onchange="glsMode(\''+val+'\')" style="margin-top:2px">'
+      +'<span><b style="display:block;font-size:13.5px">'+titre+'</b>'
+      +'<span class="muted" style="font-size:12px;line-height:1.5">'+sous+'</span></span></label>';
+  };
+  gauche+='<div style="display:flex;gap:11px;margin-bottom:18px">'
+    +carte("flexdelivery","À domicile","Remise en main propre, SMS de passage")
+    +carte("shopdelivery","En point relais","Le client retire quand il veut")
+    +'</div>';
+
+  /* le relais */
+  if(g.service==="shopdelivery"){
+    gauche+='<div style="margin-bottom:18px">'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">'
+      +'<h3 '+SEC+' style="margin:0">Choisir le relais</h3>'
+      +'<div style="margin-left:auto;display:flex;gap:8px;align-items:center">'
+      +'<select onchange="glsRayon(this.value)" style="border:1px solid var(--line);border-radius:9px;padding:7px 9px;font:inherit;font-weight:600;font-size:12.5px">'
+      +[5,10,20,40].map(function(k){return '<option value="'+k+'"'+(g.rayon===k?" selected":"")+'>'+k+' km</option>';}).join("")
+      +'</select>'
+      +'<button class="btn" style="font-size:12.5px;padding:7px 11px" onclick="glsChercherRelais()"'
+        +(g.busy?" disabled":"")+'>'+(g.busy==="relais"?"Recherche…":"Chercher")+'</button>'
+      +'</div></div>';
+    if(g.liste===null){
+      gauche+='<p class="muted" style="font-size:12.5px;line-height:1.6;margin:0">Clique sur « Chercher » pour voir les points autour de '
+        +esc(d.cp+" "+d.ville)+'.</p>';
+    }else if(!g.liste.length){
+      gauche+='<p style="font-size:12.5px;color:#92400e;line-height:1.6;margin:0">Aucun point relais trouvé dans ce rayon. Élargis la recherche, ou passe en livraison à domicile.</p>';
+    }else{
+      gauche+='<div style="max-height:290px;overflow:auto;padding-right:2px">';
+      g.liste.forEach(function(s){
+        var on=g.relais&&g.relais.id===s.id;
+        gauche+='<label style="display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border:1px solid '
+          +(on?"var(--violet);background:var(--violet-soft)":"var(--line)")
+          +';border-radius:11px;cursor:pointer;margin:0 0 9px">'
+          +'<input type="radio" name="glsRelais" '+(on?"checked":"")+' onchange="glsChoisirRelais(\''+esc(s.id)+'\')" style="margin-top:3px">'
+          +'<span style="flex:1;min-width:0">'
+          +'<b style="font-size:13.5px">'+esc(s.nom)+'</b>'
+          +'<span style="display:block;font-size:12.5px;color:'+(on?"#1e3a8a":"var(--muted)")+';margin-top:3px;line-height:1.5">'
+            +esc(s.rue)+', '+esc(s.cp)+' '+esc(s.ville)+'</span>'
+          +'<span style="display:block;font-size:11.5px;color:'+(on?"#1e3a8a":"var(--muted)")+';margin-top:3px">'
+            +esc(glsHoraireDuJour(s))+'</span>'
+          +'</span>'
+          +'<span style="font-size:12px;font-weight:800;color:'+(on?"#1e3a8a":"#4b5563")+';white-space:nowrap">'
+            +(s.distanceKm!=null?esc(String(s.distanceKm).replace(".",","))+' km':'')+'</span>'
+          +'</label>';
+      });
+      gauche+='</div><p class="muted" style="font-size:11.5px;line-height:1.6;margin:8px 0 0">'
+        +'Les livraisons chez un voisin sont exclues de cette liste'
+        +(g.ecartes?', ainsi que '+g.ecartes+' point(s) fermé(s) dans les dix prochains jours':'')+'.</p>';
+    }
+    gauche+='</div>';
+  }
+
+  /* les colis */
+  gauche+='<div style="margin-bottom:18px">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">'
+    +'<h3 '+SEC+' style="margin:0">'+(g.hub.length?"Ce que tu expédies de Vichy":"Colis")+'</h3>'
+    +'<span class="muted" style="font-size:11.5px;font-weight:600;margin-left:auto">'
+      +g.colis.length+' colis · '+g.colis.reduce(function(s,c){return s+(+c.poids||0);},0)+' kg</span>'
+    +'</div>';
+  g.colis.forEach(function(c,i){
+    gauche+='<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px">'
+      +'<div style="display:flex;align-items:center;gap:11px;margin-bottom:4px">'
+      +'<b style="font-size:13.5px">Colis '+(i+1)+'</b>'
+      +'<span class="muted" style="font-size:11.5px;font-weight:600">'+c.pieces.length+' paire'+(c.pieces.length>1?"s":"")+'</span>'
+      +'<div style="margin-left:auto;width:104px"><select onchange="glsPoids('+i+',this.value)" '
+        +'style="width:100%;border:1px solid var(--line);border-radius:9px;padding:7px 9px;font:inherit;font-weight:600;font-size:12.5px">'
+      +Array.from({length:GLS_POIDS_MAX},function(_,k){var v=k+1;
+          return '<option value="'+v+'"'+(+c.poids===v?" selected":"")+'>'+v+' kg</option>';}).join("")
+      +'</select></div></div>';
+    c.pieces.forEach(function(id){
+      var a=DB.articles.find(function(x){return x.id===id;});if(!a)return;
+      var n=glsNomPaire(a);
+      gauche+='<div style="display:flex;gap:11px;align-items:center;padding:9px 0;border-top:1px solid #f1eff5">'
+        +'<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;line-height:1.4">'+esc(n.titre)+'</div>'
+        +'<div class="muted" style="font-size:11px;margin-top:2px">'+esc(n.detail)+'</div></div>'
+        +'<div style="width:140px"><select onchange="glsBouger('+id+',this.value)" '
+          +'style="width:100%;border:1px solid var(--line);border-radius:9px;padding:7px 9px;font:inherit;font-weight:600;font-size:12.5px">'
+        +g.colis.map(function(_,k){return '<option value="'+k+'"'+(k===i?" selected":"")+'>Colis '+(k+1)+'</option>';}).join("")
+        +'<option value="-1">Nouveau colis</option></select></div>'
+        +'</div>';
+    });
+    gauche+='</div>';
+  });
+  gauche+='</div>';
+
+  /* les paires du fournisseur */
+  if(g.hub.length){
+    gauche+='<div style="margin-bottom:4px"><h3 '+SEC+'>Expédié par le fournisseur</h3>'
+      +'<div style="border:1px dashed #d6d3dd;background:#faf9fc;border-radius:12px;padding:12px 14px">';
+    g.hub.forEach(function(a){
+      var n=glsNomPaire(a);
+      gauche+='<div style="display:flex;gap:11px;align-items:center;padding:5px 0">'
+        +'<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#4b5563;line-height:1.4">'+esc(n.titre)+'</div>'
+        +'<div class="muted" style="font-size:11px;margin-top:2px">'+esc(n.detail)+' · Sourcing Hub</div></div>'
+        +'<span style="font-size:11px;font-weight:700;color:#4b5563;background:var(--line);padding:4px 9px;border-radius:999px;white-space:nowrap">Pas d\'étiquette GLS</span>'
+        +'</div>';
+    });
+    gauche+='</div><p class="muted" style="font-size:12px;line-height:1.55;margin:9px 0 0">'
+      +'Ces paires ne passent pas par Vichy. Leur suivi se saisit à la main dans la carte Tracking, '
+      +'quand le fournisseur l\'aura communiqué.</p></div>';
+  }
+
+  /* --- colonne de droite --- */
+  var poidsTot=g.colis.reduce(function(s,c){return s+(+c.poids||0);},0);
+  var droite='<div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:13px 15px">'
+    +'<h3 '+SEC+' style="margin-bottom:8px">Expéditeur</h3>'
+    +'<div style="font-size:12.5px;line-height:1.65"><b>SELECT</b><br>2 rue de Paris<br>03200 Vichy<br>FRANCE</div></div>';
+
+  if(g.service==="shopdelivery"&&g.relais){
+    droite+='<div style="border:1px solid var(--violet);background:#f7faff;border-radius:12px;padding:13px 15px;margin-top:13px">'
+      +'<h3 '+SEC+' style="margin-bottom:8px;color:#1e3a8a">Relais choisi</h3>'
+      +'<div style="font-size:12.5px;line-height:1.6"><b>'+esc(g.relais.nom)+'</b><br>'
+        +esc(g.relais.rue)+'<br>'+esc(g.relais.cp)+' '+esc(g.relais.ville)+'</div></div>';
+  }
+
+  var ligne=function(k,v){return '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0">'
+    +'<span class="muted">'+k+'</span><b>'+v+'</b></div>';};
+  droite+='<div style="border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-top:13px">'
+    +ligne("Colis",String(g.colis.length))
+    +ligne("Paires expédiées",g.pieces.length+(g.hub.length?(" sur "+(g.pieces.length+g.hub.length)):""))
+    +ligne("Poids total",poidsTot+" kg")
+    +ligne("Service",g.service==="shopdelivery"?"Point relais":"Domicile")
+    +'<div style="border-top:1px solid var(--line);margin-top:7px;padding-top:9px">'
+    +ligne("Référence",esc(o.name))+'</div></div>';
+
+  var pret=!glsManque(d).length&&(g.service!=="shopdelivery"||!!g.relais);
+  droite+='<button class="btn v" onclick="glsValider()" '+(g.busy||!pret?"disabled":"")
+    +' style="width:100%;margin-top:13px;font-size:14px;font-weight:700;padding:13px 14px'
+    +(g.busy||!pret?";opacity:.55;cursor:not-allowed":"")+'">'
+    +(g.busy==="etiquette"?"Édition en cours…":("Éditer "+(g.colis.length>1?("les "+g.colis.length+" étiquettes"):"l'étiquette GLS")))
+    +'</button>'
+    +'<button class="btn" onclick="glsFermer()" '+(g.busy?"disabled":"")+' style="width:100%;margin-top:9px">Annuler</button>';
+
+  if(GLS_ENV==="sandbox"){
+    droite+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;margin-top:13px">'
+      +'<p style="margin:0;font-size:11.5px;color:#92400e;line-height:1.6"><b>Bac à sable.</b> '
+      +'Les étiquettes portent la mention TEST et aucun colis n\'est attendu par GLS.</p></div>';
+  }
+  if(g.hub.length){
+    droite+='<p class="muted" style="font-size:11.5px;line-height:1.6;margin:11px 0 0">'
+      +'Expédition partielle : la commande ne sera complète sur Shopify qu\'une fois '
+      +'le suivi du fournisseur saisi.</p>';
+  }
+
+  g.box.innerHTML=h
+    +'<div style="display:flex;gap:20px;padding:20px 22px;align-items:flex-start">'
+    +'<div style="flex:1;min-width:0">'+gauche+'</div>'
+    +'<div style="width:288px;flex:0 0 288px">'+droite+'</div>'
+    +'</div>';
+}
+
+/* ---------------------------------------------------------------------------
+   LE BANDEAU DANS LA CARTE TRACKING
+
+   Le point d'entrée quotidien. Quand tout est en ordre, un bouton suffit ;
+   quand il manque quelque chose, le bandeau le dit AVANT qu'on clique.
+   --------------------------------------------------------------------------- */
+function glsEtiquettesFaites(o){
+  var par={},ordre=[];
+  glsPiecesExpediables(o).forEach(function(a){
+    var t=a.glsEtiquette;if(!t)return;
+    if(!par[t]){par[t]={trackId:t,pieces:[]};ordre.push(t);}
+    par[t].pieces.push(a);
+  });
+  return ordre.map(function(t){return par[t];});
+}
+
+function glsBandeau(o){
+  var pieces=glsPiecesExpediables(o);
+  var hub=shopPairesSourcingHub(shopOrderPieces(o));
+  if(!pieces.length&&!hub.length)return "";
+
+  var faites=glsEtiquettesFaites(o);
+  var reste=pieces.filter(function(a){return !a.glsEtiquette;});
+  var d=glsDestinataire(o),manque=glsManque(d);
+
+  var h='<div style="border:1px solid var(--blue-soft);background:#f7faff;border-radius:12px;padding:14px 15px;margin-bottom:16px">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
+    +'<span style="background:#061ab1;color:#fff;font-weight:800;font-size:11px;letter-spacing:.6px;padding:4px 7px;border-radius:5px">GLS</span>'
+    +'<b style="font-size:13.5px">'+(faites.length?"Étiquettes éditées":"Éditer l'étiquette depuis l'ERP")+'</b>';
+  if(reste.length){
+    h+='<button class="btn v" style="margin-left:auto" onclick="glsOuvrir(\''+esc(o.id)+'\')">'
+      +(faites.length?("Étiqueter les "+reste.length+" restantes"):"Éditer l'étiquette GLS")+'</button>';
+  }
+  h+='</div>';
+
+  /* Ce qui existe déjà : on peut rouvrir le PDF, GLS ne le redonnera pas. */
+  faites.forEach(function(f){
+    h+='<div style="display:flex;align-items:center;gap:11px;padding:9px 11px;background:#fff;'
+      +'border:1px solid var(--line);border-radius:10px;margin-bottom:8px">'
+      +'<div style="flex:1;min-width:0"><b style="font-size:12.5px">'+esc(f.trackId)+'</b>'
+      +'<span class="muted" style="font-size:11.5px"> · '+f.pieces.length+' paire'+(f.pieces.length>1?"s":"")+'</span></div>'
+      +'<button class="btn" style="padding:7px 11px;font-size:12px" onclick="glsRouvrir(\''+esc(f.trackId)+'\')">Rouvrir le PDF</button>'
+      +'<button class="btn r" style="padding:7px 11px;font-size:12px" onclick="glsAnnulerEtiquette(\''+esc(f.trackId)+'\',\''+esc(o.id)+'\')">Annuler</button>'
+      +'</div>';
+  });
+
+  if(reste.length){
+    h+='<div style="font-size:12.5px;color:var(--muted);line-height:1.6">'
+      +'<b style="color:var(--ink)">'+esc(d.nom||"—")+'</b> · '
+      +esc([d.rue,d.nom2].filter(Boolean).join(", "))+', '+esc(d.cp)+' '+esc(d.ville)+', '+esc(d.pays)
+      +'</div>';
+    if(manque.length){
+      h+='<div style="margin-top:10px;display:flex;align-items:center;gap:10px;background:#fffbeb;'
+        +'border:1px solid #fcd34d;border-radius:9px;padding:9px 11px">'
+        +'<span style="font-size:12.5px;color:#92400e;line-height:1.5">'
+        +'<b>Il manque '+esc(manque.join(", "))+'.</b> À compléter dans la fenêtre d\'expédition.</span></div>';
+    }
+  }
+  if(hub.length){
+    h+='<div style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.55">'
+      +hub.length+' paire'+(hub.length>1?"s":"")+' part'+(hub.length>1?"ent":"")
+      +' de chez le fournisseur (Sourcing Hub) : pas d\'étiquette GLS, suivi à saisir à la main ci-dessous.</div>';
+  }
+  if(faites.length){
+    h+='<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--blue-soft);'
+      +'display:flex;align-items:center;gap:10px">'
+      +'<span class="muted" style="font-size:11.5px;line-height:1.5;flex:1">'
+      +'La clôture déclare les colis du jour à GLS, toutes commandes confondues. '
+      +'Sans elle, le suivi par date ne répond pas.</span>'
+      +'<button class="btn" style="padding:7px 11px;font-size:12px;white-space:nowrap" onclick="glsClotureJour()">Clôturer la journée</button>'
+      +'</div>';
+  }
+  return h+'</div>';
+}
+
+/* Annuler une étiquette éditée par erreur. GLS d'abord : si elle refuse, on ne
+   veut surtout pas avoir effacé le numéro de suivi de notre côté — il est la
+   seule trace d'un colis que GLS attend peut-être encore. */
+async function glsAnnulerEtiquette(trackId,orderId){
+  if(!confirm("Annuler l'étiquette "+trackId+" ?\n\nLe numéro de suivi sera retiré des paires concernées, et GLS n'attendra plus ce colis."))return;
+  var r=await glsAppel("cancelparcel",{trackId:trackId});
+  if(!r.ok){alert("GLS n'a pas annulé l'étiquette :\n\n"+(r.error||"raison inconnue")+"\n\nRien n'a été modifié dans l'ERP.");return;}
+  var o=_shopOrders.find(function(x){return x.id===orderId;});
+  if(o){
+    glsPiecesExpediables(o).forEach(function(a){
+      if(a.glsEtiquette!==trackId)return;
+      delete a.glsEtiquette;delete a.shopifyTracking;delete a.shopifyTrackingSent;a.maj=today();
+    });
+    try{logAct("Étiquette GLS annulée",o.name,trackId+(r.enCours?" (annulation en cours chez GLS)":""));}catch(_){}
+    save();
+  }
+  try{await sb.from("gls_etiquettes").delete().eq("track_id",trackId);}catch(_){}
+  alert(r.enCours
+    ? "Annulation prise en compte par GLS. Elle devient effective dans les minutes qui suivent."
+    : "Étiquette annulée.");
+  shopRefresh();
+}
+
+/* La clôture de journée : elle déclare les colis prêts à GLS. Ce n'est pas une
+   formalité — sans elle, la recherche de colis par date ne répond pas. */
+async function glsClotureJour(){
+  if(!confirm("Clôturer la journée GLS ?\n\nTous les colis étiquetés aujourd'hui sont déclarés prêts au départ. Tu peux la relancer plus tard si d'autres colis partent dans la journée."))return;
+  var r=await glsAppel("endofday",{});
+  alert(r.ok?("Journée clôturée pour le "+r.date+".")
+            :("La clôture a échoué :\n\n"+(r.error||"raison inconnue")));
+}
+
 function shopReturnPiecesCore(silentEmpty){
   const o=_shopOrders.find(x=>x.id===_shopCurOrderId);if(!o)return!!silentEmpty;
   const checked=[].slice.call(document.querySelectorAll(".shopRetChk:checked")).map(c=>+c.value);

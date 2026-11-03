@@ -394,8 +394,10 @@ async function doLabel(p: any) {
   /* Le jeu d'essai accepte qu'on lui impose le service et le relais : on peut
      ainsi tester le point relais sans inventer une commande. */
   const src = p.test
-    ? { ...ESSAI, ...(p.service ? { service: p.service } : {}),
-        ...(p.parcelShopId ? { parcelShopId: p.parcelShopId } : {}) }
+    ? { ...ESSAI, ...(p.reference ? { reference: p.reference } : {}),
+        ...(p.service ? { service: p.service } : {}),
+        ...(p.parcelShopId ? { parcelShopId: p.parcelShopId } : {}),
+        ...(p.colis ? { colis: p.colis } : {}) }
     : p;
   const d = src.destinataire || {};
   const colis = Array.isArray(src.colis) && src.colis.length ? src.colis : [{ poids: 2 }];
@@ -424,10 +426,21 @@ async function doLabel(p: any) {
     : { Service: { ServiceName: "service_flexdelivery" } };
 
   const pays = String(d.pays || "FR").toUpperCase().slice(0, 2);
-  const unites = colis.map((c: any, i: number) => ({
-    ShipmentUnitReference: [ref, "C" + (i + 1)],
-    Weight: poidsGLS(c && c.poids),
-  }));
+  /* Note1 et Note2 s'impriment dans le bloc du MILIEU de l'étiquette, bien
+     plus lisibles que la ligne « References » en petits caractères du bas.
+     Quand on cherche une commande dans une pile de colis, c'est là qu'on
+     regarde. Le numéro de commande et le rang du colis ne disent toujours
+     rien du contenu : la règle « pas de produit sur l'étiquette » tient. */
+  const nbColis = colis.length;
+  const unites = colis.map((c: any, i: number) => {
+    const u: any = {
+      ShipmentUnitReference: [ref, "C" + (i + 1)],
+      Weight: poidsGLS(c && c.poids),
+      Note1: ("Commande " + ref).slice(0, 42),
+    };
+    if (nbColis > 1) u.Note2 = ("Colis " + (i + 1) + " sur " + nbColis).slice(0, 42);
+    return u;
+  });
 
   const corps = {
     Shipment: {
@@ -502,6 +515,46 @@ async function doLabel(p: any) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Action : cancelparcel — annuler une étiquette avant la clôture.
+//
+// Une étiquette éditée par erreur n'est pas un drame tant que le colis n'est
+// pas scanné (« not scanned = not invoiced », dit la doc), mais on l'annule
+// proprement pour que GLS n'attende pas un colis fantôme.
+// ---------------------------------------------------------------------------
+async function doCancelParcel(p: any) {
+  const env = envOf(p.env);
+  const id = String(p.trackId || "").trim();
+  if (!id) return { ok: false, etape: "trackid", error: "Numéro de suivi absent." };
+
+  const r = await gls(env, "/shipments/cancel/" + encodeURIComponent(id), undefined);
+  if (!r.ok) return { ok: false, etape: "cancel", httpStatus: r.status, error: litErreur(r) };
+
+  /* GLS répond « CANCELLATION_PENDING » : l'annulation est prise, pas encore
+     effective. On le dit tel quel plutôt que d'affirmer qu'elle est faite. */
+  const res = String(r.data?.result || "");
+  return { ok: true, env, trackId: r.data?.TrackID || id, resultat: res,
+    enCours: /PENDING/i.test(res) };
+}
+
+// ---------------------------------------------------------------------------
+// Action : endofday — la clôture de journée.
+//
+// Ce n'est pas une formalité : c'est elle qui déclare les colis prêts à GLS,
+// et SANS elle la recherche de colis par date ne répond pas. Elle peut être
+// lancée plusieurs fois par jour pour séparer les vagues de préparation.
+// ---------------------------------------------------------------------------
+async function doEndOfDay(p: any) {
+  const env = envOf(p.env);
+  const d = String(p.date || "").trim() || new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d))
+    return { ok: false, etape: "date", error: "Date attendue au format AAAA-MM-JJ." };
+
+  const r = await gls(env, "/shipments/endofday?date=" + d, undefined);
+  if (!r.ok) return { ok: false, etape: "endofday", httpStatus: r.status, error: litErreur(r) };
+  return { ok: true, env, date: d, rapport: r.data ?? null };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
@@ -511,6 +564,8 @@ Deno.serve(async (req) => {
     if (action === "debug") return json(await doDebug(body));
     if (action === "label") return json(await doLabel(body));
     if (action === "parcelshops") return json(await doShops(body));
+    if (action === "cancelparcel") return json(await doCancelParcel(body));
+    if (action === "endofday") return json(await doEndOfDay(body));
 
     return json({ ok: false, error: "action inconnue ou pas encore déployée : " + action });
   } catch (e) {
