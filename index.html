@@ -7779,6 +7779,72 @@ function openAchatNew(id){editAchatId=id;const a=id?DB.achats.find(x=>x.id==id):
   vachN.querySelector("[data-bk]").onclick=()=>{if(editAchatId)openAchat(editAchatId);else{show("achats");renderAchats();}};
   an_save.onclick=saveAchatHeader;
   show("achatNew");}
+/* ============================================================================
+   CHANGER LA SOCIÉTÉ D'UN BON DE COMMANDE EMMÈNE SES PAIRES
+
+   Le bon PO-202610193370481 l'a montré. Son journal dit tout : création,
+   modification, RÉCEPTION de six pièces, puis une seconde modification. C'est
+   là que sa société a été corrigée en SBT STORE — et les six paires, déjà
+   créées, sont restées sur WATHE.
+
+   Rien ne le signalait. La référence n'encode que l'année-mois et
+   l'identifiant, pas la société, donc elle n'a pas bougé. Et comme
+   shopIsSbtPiece() tranche sur la société de la PAIRE et non sur celle du bon,
+   les six sont parties sur la mauvaise boutique, où l'ERP les a fidèlement
+   publiées : il était cohérent avec une donnée qui ne l'était plus.
+
+   UNE PAIRE VENDUE OU FACTURÉE NE BOUGE PAS. Sa facture a été émise par
+   l'ancienne société ; la déplacer décrocherait l'écriture de son émetteur.
+   On la nomme au lieu de la déplacer, et on laisse l'humain trancher.
+   ========================================================================== */
+async function achSocPropager(a,ancienneSoc){
+  var pieces=(DB.articles||[]).filter(function(p){return p.achatId===a.id&&!p.archived;});
+  if(!pieces.length)return;
+  var figees=pieces.filter(function(p){
+    return p.shopifyInvoiced||p.shopifyOrderId||p.factBoutique
+        ||p.statut==="Vendu"||p.statut==="Facturé boutique"||p.statut==="Livré";
+  });
+  var libres=pieces.filter(function(p){return figees.indexOf(p)<0;});
+  var av=socById(ancienneSoc).nom||"—",ap=socById(a.societeId).nom||"—";
+
+  var txt="La société de "+a.ref+" passe de "+av+" à "+ap+".\n\n";
+  if(libres.length)txt+=libres.length+" paire(s) encore en stock peuvent suivre.\n";
+  if(figees.length)txt+="\n"+figees.length+" paire(s) NE bougeront PAS : vendues ou facturées sous "
+    +av+", les déplacer décrocherait leur facture.\n"
+    +figees.slice(0,8).map(function(p){return "· "+(p.ref||p.id);}).join("\n")
+    +(figees.length>8?("\n· … et "+(figees.length-8)+" autre(s)"):"")+"\n";
+  if(!libres.length){alert(txt+"\nAucune paire déplaçable : le bon seul a changé de société.");return;}
+  if(!confirm(txt+"\nDéplacer ces paires sur "+ap+" ?")){
+    alert("Les paires restent sur "+av+".\n\nAttention : le bon et ses paires ne disent plus la même chose, "
+      +"et c'est la société de la PAIRE qui décide de sa boutique Shopify.");
+    return;
+  }
+  libres.forEach(function(p){p.societeId=a.societeId;p.maj=today();});
+  logAct("Société changée","Commande d'achat",a.ref+" · "+av+" → "+ap+" · "
+    +libres.length+" paire(s) déplacée(s)"+(figees.length?(" · "+figees.length+" bloquée(s)"):""));
+
+  if(confirm("Resynchroniser Shopify pour ces "+libres.length+" paire(s) ?\n\n"
+    +"Sans ça, elles resteront en vente sur la boutique "+av+"."))
+    try{await shopSyncApresChangementSociete(libres);}
+    catch(e){alert("Synchro Shopify incomplète : "+((e&&e.message)||e)
+      +"\n\nLe déplacement, lui, est enregistré.");}
+}
+
+/* Les DEUX vitrines doivent suivre : l'ancienne perd le stock, la nouvelle le
+   gagne. shopSyncModelsForArticles ne fait que la seconde moitié, puisqu'il
+   route chaque pièce sur sa société ACTUELLE — l'ancienne vitrine, elle, n'est
+   jamais rappelée et garderait la paire en vente.
+   On resynchronise donc d'abord les MODÈLES côté Wathe, qui portent le stock à
+   retirer, puis les pièces par le chemin habituel.
+   Sens inverse (SBT → Wathe) : la fiche SBT de la pièce, elle, reste en ligne
+   et doit être retirée à la main — une fiche SBT est un produit à part entière. */
+async function shopSyncApresChangementSociete(pieces){
+  var mods={};
+  (pieces||[]).forEach(function(p){var v=varById(p.varianteId);if(v&&v.modeleId!=null)mods[v.modeleId]=1;});
+  for(var id in mods){try{await shopSyncModel(+id);}catch(e){}}
+  await shopSyncModelsForArticles(pieces||[]);
+}
+
 async function saveAchatHeader(){
   var _afterSaveAppro=function(){try{if(curAchat)apSyncAchat(curAchat);}catch(e){}};
   if(!selFour)return alert("Choisis un fournisseur.");
@@ -7788,7 +7854,14 @@ async function saveAchatHeader(){
   if(!an_emp.value)return alert("Choisis un emplacement.");
   const four=fourById(selFour);
   const data={date:an_date.value,fournId:+selFour,nFacture:an_fact.value,societeId:+an_soc.value,ville:an_ville.value,emplacement:an_emp.value,attestation:(four.type!=="Professionnel")?1:0};
-  if(editAchatId){const a=DB.achats.find(x=>x.id==editAchatId);Object.assign(a,data);a.ref=achRef(a);logAct("Modification","Commande d'achat",a.ref);await _afterSaveAppro();save();openAchat(a.id);}
+  if(editAchatId){const a=DB.achats.find(x=>x.id==editAchatId);
+    /* On retient la société AVANT de l'écraser : c'est la seule façon de
+       savoir qu'elle a changé, et donc que les paires doivent suivre. */
+    const _ancienneSoc=a.societeId;
+    Object.assign(a,data);a.ref=achRef(a);
+    logAct("Modification","Commande d'achat",a.ref);
+    if(String(_ancienneSoc)!==String(a.societeId)){try{await achSocPropager(a,_ancienneSoc);}catch(e){console.error(e);}}
+    await _afterSaveAppro();save();openAchat(a.id);}
   else{const id=newId(DB.achats);const a=Object.assign({id,statut:"En cours de livraison",lignes:[],justifs:[],createdAt:new Date().toISOString()},data);if(!a.createdAt)a.createdAt=new Date().toISOString();a.ref=achRef(a);DB.achats.push(a);logAct("Création","Commande d'achat",a.ref);await save();openAchat(id);}}
 
 /* --- FICHE PRODUITS --- */
