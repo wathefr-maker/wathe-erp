@@ -204,6 +204,118 @@ async function doDebug(p: any) {
 }
 
 // ---------------------------------------------------------------------------
+// LES POINTS RELAIS
+//
+// Avant une étiquette ShopDelivery, il faut l'identifiant du point. GLS offre
+// trois méthodes de recherche ; celle par ADRESSE est la bonne ici, puisqu'on
+// part toujours de l'adresse du client.
+// ---------------------------------------------------------------------------
+
+/* KEEPER, c'est la livraison chez un VOISIN. Exclu d'office : une paire à
+   800 € déposée chez un inconnu du quartier, c'est exactement ce qu'on
+   cherche à éviter. Restent les commerces, les commerces-dans-commerce et
+   les casiers. */
+const TYPES_POINTS = "SHOP,SHOPINSHOP,LOCKER";
+
+const JOURS: Record<string, string> = { MON: "lundi", TUE: "mardi", WED: "mercredi",
+  THU: "jeudi", FRI: "vendredi", SAT: "samedi", SUN: "dimanche" };
+
+/* Les horaires arrivent en MILLISECONDES UTC. La règle de GLS : diviser par
+   3 600 000 puis ajouter une heure. On suit leur règle, c'est leur donnée —
+   en sachant qu'elle est calée sur l'heure d'hiver et que l'affichage peut
+   glisser d'une heure l'été. */
+function heureGLS(ms: unknown): string {
+  const n = Number(ms);
+  if (!isFinite(n)) return "";
+  const h = Math.floor(n / 3600000) + 1;
+  const m = Math.round((n % 3600000) / 60000);
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+
+/* GLS demande expressément de ne proposer que les points ouverts dans les
+   10 jours. Un relais fermé pour congés, c'est un colis qui dort. */
+function fermetureProche(s: any): boolean {
+  const hs = s.Holidays || s.Holiday || [];
+  if (!Array.isArray(hs) || !hs.length) return false;
+  const maintenant = Date.now(), limite = maintenant + 10 * 86400000;
+  return hs.some((h: any) => {
+    const d1 = Date.parse(h.StartDate || h.startDate || "");
+    if (!isFinite(d1)) return false;
+    const d2 = Date.parse(h.EndDate || h.endDate || "");
+    const fin = isFinite(d2) ? d2 : d1;
+    return d1 <= limite && fin >= maintenant;
+  });
+}
+
+function normShop(s: any) {
+  const a = s.Address || {};
+  const horaires = (s.WorkingDay || []).map((w: any) => ({
+    jour: JOURS[String(w.DayOfWeek || "")] || String(w.DayOfWeek || ""),
+    plages: (((w.OpeningHours || {}).OpeningHours) || [])
+      .map((o: any) => heureGLS(o.From) + "–" + heureGLS(o.To)),
+  }));
+  const km = Number(s.AirlineDistance);
+  return {
+    id: s.ParcelShopID || "",
+    nom: a.Name1 || "",
+    rue: ((a.Street || "") + " " + (a.StreetNumber || "")).trim(),
+    cp: a.ZIPCode || "",
+    ville: a.City || "",
+    pays: a.CountryCode || "",
+    lat: Number(s.Location?.Latitude) || null,
+    lon: Number(s.Location?.Longitude) || null,
+    distanceKm: isFinite(km) ? Math.round(km * 10) / 10 : null,
+    horaires,
+    fermeBientot: fermetureProche(s),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Action : parcelshops — les relais autour de l'adresse du client.
+// ---------------------------------------------------------------------------
+async function doShops(p: any) {
+  const env = envOf(p.env);
+  if (!CID || !CSEC) return { ok: false, etape: "secrets", error: "Secrets GLS absents." };
+
+  const d = p.destinataire || p;
+  const pays = String(d.pays || "FR").toUpperCase().slice(0, 2);
+  const cp = String(d.cp || "").trim();
+  const ville = String(d.ville || "").trim();
+  if (!cp || !ville)
+    return { ok: false, etape: "champs",
+      error: "Il faut au moins le code postal et la ville du client pour chercher un relais." };
+
+  const corps: any = {
+    Street: String(d.rue || "").slice(0, 35),
+    CountryCode: pays,
+    ZIPCode: cp,
+    City: ville,
+    MaxNumberOfShops: Math.min(Math.max(Number(p.max) || 12, 1), 30),
+    Distance: String(Number(p.rayon) || 20),
+    ParcelShopType: TYPES_POINTS,
+  };
+  if (d.numero) corps.StreetNumber = String(d.numero).slice(0, 10);
+
+  const r = await gls(env, "/parcelshop/address", corps);
+  if (!r.ok) return { ok: false, etape: "parcelshop", httpStatus: r.status, error: litErreur(r), envoye: corps };
+
+  const bruts: any[] = r.data?.ParcelShop || [];
+  const tous = bruts.map(normShop);
+  // On écarte les points bientôt fermés, sauf demande explicite du contraire.
+  const retenus = (p.tousLesPoints ? tous : tous.filter((s) => !s.fermeBientot))
+    .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+
+  return {
+    ok: true,
+    env,
+    rayonKm: Number(p.rayon) || 20,
+    trouves: tous.length,
+    ecartesFermeture: tous.length - retenus.length,
+    relais: retenus,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // L'EXPÉDITEUR. Ce qui s'imprime sur l'étiquette et ce que GLS reprend dans
 // ses SMS et mails au client.
 // ---------------------------------------------------------------------------
@@ -279,7 +391,12 @@ async function doLabel(p: any) {
   if (!CID || !CSEC) return { ok: false, etape: "secrets", error: "Secrets GLS absents." };
   if (!CONTACT) return { ok: false, etape: "secrets", error: "GLS_CONTACT_ID absent." };
 
-  const src = p.test ? ESSAI : p;
+  /* Le jeu d'essai accepte qu'on lui impose le service et le relais : on peut
+     ainsi tester le point relais sans inventer une commande. */
+  const src = p.test
+    ? { ...ESSAI, ...(p.service ? { service: p.service } : {}),
+        ...(p.parcelShopId ? { parcelShopId: p.parcelShopId } : {}) }
+    : p;
   const d = src.destinataire || {};
   const colis = Array.isArray(src.colis) && src.colis.length ? src.colis : [{ poids: 2 }];
   const ref = String(src.reference || "").trim().slice(0, 20);
@@ -290,12 +407,21 @@ async function doLabel(p: any) {
     return { ok: false, etape: "champs", manquants: trous,
       error: "Impossible d'éditer l'étiquette, il manque : " + trous.join(", ") + "." };
 
-  // Phase 1 : domicile uniquement. Le relais viendra avec son écran de choix
-  // de point, et sa propre validation d'étiquette chez GLS.
+  /* Deux services : domicile et point relais. Chacun porte un nom de nœud
+     DIFFÉRENT dans le JSON GLS — « Service » pour le domicile, « ShopDelivery »
+     pour le relais. Se tromper de nœud fait refuser toute la requête. */
   const service = String(src.service || "flexdelivery");
-  if (service !== "flexdelivery")
-    return { ok: false, etape: "service",
-      error: "Seule la livraison à domicile est déployée pour l'instant (service demandé : " + service + ")." };
+  if (service !== "flexdelivery" && service !== "shopdelivery")
+    return { ok: false, etape: "service", error: "Service inconnu : " + service + "." };
+
+  const relais = String(src.parcelShopId || "").trim();
+  if (service === "shopdelivery" && !relais)
+    return { ok: false, etape: "relais",
+      error: "Aucun point relais choisi. Cherche-le d'abord avec l'action « parcelshops »." };
+
+  const noeudService = service === "shopdelivery"
+    ? { ShopDelivery: { ServiceName: "service_shopdelivery", ParcelShopID: relais } }
+    : { Service: { ServiceName: "service_flexdelivery" } };
 
   const pays = String(d.pays || "FR").toUpperCase().slice(0, 2);
   const unites = colis.map((c: any, i: number) => ({
@@ -318,11 +444,14 @@ async function doLabel(p: any) {
           Street: String(d.rue).slice(0, 35),
           eMail: String(d.email).slice(0, 80),
           MobilePhoneNumber: telGLS(d.tel, pays),
+          // Obligatoire en point relais : c'est le nom présenté au comptoir.
+          ContactPerson: service === "shopdelivery"
+            ? String(d.contact || d.nom).slice(0, 35) : undefined,
         },
       },
       Shipper: { ContactID: CONTACT, AlternativeShipperAddress: EXPEDITEUR },
       ShipmentUnit: unites,
-      Service: [{ Service: { ServiceName: "service_flexdelivery" } }],
+      Service: [noeudService],
     },
     PrintingOptions: { ReturnLabels: { TemplateSet: "NONE", LabelFormat: "PDF" } },
   };
@@ -365,7 +494,8 @@ async function doLabel(p: any) {
     ok: true,
     env,
     reference: ref,
-    service: "flexdelivery",
+    service,
+    parcelShopId: relais || null,
     pdfUnique: prints.length === 1 && parcels.length > 1,
     trackIds: etiquettes.map((e) => e.trackId),
     etiquettes,
@@ -380,6 +510,7 @@ Deno.serve(async (req) => {
 
     if (action === "debug") return json(await doDebug(body));
     if (action === "label") return json(await doLabel(body));
+    if (action === "parcelshops") return json(await doShops(body));
 
     return json({ ok: false, error: "action inconnue ou pas encore déployée : " + action });
   } catch (e) {
