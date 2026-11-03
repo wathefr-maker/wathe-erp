@@ -203,6 +203,175 @@ async function doDebug(p: any) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// L'EXPÉDITEUR. Ce qui s'imprime sur l'étiquette et ce que GLS reprend dans
+// ses SMS et mails au client.
+// ---------------------------------------------------------------------------
+const EXPEDITEUR = {
+  Name1: "SELECT",
+  Street: "2 rue de Paris",
+  ZIPCode: "03200",
+  City: "Vichy",
+  CountryCode: "FR",
+};
+
+/* Le téléphone au format GLS : « 0033612345678 ». Un « 06 12 34 56 78 » saisi
+   normalement ne déclencherait jamais le SMS de livraison — et on ne s'en
+   apercevrait que par les réclamations. */
+function telGLS(brut: unknown, pays?: string): string {
+  let s = String(brut == null ? "" : brut).replace(/[^\d+]/g, "");
+  if (!s) return "";
+  if (s.slice(0, 1) === "+") return "00" + s.slice(1);
+  if (s.slice(0, 2) === "00") return s;
+  if (s.slice(0, 1) === "0") {
+    const ind: Record<string, string> = { FR: "0033", BE: "0032", ES: "0034", IT: "0039",
+      DE: "0049", PT: "00351", NL: "0031", LU: "00352", IE: "00353" };
+    const i = ind[String(pays || "FR").toUpperCase()];
+    if (i) return i + s.slice(1);
+  }
+  return s;
+}
+
+/* Minimum 0,1 kg chez GLS, et deux décimales. Une virgule française passe. */
+function poidsGLS(x: unknown): string {
+  let n = parseFloat(String(x == null ? "" : x).replace(",", "."));
+  if (!isFinite(n) || n < 0.1) n = 0.1;
+  if (n > 99999) n = 99999;
+  return n.toFixed(2);
+}
+
+/* On dit en FRANÇAIS ce qui manque, AVANT d'appeler. GLS refuserait de toute
+   façon, mais dans le langage de son schéma
+   (« Shipment.Consignee.Address.eMail »), que personne ne lit au moment où on
+   a le colis en main. */
+const OBLIGATOIRES: Array<[string, string]> = [
+  ["nom", "Nom du destinataire"], ["rue", "Rue"], ["cp", "Code postal"],
+  ["ville", "Ville"], ["pays", "Pays"], ["email", "E-mail"], ["tel", "Téléphone mobile"],
+];
+function manquants(d: any): string[] {
+  return OBLIGATOIRES.filter((c) => !String((d || {})[c[0]] || "").trim()).map((c) => c[1]);
+}
+
+// Jeu d'essai, pour valider l'aller-retour sans dépendre d'une vraie commande.
+const ESSAI = {
+  reference: "TEST-ERP",
+  destinataire: { nom: "Marc Dubois", rue: "14 rue des Lilas", cp: "69003",
+    ville: "Lyon", pays: "FR", email: "test@wathe.fr", tel: "06 12 34 56 78" },
+  colis: [{ poids: 2 }],
+};
+
+// ---------------------------------------------------------------------------
+// Action : label — éditer les étiquettes d'une expédition.
+//
+// UNE expédition = UNE adresse = N colis = N étiquettes, en UN seul appel.
+// C'est exactement le modèle de l'ERP, où les paires partageant un numéro de
+// suivi forment un colis.
+//
+// LE POINT DÉLICAT, et c'est la famille de bug de la commande #8167 : GLS rend
+// les étiquettes dans l'ORDRE des unités envoyées. Cet ordre ne se recalcule
+// pas après coup, il se fige à l'appel. On glisse en plus un repère neutre
+// (« C1 », « C2 ») dans la référence d'unité, que GLS réémet : la concordance
+// est donc VÉRIFIÉE, pas supposée. Le repère ne dit rien du contenu — pas de
+// nom de produit sur l'étiquette, les livreurs n'ont pas à savoir.
+// ---------------------------------------------------------------------------
+async function doLabel(p: any) {
+  const env = envOf(p.env);
+  if (!CID || !CSEC) return { ok: false, etape: "secrets", error: "Secrets GLS absents." };
+  if (!CONTACT) return { ok: false, etape: "secrets", error: "GLS_CONTACT_ID absent." };
+
+  const src = p.test ? ESSAI : p;
+  const d = src.destinataire || {};
+  const colis = Array.isArray(src.colis) && src.colis.length ? src.colis : [{ poids: 2 }];
+  const ref = String(src.reference || "").trim().slice(0, 20);
+  if (!ref) return { ok: false, etape: "reference", error: "Référence de commande absente." };
+
+  const trous = manquants(d);
+  if (trous.length)
+    return { ok: false, etape: "champs", manquants: trous,
+      error: "Impossible d'éditer l'étiquette, il manque : " + trous.join(", ") + "." };
+
+  // Phase 1 : domicile uniquement. Le relais viendra avec son écran de choix
+  // de point, et sa propre validation d'étiquette chez GLS.
+  const service = String(src.service || "flexdelivery");
+  if (service !== "flexdelivery")
+    return { ok: false, etape: "service",
+      error: "Seule la livraison à domicile est déployée pour l'instant (service demandé : " + service + ")." };
+
+  const pays = String(d.pays || "FR").toUpperCase().slice(0, 2);
+  const unites = colis.map((c: any, i: number) => ({
+    ShipmentUnitReference: [ref, "C" + (i + 1)],
+    Weight: poidsGLS(c && c.poids),
+  }));
+
+  const corps = {
+    Shipment: {
+      ShipmentReference: [ref],
+      Middleware: "ERP WATHE",
+      Product: "PARCEL",
+      Consignee: {
+        Address: {
+          Name1: String(d.nom).slice(0, 35),
+          Name2: String(d.nom2 || "").slice(0, 35),
+          CountryCode: pays,
+          ZIPCode: String(d.cp).slice(0, 10),
+          City: String(d.ville).slice(0, 35),
+          Street: String(d.rue).slice(0, 35),
+          eMail: String(d.email).slice(0, 80),
+          MobilePhoneNumber: telGLS(d.tel, pays),
+        },
+      },
+      Shipper: { ContactID: CONTACT, AlternativeShipperAddress: EXPEDITEUR },
+      ShipmentUnit: unites,
+      Service: [{ Service: { ServiceName: "service_flexdelivery" } }],
+    },
+    PrintingOptions: { ReturnLabels: { TemplateSet: "NONE", LabelFormat: "PDF" } },
+  };
+
+  const r = await gls(env, "/shipments", corps);
+  if (!r.ok) return { ok: false, etape: "shipments", httpStatus: r.status, error: litErreur(r), envoye: corps };
+
+  const cree = r.data?.CreatedShipment || {};
+  const parcels: any[] = cree.ParcelData || [];
+  const prints: any[] = cree.PrintData || [];
+  if (!parcels.length)
+    return { ok: false, etape: "reponse", error: "GLS a répondu sans aucune étiquette.", recu: r.data };
+
+  /* On apparie par POSITION — c'est le contrat de l'API — puis on VÉRIFIE
+     avec le repère que GLS nous réémet. Une discordance ne s'avale pas en
+     silence : elle remonte, et l'ERP n'écrira rien. */
+  let discordance = false;
+  const etiquettes = parcels.map((pc: any, i: number) => {
+    const attendu = "C" + (i + 1);
+    const recu = (pc.ShipmentUnitReference || [])[1] || "";
+    if (recu && recu !== attendu) discordance = true;
+    // Une étiquette par colis quand GLS en rend autant ; sinon le PDF unique.
+    const pr = prints.length === parcels.length ? prints[i] : (prints[0] || {});
+    return {
+      colis: i + 1,
+      trackId: pc.TrackID || pc.ParcelNumber || "",
+      repere: recu,
+      concorde: !recu || recu === attendu,
+      poids: unites[i] ? unites[i].Weight : "",
+      pdf: pr.Data || "",
+    };
+  });
+
+  if (discordance)
+    return { ok: false, etape: "concordance", etiquettes,
+      error: "GLS n'a pas rendu les étiquettes dans l'ordre demandé. Rien n'a été enregistré — "
+        + "à signaler, c'est anormal." };
+
+  return {
+    ok: true,
+    env,
+    reference: ref,
+    service: "flexdelivery",
+    pdfUnique: prints.length === 1 && parcels.length > 1,
+    trackIds: etiquettes.map((e) => e.trackId),
+    etiquettes,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
@@ -210,10 +379,8 @@ Deno.serve(async (req) => {
     const action = body.action || "debug";
 
     if (action === "debug") return json(await doDebug(body));
+    if (action === "label") return json(await doLabel(body));
 
-    // L'édition d'étiquette arrive à la prochaine version, une fois le
-    // diagnostic au vert. On ne déploie pas un geste qui engage de l'argent
-    // avant d'être sûr du chemin.
     return json({ ok: false, error: "action inconnue ou pas encore déployée : " + action });
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);
