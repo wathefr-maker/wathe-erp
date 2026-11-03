@@ -10919,10 +10919,19 @@ function glsRender(){
     +'</button>'
     +'<button class="btn" onclick="glsFermer()" '+(g.busy?"disabled":"")+' style="width:100%;margin-top:9px">Annuler</button>';
 
+  /* L'environnement se DIT, toujours. Le bac à sable était signalé et la
+     production ne l'était pas : rien ne distinguait alors une étiquette
+     d'essai d'une étiquette réelle, facturée, que GLS attend. L'absence de
+     message est le pire des signaux — c'est celui qu'on ne remarque pas. */
   if(GLS_ENV==="sandbox"){
     droite+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;margin-top:13px">'
       +'<p style="margin:0;font-size:11.5px;color:#92400e;line-height:1.6"><b>Bac à sable.</b> '
       +'Les étiquettes portent la mention TEST et aucun colis n\'est attendu par GLS.</p></div>';
+  }else{
+    droite+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 12px;margin-top:13px">'
+      +'<p style="margin:0;font-size:11.5px;color:#b91c1c;line-height:1.6"><b>Production.</b> '
+      +'Étiquette réelle sur le compte GLS. Le colis doit partir — une étiquette '
+      +'éditée par erreur s\'annule depuis la carte Tracking.</p></div>';
   }
   if(g.hub.length){
     droite+='<p class="muted" style="font-size:11.5px;line-height:1.6;margin:11px 0 0">'
