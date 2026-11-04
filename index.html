@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261104-182019";
+var ERP_VERSION="20261104-222818";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -9301,15 +9301,41 @@ async function shopCacheLoad(){
         +" le sommaire en annonce "+annonces+", la base en contient "+trouves+".");
       d.partiel=annonces-trouves;
     }
-    if(!suite.length)return d;                      // tout tient dans id=1
+    /* LA LIGNE DU WEBHOOK (id=4), ET POURQUOI ELLE EXISTE.
+
+       Le webhook écrivait dans id=1, comme l'ERP. Deux écrivains sur la même
+       ligne, et celui qui passe en dernier gagne : le webhook y déposait ses
+       250 dernières commandes, écrasant le premier paquet de 500 de l'ERP.
+       L'ERP rechargeait alors une liste raccourcie, la réenregistrait — et son
+       ménage de fin supprimait les lignes d'archives devenues « inutiles ».
+       L'historique fondait à chaque notification Shopify, sans un mot.
+       682 commandes le matin, 255 le soir.
+
+       Le webhook a donc sa ligne à lui. Elle passe EN PREMIER au
+       dédoublonnage : c'est la plus fraîche. */
+    var tete=[];
+    try{
+      const w=await sb.from("shopify_orders_cache").select("data").eq("id",4).maybeSingle();
+      if(!w.error&&w.data&&w.data.data&&Array.isArray(w.data.data.orders))tete=w.data.data.orders;
+    }catch(_){}
+
+    if(!suite.length&&!tete.length){try{_shopCacheTotal=(d.orders||[]).length;}catch(_){}return d;}
     /* Dédoublonnage par identifiant : deux enregistrements concurrents peuvent
        avoir laissé la même commande dans deux paquets. */
     var vus={},tout=[];
-    (d.orders||[]).concat(suite).forEach(function(o){
+    tete.concat(d.orders||[],suite).forEach(function(o){
       if(!o||o.id==null||vus[String(o.id)])return;
       vus[String(o.id)]=1;tout.push(o);
     });
+    /* Tri explicite. Trois sources fusionnées, chacune déjà triée de son
+       côté : leur concaténation ne l'est pas forcément. Plutôt que de
+       raisonner sur les recouvrements, on retrie — la liste fait quelques
+       centaines d'entrées, ça ne coûte rien. */
+    tout.sort(function(x,y){
+      return (Date.parse(y&&y.date||"")||0)-(Date.parse(x&&x.date||"")||0);
+    });
     d.orders=tout;
+    try{_shopCacheTotal=tout.length;}catch(_){}
     return d;
   }catch(e){console.error("[Shopify] Cache illisible :",e);return null;}
 }
@@ -9427,6 +9453,9 @@ var SHOP_CHUNK=500;
    annulations) et 3 (commandes SBT) sont déjà pris, et l'écart laisse de la
    place si un autre usage réclame une ligne dédiée. */
 var SHOP_CHUNK_ID0=10;
+/* Combien de commandes le cache annonçait au dernier chargement. Sert de
+   garde-fou avant d'effacer des archives : voir shopCacheSave. */
+var _shopCacheTotal=0;
 function shopNumCmd(o){
   var t=String((o&&o.name)||"").match(/\d+/);
   return t?+t[0]:0;
@@ -9500,12 +9529,27 @@ async function shopCacheSave(){
       dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),savedAt:quand}}]);
     if(r2.error)throw r2.error;
 
-    /* 3. Le ménage : les lignes d'un historique autrefois plus long. Un échec
-          ici est sans conséquence, la lecture ne les regardera plus. */
-    try{
-      await sb.from("shopify_orders_cache").delete()
-        .gte("id",SHOP_CHUNK_ID0+lots.length-1);
-    }catch(_){}
+    /* 3. Le ménage, SOUS CONDITION.
+
+          Supprimer les archives quand la liste a brutalement rétréci, c'est
+          transformer un incident de lecture en perte définitive — et c'est
+          très exactement ce qui est arrivé : le webhook tronquait id=1, l'ERP
+          rechargeait court, puis ce ménage effaçait les archives. Une ligne
+          orpheline ne gêne personne ; une ligne manquante, si.
+
+          On écrit toujours. On ne nettoie que si la taille reste cohérente. */
+    var _connu=+_shopCacheTotal||0;
+    if(_connu>100&&tout.length<_connu*0.7){
+      console.error("[Shopify] La liste est passée de "+_connu+" à "+tout.length
+        +" commandes. Les archives ne sont PAS supprimées, par précaution."
+        +" Lance shopRechargerHistorique() pour la reconstruire depuis Shopify.");
+    }else{
+      try{
+        await sb.from("shopify_orders_cache").delete()
+          .gte("id",SHOP_CHUNK_ID0+lots.length-1);
+      }catch(_){}
+    }
+    try{_shopCacheTotal=tout.length;}catch(_){}
   }catch(e){
     /* Un échec d'enregistrement est exactement ce qui faisait perdre des
        commandes en silence : il se dit. */
