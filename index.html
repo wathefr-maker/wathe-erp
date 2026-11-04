@@ -10460,7 +10460,14 @@ var GLS_POIDS_MAX   = 20;
    Le bac à sable reste le défaut : une étiquette de production est réelle et
    facturée, ça ne doit jamais être l'état par accident. */
 function glsEnv(){
-  try{return localStorage.getItem("glsEnv")==="prod"?"prod":"sandbox";}catch(e){return "sandbox";}
+  /* La PRODUCTION est désormais l'état normal : c'est là que vivent les vraies
+     expéditions, et le bac à sable n'est plus qu'un détour pour essayer.
+     Le défaut a donc été inversé, à la demande. Ce qui le rend acceptable,
+     c'est que l'environnement se VOIT maintenant : sélecteur dans l'en-tête,
+     bandeau rouge, badge rouge sur le récapitulatif. Un défaut dangereux et
+     muet serait un piège ; un défaut dangereux et affiché partout est un
+     choix. */
+  try{return localStorage.getItem("glsEnv")==="sandbox"?"sandbox":"prod";}catch(e){return "prod";}
 }
 function glsEnvSet(v){
   var n=(v==="prod")?"prod":"sandbox";
