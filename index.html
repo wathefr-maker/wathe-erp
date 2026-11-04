@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261104-225149";
+var ERP_VERSION="20261104-225640";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -9633,6 +9633,28 @@ async function loadShopifyOrders(force){
      · une borne dure sur le nombre de pages : si la pagination se mettait à
        tourner en rond, mieux vaut s'arrêter que boucler sans fin.
    ========================================================================== */
+/* JUSQU'OÙ L'ERP REMONTE DANS L'HISTORIQUE SHOPIFY.
+
+   La boutique compte plus de 7 000 commandes depuis novembre 2021, à ~1,1 ko
+   pièce dans le cache : tout charger ferait près de 8 Mo relus à CHAQUE
+   ouverture de l'ERP. On s'arrête donc au 1er août 2026 — environ
+   1 600 commandes, 1,8 Mo — un choix de Thibaud, pas une limite technique.
+
+   C'est une borne BASSE : la fenêtre s'élargit toute seule avec le temps,
+   d'environ 600 commandes (0,7 Mo) par mois. Dans un an il faudra soit
+   remonter cette date, soit archiver le début. Pour tout reprendre, mettre
+   une chaîne vide, puis relancer shopRechargerHistorique().
+
+   Format AAAA-MM-JJ : la comparaison se fait sur le texte ISO des dates, qui
+   se trie correctement sans passer par Date — une date Shopify commence
+   toujours par AAAA-MM-JJ. */
+var SHOP_HISTORIQUE_DEPUIS="2026-08-01";
+function shopDansHorizon(o){
+  if(!SHOP_HISTORIQUE_DEPUIS)return true;
+  var d=String((o&&o.date)||"");
+  /* Une commande sans date est gardée : mieux vaut un doublon qu'un oubli. */
+  return !d||d.slice(0,10)>=SHOP_HISTORIQUE_DEPUIS;
+}
 var SHOP_ALL_MAX_PAGES=400;      // 100 000 commandes : une sécurité, pas une limite d'usage
 var SHOP_ALL_SAVE=4;             // on enregistre tous les 4 paquets
 var SHOP_ALL_PAUSE=400;          // ms entre deux appels
@@ -9681,7 +9703,13 @@ async function shopChargerTout(){
       const {data,error}=await sb.functions.invoke("shopify-orders",{body:corps});
       if(error)throw new Error(error.message||error);
       if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
-      shopFusionnerOrders(data.orders||[],false);
+      /* L'horizon. On ne garde que ce qui est au-dessus, et dès qu'une page
+         déborde en dessous, c'est qu'on l'a atteint : inutile de descendre
+         plus bas, la boutique tourne depuis 2021. */
+      var _lot=data.orders||[];
+      var _gardes=_lot.filter(shopDansHorizon);
+      var _deborde=(_gardes.length!==_lot.length);
+      shopFusionnerOrders(_gardes,false);
       var pi=data.pageInfo;
       pages++;
       /* « Pas de réponse » n'est pas « il n'y a plus rien ».
@@ -9697,6 +9725,10 @@ async function shopChargerTout(){
         break;
       }
       _shopMore=!!pi.hasNextPage;_shopFini=!pi.hasNextPage;
+      /* Horizon atteint : la descente est terminée pour ce que l'ERP garde.
+         On le dit comme tel — « complet » ici veut dire « complet jusqu'à
+         l'horizon », et l'annonce de fin précise jusqu'où on remonte. */
+      if(_deborde){_shopFini=true;_shopMore=false;}
       /* Sans curseur qui avance, la boucle rejouerait la même page sans fin. */
       if(pi.endCursor&&pi.endCursor!==depart)_shopFond=pi.endCursor;
       else if(!_shopFini){arret="Shopify n'a pas renvoyé de position suivante.";break;}
