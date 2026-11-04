@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261104-222818";
+var ERP_VERSION="20261104-225149";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -9646,13 +9646,24 @@ function shopDescenteAuto(){
 /* Porte de sortie, appelable depuis la console :  shopRechargerHistorique()
 
    Elle oublie TOUT ce que l'ERP croit savoir sur sa position — l'état « c'est
-   complet » et le curseur de descente — et repart du sommet. À garder pour le
+   complet » et les curseurs de descente — et repart du sommet. À garder pour le
    jour où la pagination de Shopify a menti, ou après un changement de boutique
    qui rend l'ancien curseur caduc. Les commandes déjà connues sont conservées :
-   la fusion ne jette rien, elle dédoublonne. */
+   la fusion ne jette rien, elle dédoublonne.
+
+   CE QU'ELLE OUBLIAIT DE FAIRE, ET CE QUE ÇA A COÛTÉ.
+
+   Elle effaçait _shopFond mais PAS _shopCursor. Or la descente démarre à
+   « _shopFond, sinon _shopCursor » : en gardant le second, elle ne repartait
+   pas du sommet du tout, elle reprenait à un curseur conservé dans le cache
+   d'une session précédente. Un curseur périmé, Shopify n'en dit rien : il
+   répond une page courte et hasNextPage=false. La descente concluait donc
+   « historique complet » et s'arrêtait — 922 commandes enregistrées, fini=true,
+   alors que la boutique en comptait 7 210. Le commentaire ci-dessus promettait
+   un départ du sommet que le code ne faisait pas. */
 window.shopRechargerHistorique=function(){
-  _shopFini=false;_shopFond=null;_shopMore=true;
-  console.log("%cHistorique rouvert : descente depuis le début…","font-weight:bold");
+  _shopFini=false;_shopFond=null;_shopCursor=null;_shopMore=true;
+  console.log("%cHistorique rouvert : descente depuis le tout début…","font-weight:bold");
   return shopChargerTout();
 };
 async function shopChargerTout(){
@@ -9671,8 +9682,20 @@ async function shopChargerTout(){
       if(error)throw new Error(error.message||error);
       if(!data||!data.ok)throw new Error(data&&data.error?data.error:"Réponse invalide");
       shopFusionnerOrders(data.orders||[],false);
-      var pi=data.pageInfo||{};
+      var pi=data.pageInfo;
       pages++;
+      /* « Pas de réponse » n'est pas « il n'y a plus rien ».
+
+         L'ancien code écrivait pageInfo||{} puis déduisait fini=!hasNextPage :
+         un pageInfo absent devenait donc, silencieusement, un historique
+         déclaré complet — et cet état se grave dans le cache. Une absence de
+         réponse doit interrompre la descente en le DISANT, pas la clore. */
+      if(!pi||typeof pi.hasNextPage!=="boolean"){
+        arret="Shopify n'a pas dit s'il restait des commandes. La descente"
+             +" s'arrête ici, mais l'historique n'est PAS déclaré complet :"
+             +" reclique pour reprendre.";
+        break;
+      }
       _shopMore=!!pi.hasNextPage;_shopFini=!pi.hasNextPage;
       /* Sans curseur qui avance, la boucle rejouerait la même page sans fin. */
       if(pi.endCursor&&pi.endCursor!==depart)_shopFond=pi.endCursor;
@@ -9700,6 +9723,20 @@ async function shopChargerTout(){
      descente ne doit pas être à refaire. */
   try{await shopCacheSave();}catch(_){}
   var gagne=(_shopOrders||[]).length-avant;
+  /* « Terminé » sans chiffre est invérifiable. Une descente qui se dit
+     complète annonce donc combien de commandes elle a et jusqu'où elle
+     remonte : si la plus ancienne date d'il y a trois mois alors que la
+     boutique tourne depuis des années, l'anomalie saute aux yeux au lieu de
+     dormir dans le cache. */
+  if(_shopFini){
+    var _vieille="";
+    try{
+      _vieille=(_shopOrders||[]).reduce(function(m,o){
+        var d=String(o&&o.date||"");return (!m||(d&&d<m))?d:m;},"");
+    }catch(_){}
+    console.log("[Shopify] Historique déclaré complet : "+(_shopOrders||[]).length
+      +" commandes, la plus ancienne du "+(_vieille?_vieille.slice(0,10):"?")+".");
+  }
   dire(_shopFini
     ? ""                                     /* terminé : plus rien à annoncer */
     : ((_shopOrders||[]).length+" commandes chargées"+(gagne?" (+"+gagne+")":"")
