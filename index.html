@@ -9633,15 +9633,29 @@ function shopStepperMini(o){
   const labels=["Commande reçue","Produit assigné","Tracking envoyé","Facturé"];
   const palette=["#86efac","#4ade80","#22c55e","#16a34a"];
   const stage=shopOrderStage(o);
+  /* CHAQUE PASTILLE DIT SON PROPRE ÉTAT, et non « tout est vert jusqu'à
+     l'étape la plus avancée ».
+
+     La commande #8117 l'a montré : son étiquette de bac à sable a été retirée,
+     le suivi effacé partout, et la ligne continuait d'afficher « Tracking
+     envoyé » en vert — parce qu'elle était facturée, et que la facture est la
+     dernière étape. L'affichage disait le contraire de la base, et c'est en le
+     croyant qu'on cherche le problème ailleurs.
+     Un trou au milieu de la ligne est inhabituel, et c'est exactement ce qu'il
+     faut : cet état-là EST inhabituel. */
+  const faits=[true,
+    (function(){var ac=shopOrderAssignCount(o);return ac.need>0&&ac.have>=ac.need;})(),
+    shopTrackingComplete(o),
+    shopOrderInvoiced(o)||(DB.factures||[]).some(function(f){return f.orderId===o.id;})];
   let out='<div style="display:flex;align-items:flex-start">';
   labels.forEach(function(l,i){
-    const done=i<stage,isCur=(i===stage-1);
+    const done=faits[i],isCur=(i===stage-1&&done);
     const col=palette[i]||'#16a34a';
     const dotBg=done?col:'#fff',dotBd=done?col:'#cbd5e1';
     const halo=isCur?'box-shadow:0 0 0 5px '+col+'33;':'';
     const size=isCur?'18px':'14px';
-    const leftLine=i>0?'<span style="position:absolute;left:0;top:50%;width:50%;height:3px;background:'+((i<stage)?'#16a34a':'#e2e8f0')+';transform:translateY(-50%)"></span>':'';
-    const rightLine=i<labels.length-1?'<span style="position:absolute;right:0;top:50%;width:50%;height:3px;background:'+(((i+1)<stage)?'#16a34a':'#e2e8f0')+';transform:translateY(-50%)"></span>':'';
+    const leftLine=i>0?'<span style="position:absolute;left:0;top:50%;width:50%;height:3px;background:'+((faits[i-1]&&faits[i])?'#16a34a':'#e2e8f0')+';transform:translateY(-50%)"></span>':'';
+    const rightLine=i<labels.length-1?'<span style="position:absolute;right:0;top:50%;width:50%;height:3px;background:'+((faits[i]&&faits[i+1])?'#16a34a':'#e2e8f0')+';transform:translateY(-50%)"></span>':'';
     out+='<div class="shopstepnode" title="Cliquer pour ouvrir cette étape" onclick="event.stopPropagation();shopStepClick(\''+o.id+'\','+i+')" style="width:84px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer">'+
       '<div style="position:relative;width:100%;height:22px;display:flex;align-items:center;justify-content:center">'+leftLine+rightLine+
         '<span style="position:relative;z-index:1;width:'+size+';height:'+size+';border-radius:999px;background:'+dotBg+';border:2px solid '+dotBd+';'+halo+'"></span>'+
