@@ -1708,6 +1708,51 @@ function tailleCmp(a,b){
   if(x.n!==y.n)return x.n-y.n;
   return String(a).localeCompare(String(b),"fr");
 }
+/* ============================================================================
+   L'ERP SAIT QUAND IL EST PÉRIMÉ
+
+   Trois fois dans la même journée, un correctif livré et vérifié en ligne n'a
+   « rien changé » : le navigateur servait la copie d'avant. On a cherché le
+   défaut dans le code à chaque fois, et il n'y était pas.
+
+   GitHub Pages laisse le navigateur garder la page, et un rechargement normal
+   ne suffit pas toujours. Plutôt que de redemander un vidage de cache, la page
+   demande elle-même au serveur quelle version est publiée, et le dit.
+
+   On interroge version.json — quelques octets, jamais mis en cache — et non la
+   page elle-même, qui pèse un mégaoctet. */
+var ERP_VERSION="20261104-165944";
+function erpBandeauMaj(v){
+  if(document.getElementById("_erpMaj"))return;
+  var d=document.createElement("div");
+  d.id="_erpMaj";
+  d.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:999999;background:#1e1b29;"
+    +"color:#fff;padding:12px 18px;display:flex;align-items:center;gap:14px;"
+    +"font:600 13.5px 'Plus Jakarta Sans',system-ui,sans-serif;box-shadow:0 -4px 20px rgba(0,0,0,.25)";
+  d.innerHTML='<span style="flex:1">Une nouvelle version de l\'ERP est en ligne. '
+    +'<span style="opacity:.7;font-weight:400">Celle-ci date d\'avant les derniers correctifs.</span></span>'
+    +'<button id="_erpMajBtn" style="border:none;border-radius:9px;padding:9px 15px;'
+    +'background:#2563eb;color:#fff;font:inherit;cursor:pointer">Recharger</button>'
+    +'<button id="_erpMajX" aria-label="Plus tard" style="border:none;background:transparent;'
+    +'color:#fff;opacity:.6;font-size:18px;cursor:pointer;padding:0 4px">×</button>';
+  document.body.appendChild(d);
+  /* Un simple reload peut resservir le cache. Une adresse qui change, non :
+     le navigateur n'a rien de mémorisé pour elle. */
+  document.getElementById("_erpMajBtn").onclick=function(){
+    location.replace(location.pathname+"?v="+encodeURIComponent(v||Date.now()));
+  };
+  document.getElementById("_erpMajX").onclick=function(){d.remove();};
+}
+async function erpVerifierVersion(){
+  try{
+    var r=await fetch("version.json?t="+Date.now(),{cache:"no-store"});
+    if(!r.ok)return;
+    var j=await r.json();
+    if(j&&j.v&&ERP_VERSION&&j.v!==ERP_VERSION)erpBandeauMaj(j.v);
+  }catch(e){ /* hors ligne, ou fichier absent : on ne dérange pas */ }
+}
+setTimeout(erpVerifierVersion,4000);
+setInterval(erpVerifierVersion,10*60*1000);
 function fillSelects(){
   var _keepF=(typeof stockFiltersGet==="function")?stockFiltersGet():null;
   socSel.innerHTML='<option value="">Toutes les sociétés</option>'+DB.societes.map(s=>`<option value="${s.id}">${s.nom}</option>`).join("");
