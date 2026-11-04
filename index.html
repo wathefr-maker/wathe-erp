@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261104-165944";
+var ERP_VERSION="20261104-175605";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -11149,6 +11149,134 @@ function glsEtiquettesFaites(o){
   return ordre.map(function(t){return par[t];});
 }
 
+/* ============================================================================
+   L'ÉTIQUETTE DE RETOUR CLIENT
+
+   Le client veut renvoyer sa paire : on lui édite une étiquette prépayée qu'il
+   colle sur son colis et dépose dans le point relais de son choix, sans avoir
+   à chercher d'identifiant.
+
+   CE QUE CE GESTE N'EST PAS. Il ne touche ni au suivi de la commande, ni à
+   l'expédition côté Shopify, ni au stock. C'est un document, rien de plus. Le
+   retour lui-même — la paire qui revient, le remboursement — se traite plus
+   tard, dans l'écran de retour qui existe déjà.
+
+   DEUX PARTICULARITÉS DE CE SERVICE CHEZ GLS.
+   Il rend DEUX feuilles : l'étiquette de transport, et les instructions que le
+   client conserve. Perdre la seconde, c'est envoyer un client au comptoir sans
+   savoir quoi faire.
+   Et il n'exige NI e-mail NI téléphone, contrairement à une livraison. C'est
+   ce qui le rend utilisable sur les commandes marketplace, qui arrivent
+   justement sans téléphone.
+   ========================================================================== */
+/* Ce qui manque pour une étiquette de RETOUR : les mêmes champs qu'une
+   livraison, MOINS l'e-mail et le téléphone. GLS ne prévient personne sur un
+   retour — c'est le client qui dépose son colis quand il veut — et les exiger
+   aurait interdit le retour sur toutes les commandes marketplace, qui
+   arrivent justement sans téléphone. */
+function glsManqueRetour(d){
+  return GLS_CHAMPS
+    .filter(function(c){return c[0]!=="email"&&c[0]!=="tel";})
+    .filter(function(c){return !String((d||{})[c[0]]||"").trim();})
+    .map(function(c){return c[1];});
+}
+function glsRetourDialog(o,dest){
+  return new Promise(function(resolve){
+    var ov=document.createElement("div");
+    ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
+      +"display:flex;align-items:center;justify-content:center;padding:20px";
+    var opts="";for(var k=1;k<=GLS_POIDS_MAX;k++)opts+='<option value="'+k+'"'+(k===GLS_POIDS_PAIRE?" selected":"")+'>'+k+' kg</option>';
+    ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:470px;width:100%;'
+      +'padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'
+        +'<span style="background:#061ab1;color:#fff;font-weight:800;font-size:11px;letter-spacing:.6px;padding:4px 7px;border-radius:5px">GLS</span>'
+        +'<b style="font-size:17px">Étiquette de retour</b></div>'
+      +'<div class="sub" style="margin-bottom:14px">Commande '+esc(o.name)+'</div>'
+      +'<div style="background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.6;margin-bottom:14px">'
+        +'<b>'+esc(dest.nom)+'</b><br>'+esc([dest.rue,dest.nom2].filter(Boolean).join(", "))
+        +'<br>'+esc(dest.cp)+' '+esc(dest.ville)+', '+esc(dest.pays)+'</div>'
+      +'<label style="display:block;font-size:12px;font-weight:700;margin-bottom:5px">Poids du colis retourné</label>'
+      +'<select id="_grPoids" style="width:140px;padding:8px 10px;border:1px solid var(--line);'
+        +'border-radius:9px;font-family:inherit;font-size:13.5px;margin-bottom:14px">'+opts+'</select>'
+      +'<p class="muted" style="font-size:12px;line-height:1.6;margin:0 0 16px">'
+        +'Le client devient l\'expéditeur sur l\'étiquette, et dépose son colis dans le point '
+        +'relais de son choix. Tu recevras deux feuilles : l\'étiquette à coller, et les '
+        +'instructions à lui transmettre.<br>'
+        +'<b style="color:var(--ink)">Ce geste ne modifie ni le suivi, ni le stock, ni Shopify.</b></p>'
+      +'<div style="display:flex;gap:9px;justify-content:flex-end">'
+        +'<button class="btn" id="_grNon">Annuler</button>'
+        +'<button class="btn v" id="_grOui">Éditer l\'étiquette de retour</button></div></div>';
+    document.body.appendChild(ov);
+    var fin=function(v){if(ov.parentNode)ov.parentNode.removeChild(ov);resolve(v);};
+    ov.querySelector("#_grNon").onclick=function(){fin(null);};
+    ov.querySelector("#_grOui").onclick=function(){
+      fin({poids:+(document.getElementById("_grPoids")||{}).value||GLS_POIDS_PAIRE});
+    };
+    ov.addEventListener("mousedown",function(e){if(e.target===ov)fin(null);});
+  });
+}
+
+async function glsRetour(orderId){
+  var o=_shopOrders.find(function(x){return x.id===orderId;});
+  if(!o){alert("Commande introuvable.");return;}
+  var d=glsDestinataire(o);
+  var trous=glsManqueRetour(d);
+  if(trous.length){
+    alert("Impossible d'éditer l'étiquette de retour : il manque "+trous.join(", ")
+      +" sur l'adresse du client.\n\nComplète-les depuis la fenêtre d'expédition.");
+    return;
+  }
+  var ch=await glsRetourDialog(o,d);
+  if(!ch)return;
+
+  var r=await glsAppel("label",{reference:o.name,service:"shopreturn",
+    destinataire:d,colis:[{poids:ch.poids}]});
+  if(!r.ok){alert("GLS a refusé l'étiquette de retour :\n\n"+(r.error||"raison inconnue"));return;}
+
+  var cons=await glsSauverEtiquettes(o,r,[{pieces:[]}]);
+  try{logAct("Étiquette retour GLS",o.name,(r.trackIds||[]).join(", ")
+    +" · "+((r.etiquettes||[]).length)+" feuille(s)");}catch(_){}
+
+  /* On n'ouvre rien tout seul : un onglet lancé après un appel réseau se fait
+     bloquer. On pose des liens, que l'utilisateur clique. */
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
+    +"display:flex;align-items:center;justify-content:center;padding:20px";
+  var h='<div style="background:#fff;border-radius:16px;max-width:470px;width:100%;padding:22px;'
+    +'box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+    +'<span style="color:var(--green);font-size:19px;font-weight:800">✓</span>'
+    +'<b style="font-size:15px">Étiquette de retour éditée</b></div>'
+    +'<div class="sub" style="margin-bottom:14px">Suivi '+esc((r.trackIds||[])[0]||"")+'</div>';
+  (r.etiquettes||[]).forEach(function(e){
+    var u="";try{u=e.pdf?glsPdfUrl(e.pdf):"";}catch(_){}
+    var nom=e.role==="instructions"?"Instructions pour le client":"Étiquette à coller sur le colis";
+    h+='<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--line);'
+      +'border-radius:11px;margin-bottom:9px"><div style="flex:1;min-width:0">'
+      +'<b style="font-size:13px">'+nom+'</b></div>'
+      +(u?'<a href="'+u+'" target="_blank" rel="noopener" style="text-decoration:none;font-weight:700;'
+        +'font-size:13px;background:var(--violet);color:#fff;border-radius:9px;padding:9px 13px">Ouvrir</a>'
+        :'<span class="muted" style="font-size:12px">PDF indisponible</span>')+'</div>';
+  });
+  h+='<p class="muted" style="font-size:12px;line-height:1.6;margin:12px 0 0">'
+    +(cons&&cons.ok?'Les deux feuilles sont conservées dans l\'ERP, tu pourras les rouvrir depuis la carte Tracking. '
+      :'<b style="color:var(--red)">Les PDF n\'ont pas pu être conservés</b> — télécharge-les maintenant, GLS ne les redonnera pas. ')
+    +'Envoie-les au client par e-mail.</p>'
+    +'<div style="margin-top:16px;text-align:right"><button class="btn v" id="_grFin">Terminé</button></div></div>';
+  ov.innerHTML=h;document.body.appendChild(ov);
+  ov.querySelector("#_grFin").onclick=function(){ov.remove();shopRefresh();};
+}
+
+/* Les étiquettes de RETOUR d'une commande, lues dans la table des étiquettes.
+   Elles ne portent aucun numéro de suivi sur les paires — ce n'est pas une
+   expédition — donc on ne peut pas les retrouver autrement. */
+async function glsRetoursDe(nomCommande){
+  try{
+    var r=await sb.from("gls_etiquettes").select("track_id,data").eq("commande",nomCommande);
+    if(r.error)throw r.error;
+    return (r.data||[]).filter(function(x){return x.data&&x.data.service==="shopreturn";});
+  }catch(e){return [];}
+}
 function glsBandeau(o){
   var pieces=glsPiecesExpediables(o);
   var hub=hubChezFournisseur(shopOrderPieces(o));
@@ -11196,6 +11324,16 @@ function glsBandeau(o){
       +hub.length+' paire'+(hub.length>1?"s":"")+' part'+(hub.length>1?"ent":"")
       +' de chez le fournisseur (Sourcing Hub) : pas d\'étiquette GLS, suivi à saisir à la main ci-dessous.</div>';
   }
+  /* Le retour vit ici, en action secondaire : on l'édite parfois des semaines
+     après l'expédition, et il ne doit pas se confondre avec elle. */
+  h+='<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--blue-soft);'
+    +'display:flex;align-items:center;gap:10px">'
+    +'<span class="muted" style="font-size:11.5px;line-height:1.5;flex:1">'
+    +'Le client veut renvoyer sa paire ? GLS édite une étiquette prépayée qu\'il dépose '
+    +'dans le relais de son choix.</span>'
+    +'<button class="btn" style="padding:7px 11px;font-size:12px;white-space:nowrap" '
+    +'onclick="glsRetour(\''+esc(o.id)+'\')">Étiquette de retour</button></div>';
+
   if(faites.length){
     h+='<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--blue-soft);'
       +'display:flex;align-items:center;gap:10px">'

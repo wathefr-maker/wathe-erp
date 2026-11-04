@@ -32,7 +32,10 @@ const BASES: Record<string, string> = {
   sandbox: "https://api-sandbox.gls-group.net",
   prod: "https://api.gls-group.net",
 };
-const envOf = (x: unknown) => (String(x || "") === "prod" ? "prod" : "sandbox");
+/* La PRODUCTION est le défaut, comme dans l'ERP : le bac à sable a servi à la
+   mise au point, il ne sert plus au quotidien. On y retourne en passant
+   explicitement env:"sandbox". */
+const envOf = (x: unknown) => (String(x || "") === "sandbox" ? "sandbox" : "prod");
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -148,6 +151,7 @@ async function doDebug(p: any) {
     ok: true,
     env,
     base: BASES[env],
+    version: "v7-retour",
     secrets: {
       GLS_CLIENT_ID: !!CID,
       GLS_CLIENT_SECRET: !!CSEC,
@@ -360,8 +364,16 @@ const OBLIGATOIRES: Array<[string, string]> = [
   ["nom", "Nom du destinataire"], ["rue", "Rue"], ["cp", "Code postal"],
   ["ville", "Ville"], ["pays", "Pays"], ["email", "E-mail"], ["tel", "Téléphone mobile"],
 ];
-function manquants(d: any): string[] {
-  return OBLIGATOIRES.filter((c) => !String((d || {})[c[0]] || "").trim()).map((c) => c[1]);
+function manquants(d: any, service?: string): string[] {
+  /* L'etiquette de RETOUR n'exige ni e-mail ni telephone : GLS ne previent
+     personne, c'est le client qui depose son colis dans le relais de son
+     choix, quand il veut. Les exiger aurait interdit le retour sur toutes les
+     commandes marketplace, qui arrivent justement sans telephone. */
+  const allegee = service === "shopreturn";
+  return OBLIGATOIRES
+    .filter((c) => !(allegee && (c[0] === "email" || c[0] === "tel")))
+    .filter((c) => !String((d || {})[c[0]] || "").trim())
+    .map((c) => c[1]);
 }
 
 // Jeu d'essai, pour valider l'aller-retour sans dépendre d'une vraie commande.
@@ -400,11 +412,14 @@ async function doLabel(p: any) {
         ...(p.colis ? { colis: p.colis } : {}) }
     : p;
   const d = src.destinataire || {};
-  const colis = Array.isArray(src.colis) && src.colis.length ? src.colis : [{ poids: 2 }];
+  let colis = Array.isArray(src.colis) && src.colis.length ? src.colis : [{ poids: 2 }];
+  /* GLS n'accepte pas plusieurs colis sur un retour. On n'en garde qu'un
+     plutot que de laisser la requete etre refusee en bloc. */
+  if (String(src.service || "") === "shopreturn" && colis.length > 1) colis = [colis[0]];
   const ref = String(src.reference || "").trim().slice(0, 20);
   if (!ref) return { ok: false, etape: "reference", error: "Référence de commande absente." };
 
-  const trous = manquants(d);
+  const trous = manquants(d, String(src.service || "flexdelivery"));
   if (trous.length)
     return { ok: false, etape: "champs", manquants: trous,
       error: "Impossible d'éditer l'étiquette, il manque : " + trous.join(", ") + "." };
@@ -413,7 +428,7 @@ async function doLabel(p: any) {
      DIFFÉRENT dans le JSON GLS — « Service » pour le domicile, « ShopDelivery »
      pour le relais. Se tromper de nœud fait refuser toute la requête. */
   const service = String(src.service || "flexdelivery");
-  if (service !== "flexdelivery" && service !== "shopdelivery")
+  if (service !== "flexdelivery" && service !== "shopdelivery" && service !== "shopreturn")
     return { ok: false, etape: "service", error: "Service inconnu : " + service + "." };
 
   const relais = String(src.parcelShopId || "").trim();
@@ -421,9 +436,15 @@ async function doLabel(p: any) {
     return { ok: false, etape: "relais",
       error: "Aucun point relais choisi. Cherche-le d'abord avec l'action « parcelshops »." };
 
+  /* Chaque service porte un nom de noeud DIFFERENT. Se tromper fait refuser
+     toute la requete. Et le RETOUR inverse les roles sur l'etiquette : le
+     client devient l'expediteur, nous le destinataire. Le corps, lui, se
+     remplit exactement pareil — c'est GLS qui retourne les roles. */
   const noeudService = service === "shopdelivery"
     ? { ShopDelivery: { ServiceName: "service_shopdelivery", ParcelShopID: relais } }
-    : { Service: { ServiceName: "service_flexdelivery" } };
+    : service === "shopreturn"
+      ? { ShopReturn: { ServiceName: "service_shopreturn", NumberOfLabels: 1 } }
+      : { Service: { ServiceName: "service_flexdelivery" } };
 
   const pays = String(d.pays || "FR").toUpperCase().slice(0, 2);
   /* Note1 et Note2 s'impriment dans le bloc du MILIEU de l'étiquette, bien
@@ -497,6 +518,27 @@ async function doLabel(p: any) {
       pdf: pr.Data || "",
     };
   });
+
+  /* LE RETOUR REND DEUX ETIQUETTES POUR UN SEUL COLIS : l'etiquette de
+     transport, et la feuille d'instructions a conserver par le client.
+     L'appariement par position aurait garde la premiere et jete la seconde. */
+  if (service === "shopreturn" && prints.length > parcels.length) {
+    const tid = parcels[0].TrackID || parcels[0].ParcelNumber || "";
+    const roles = ["transport", "instructions"];
+    return {
+      ok: true, env, reference: ref, service, parcelShopId: null, pdfUnique: false,
+      trackIds: [tid],
+      etiquettes: prints.map((pr: any, i: number) => ({
+        colis: 1,
+        role: roles[i] || ("feuille " + (i + 1)),
+        trackId: tid,
+        repere: "",
+        concorde: true,
+        poids: unites[0] ? unites[0].Weight : "",
+        pdf: pr.Data || "",
+      })),
+    };
+  }
 
   if (discordance)
     return { ok: false, etape: "concordance", etiquettes,
