@@ -7982,7 +7982,28 @@ function depTotal(d){return (d.lignes||[]).reduce((s,l)=>s+(+l.prixHT||0)*(+l.qt
 function depVente(d){return (d.lignes||[]).reduce((s,l)=>s+(+l.pv||0)*(+l.qte||0),0);}
 function depRef(d){const dt=new Date(d.date||today());return "DEP-"+dt.getFullYear()+String(dt.getMonth()+1).padStart(2,"0")+String(d.id).padStart(4,"0");}
 function sizeOpts(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.grille]||attrLabels("Taille");const vs=DB.variantes.filter(v=>v.modeleId==mid).slice().sort((x,y)=>{const ix=order.indexOf(String(x.taille)),iy=order.indexOf(String(y.taille));return (ix<0?9999:ix)-(iy<0?9999:iy);});return vs.length?('<option value="">-- Taille --</option>'+vs.map(v=>`<option value="${v.id}">${esc(vSizeTxt(v))}</option>`).join("")):'<option value="">-- Aucune taille (génère les variantes du modèle) --</option>';}
-function makePieceDepot(d,l,key){const id=key?stableId("piece",key,DB.articles,function(x){return x.fsKey===key;}):newId(DB.articles);const ref=newRef();DB.articles.unshift({id,ref,varianteId:l.varianteId,societeId:d.societeId,prix:l.prixHT,pv:l.pv||0,tva:l.tva,etat:l.etat,statut:"En Stock",date:d.date,fourId:d.fournId,ville:d.ville||"Vichy",emplacement:d.emplacement||"",tag:l.tag||"Aucun",fact:d.ref,dispo:l.dispo?1:0,depot:1,refDep:l.refDep||"",maj:today(),archived:0});}
+function makePieceDepot(d,l,key){const id=key?stableId("piece",key,DB.articles,function(x){return x.fsKey===key;}):newId(DB.articles);const ref=newRef();DB.articles.unshift({id,ref,varianteId:l.varianteId,societeId:d.societeId,prix:l.prixHT,pv:l.pv||0,tva:l.tva,etat:l.etat,statut:"En Stock",date:d.date,fourId:d.fournId,ville:d.ville||"Vichy",emplacement:d.emplacement||"",tag:l.tag||"Aucun",fact:d.ref,dispo:l.dispo?1:0,depot:1,depotId:d.id,refDep:l.refDep||"",maj:today(),archived:0});}
+/* LES PIÈCES NÉES D'UNE COMMANDE DE DÉPÔT.
+
+   Il n'y avait aucun lien explicite : une pièce de dépôt ne portait que
+   « depot:1 » et une clé technique de la forme « D<id>|ligne|n° », posée pour
+   que deux postes réceptionnant le même dépôt n'écrivent pas deux pièces.
+   On s'appuie donc sur les deux : depotId pour les pièces créées à partir de
+   maintenant, la clé pour les 23 qui existaient déjà.
+
+   Trois pièces de dépôt de la base n'ont NI l'un NI l'autre. Elles resteront
+   introuvables par ce chemin, et c'est pour ça que l'appelant compare ce
+   qu'il a trouvé à ce que la commande annonce : mieux vaut dire « il en
+   manque » que d'imprimer une planche incomplète sans prévenir. */
+function depPiecesCreees(d){
+  if(!d)return [];
+  var prefixe="D"+d.id+"|";
+  return (DB.articles||[]).filter(function(p){
+    if(!p||p.archived)return false;
+    if(p.depotId!=null)return p.depotId===d.id;
+    return String(p.fsKey||"").indexOf(prefixe)===0;
+  });
+}
 async function deliverDepotObj(d){if(!d.lignes.length){alert("Ajoute au moins un produit avant de réceptionner.");return false;}
   if(bloquerSiPrixManquants(d.lignes,"réceptionner ce dépôt"))return false;
   if(!confirm(`Marquer ${d.ref} comme reçu en dépôt ?\nCela va créer ${depPieces(d)} pièce(s) en stock (marquées « dépôt »).`))return false;
@@ -8068,7 +8089,7 @@ async function saveDepotHeader(){
 let curDepot=null,selDepMod="";const vdepD=document.getElementById("view-depotD");
 function openDepot(id){curDepot=DB.depots.find(x=>x.id==id);if(!curDepot){show("depots");return renderDepots();}renderDepotD();show("depotD");}
 function renderDepotD(){const d=curDepot;const four=fourById(d.fournId),soc=socById(d.societeId);const enDepot=d.statut==="En dépôt";
-  vdepD.innerHTML=`<div class="dhead"><button class="backbtn" data-bk>← Retour</button><div><div class="muted" style="font-size:13px">Commande de dépôt — produits</div><h1 style="font-size:26px;margin:0">${esc(d.ref)}</h1></div><span class="spacer"></span>${!enDepot?`<button class="btn g" id="dd_deliver"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 5 7 7-7 7"/><path d="m13 5 7 7-7 7"/></svg> Marquer reçu en dépôt</button>`:depBadge("En dépôt")}<button class="btn r" id="dd_del"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg> Supprimer</button></div>
+  vdepD.innerHTML=`<div class="dhead"><button class="backbtn" data-bk>← Retour</button><div><div class="muted" style="font-size:13px">Commande de dépôt — produits</div><h1 style="font-size:26px;margin:0">${esc(d.ref)}</h1></div><span class="spacer"></span>${!enDepot?`<button class="btn g" id="dd_deliver"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 5 7 7-7 7"/><path d="m13 5 7 7-7 7"/></svg> Marquer reçu en dépôt</button>`:depBadge("En dépôt")}<button class="btn" id="dd_labels"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M11 5v14M15 5v14M19 5v14"/></svg> Étiquettes</button><button class="btn r" id="dd_del"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg> Supprimer</button></div>
    <div class="dcard"><h3>Infos générales</h3>
      <div class="ginfo">
        <div><div class="gl">Date du dépôt</div><div class="gv">${esc(achDate(d.date))}</div></div>
@@ -8104,6 +8125,24 @@ function renderDepotD(){const d=curDepot;const four=fourById(d.fournId),soc=socB
   dd_del.onclick=async()=>{if(confirm("Supprimer ce dépôt ? (les pièces déjà en dépôt restent)")){DB.depots=DB.depots.filter(x=>x.id!=d.id);logAct("Suppression","Commande de dépôt",d.ref);await save();show("depots");renderDepots();}};
   dd_edit.onclick=()=>openDepotNew(d.id);
   const dv=document.getElementById("dd_deliver");if(dv)dv.onclick=async()=>{if(await deliverDepotObj(d))renderDepotD();};
+  /* Les étiquettes, comme sur une commande d'achat. Elles manquaient ici
+     seulement parce que le bouton n'avait jamais été posé : printLabels ne
+     demande que des pièces, et une pièce de dépôt en est une. */
+  const dl=document.getElementById("dd_labels");
+  if(dl)dl.onclick=()=>{
+    const pcs=depPiecesCreees(d);
+    if(!pcs.length){
+      alert(d.statut==="En dépôt"
+        ? "Aucune pièce de ce dépôt n'a pu être retrouvée.\n\nC'est le cas de trois pièces anciennes de la base, créées avant que le lien avec leur commande soit enregistré. Passe par Stock pour les imprimer."
+        : "Aucune pièce en stock pour l'instant. Réceptionne d'abord le dépôt.");
+      return;
+    }
+    const attendu=depPieces(d);
+    if(attendu&&pcs.length<attendu&&!confirm(
+      pcs.length+" pièce(s) retrouvée(s) sur les "+attendu+" annoncées par ce dépôt.\n\n"
+      +"Les manquantes sont des pièces anciennes, créées avant que le lien avec leur commande soit enregistré.\n\nImprimer quand même ?"))return;
+    printLabels(pcs);
+  };
   const cr=document.getElementById("dd_create");if(cr)cr.onclick=async()=>{await save();show("depots");renderDepots();};
   if(!enDepot){
     dl_etat.innerHTML=(attrLabels("État du produit").length?attrLabels("État du produit"):["Neuf","Used"]).map(e=>`<option>${esc(e)}</option>`).join("");
