@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261104-233242";
+var ERP_VERSION="20261105-001432";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -10864,12 +10864,39 @@ function glsNomPaire(a){
    Écrits après l'édition, lus à la demande. Jamais chargés au démarrage.
    --------------------------------------------------------------------------- */
 async function glsSauverEtiquettes(o,res,repartition){
-  var lignes=(res.etiquettes||[]).map(function(e,i){
-    return {track_id:e.trackId,commande:o.name,
-      data:{pdf:e.pdf||"",service:res.service,poids:e.poids,colis:e.colis,
-            parcelShopId:res.parcelShopId||null,env:res.env,orderId:o.id,
-            pieces:((repartition[i]||{}).pieces)||[]}};
-  }).filter(function(l){return l.track_id;});
+  /* UNE LIGNE PAR COLIS, PAS PAR FEUILLE.
+
+     track_id est la clé primaire de la table. Or une étiquette de RETOUR rend
+     DEUX feuilles — le bordereau de transport et les instructions pour le
+     client — qui portent le MÊME TrackID : c'est un seul colis. Les écrire en
+     deux lignes faisait échouer tout l'enregistrement, Postgres refusant un
+     upsert qui touche deux fois la même clé (« ON CONFLICT DO UPDATE command
+     cannot affect row a second time »).
+
+     Conséquence, pendant tout le temps où ce code a tourné : AUCUNE étiquette
+     de retour n'a été conservée. Et GLS ne redonne jamais un PDF déjà émis —
+     une « réimpression » annule l'étiquette et en facture une autre. Les
+     feuilles perdues le sont pour de bon.
+
+     On regroupe donc par TrackID : une ligne, plusieurs feuilles. */
+  var par={},ordre=[];
+  (res.etiquettes||[]).forEach(function(e,i){
+    var id=e.trackId;if(!id)return;
+    if(!par[id]){
+      par[id]={track_id:id,commande:o.name,
+        data:{pdf:e.pdf||"",service:res.service,poids:e.poids,colis:e.colis,
+              parcelShopId:res.parcelShopId||null,env:res.env,orderId:o.id,
+              pieces:((repartition[i]||{}).pieces)||[],feuilles:[]}};
+      ordre.push(id);
+    }
+    par[id].data.feuilles.push({role:e.role||"transport",pdf:e.pdf||""});
+  });
+  var lignes=ordre.map(function(id){
+    var l=par[id];
+    /* Une feuille unique : inutile de stocker le PDF deux fois. */
+    if(l.data.feuilles.length<2)delete l.data.feuilles;
+    return l;
+  });
   if(!lignes.length)return {ok:false,error:"aucune étiquette à conserver"};
   try{
     var r=await sb.from("gls_etiquettes").upsert(lignes);
@@ -10892,12 +10919,50 @@ function glsPdfUrl(b64){
   for(var i=0;i<n;i++)arr[i]=bin.charCodeAt(i);
   return URL.createObjectURL(new Blob([arr],{type:"application/pdf"}));
 }
+/* Les feuilles d'une étiquette conservée, sous une forme unique.
+   Les lignes écrites avant le regroupement n'ont qu'un champ pdf ; celles
+   d'aujourd'hui portent un tableau feuilles. On lit les deux. */
+function glsFeuilles(d){
+  if(!d)return [];
+  if(d.feuilles&&d.feuilles.length)return d.feuilles.filter(function(f){return f&&f.pdf;});
+  return d.pdf?[{role:"transport",pdf:d.pdf}]:[];
+}
+function glsNomFeuille(role){
+  return role==="instructions"?"Instructions pour le client":"Étiquette à coller sur le colis";
+}
+function glsOuvrirPdf(b64){
+  var a=document.createElement("a");
+  a.href=glsPdfUrl(b64);a.target="_blank";a.rel="noopener";
+  document.body.appendChild(a);a.click();a.remove();
+}
 async function glsRouvrir(trackId){
   var d=await glsLireEtiquette(trackId);
-  if(!d||!d.pdf){alert("Étiquette introuvable dans l'ERP pour le suivi "+trackId+".");return;}
-  var a=document.createElement("a");
-  a.href=glsPdfUrl(d.pdf);a.target="_blank";a.rel="noopener";
-  document.body.appendChild(a);a.click();a.remove();
+  var f=glsFeuilles(d);
+  if(!f.length){alert("Étiquette introuvable dans l'ERP pour le suivi "+trackId+".");return;}
+  if(f.length===1){glsOuvrirPdf(f[0].pdf);return;}
+
+  /* Plusieurs feuilles (un retour) : on pose des liens plutôt que d'ouvrir
+     deux onglets d'affilée — le second se ferait bloquer, et le client
+     repartirait sans ses instructions. */
+  var ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
+    +"display:flex;align-items:center;justify-content:center;padding:20px";
+  var h='<div style="background:#fff;border-radius:16px;max-width:440px;width:100%;padding:22px;'
+    +'box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+    +'<b style="font-size:15px">Étiquette de retour '+esc(trackId)+'</b>'
+    +'<div class="sub" style="margin:6px 0 14px">'+f.length+' feuilles conservées dans l\'ERP.</div>';
+  f.forEach(function(x,i){
+    h+='<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--line);'
+      +'border-radius:11px;margin-bottom:9px"><b style="flex:1;min-width:0;font-size:13px">'
+      +esc(glsNomFeuille(x.role))+'</b>'
+      +'<button class="btn v" style="padding:8px 13px;font-size:13px" data-f="'+i+'">Ouvrir</button></div>';
+  });
+  h+='<div style="margin-top:14px;text-align:right"><button class="btn" id="_grX">Fermer</button></div></div>';
+  ov.innerHTML=h;document.body.appendChild(ov);
+  ov.querySelectorAll("[data-f]").forEach(function(b){
+    b.onclick=function(){glsOuvrirPdf(f[+b.getAttribute("data-f")].pdf);};
+  });
+  ov.querySelector("#_grX").onclick=function(){ov.remove();};
 }
 
 /* ---------------------------------------------------------------------------
