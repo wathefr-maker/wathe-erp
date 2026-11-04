@@ -1683,6 +1683,31 @@ function viViewingTaker(){var c=viCfg();return !!(c&&socFilter&&socFilter==c.tak
 
 function newRef(){const d=new Date();const p=`${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;return p+String(newId(DB.articles)).padStart(7,"0");}
 
+/* CLASSER DES TAILLES, QUI NE SONT PAS TOUTES DES NOMBRES.
+
+   Le filtre du stock listait les tailles dans l'ordre où elles sortaient de la
+   base, c'est-à-dire aucun : 45 avant 38, et 40.5 n'importe où. Un tri de
+   texte n'aurait pas aidé — « 10 » passe avant « 9 », et « M » avant « S ».
+
+   On classe donc les nombres entre eux, les tailles de vêtement selon leur
+   échelle, le reste par ordre alphabétique. Les nombres d'abord : la boutique
+   vend surtout des chaussures. */
+var TAILLES_LETTRES=["XXXS","XXS","XS","S","M","L","XL","XXL","XXXL","4XL","5XL"];
+function tailleRang(t){
+  var s=String(t==null?"":t).trim();
+  var n=parseFloat(s.replace(",","."));
+  if(isFinite(n)&&/^[0-9]/.test(s))return {g:0,n:n,s:s};
+  var i=TAILLES_LETTRES.indexOf(s.toUpperCase().replace(/\s+/g,""));
+  if(i>=0)return {g:1,n:i,s:s};
+  return {g:2,n:0,s:s.toLowerCase()};
+}
+function tailleCmp(a,b){
+  var x=tailleRang(a),y=tailleRang(b);
+  if(x.g!==y.g)return x.g-y.g;
+  if(x.g===2)return x.s.localeCompare(y.s,"fr");
+  if(x.n!==y.n)return x.n-y.n;
+  return String(a).localeCompare(String(b),"fr");
+}
 function fillSelects(){
   var _keepF=(typeof stockFiltersGet==="function")?stockFiltersGet():null;
   socSel.innerHTML='<option value="">Toutes les sociétés</option>'+DB.societes.map(s=>`<option value="${s.id}">${s.nom}</option>`).join("");
@@ -1693,7 +1718,9 @@ function fillSelects(){
   const marques=[...new Set(DB.modeles.map(m=>m.marque).filter(Boolean))].sort();
   fMarque.innerHTML='<option value="">Marque</option>'+marques.map(x=>`<option>${x}</option>`).join("");
   cMarque.innerHTML='<option value="">Marque</option>'+marques.map(x=>`<option>${x}</option>`).join("");
-  fTaille.innerHTML='<option value="">Taille</option>'+[...new Set(DB.variantes.map(v=>v.taille))].map(x=>`<option>${x}</option>`).join("");
+  fTaille.innerHTML='<option value="">Taille</option>'
+    +[...new Set(DB.variantes.map(v=>v.taille))].filter(x=>String(x||"").trim()!=="")
+      .sort(tailleCmp).map(x=>`<option>${x}</option>`).join("");
   fFour.innerHTML='<option value="">Fournisseur</option>'+DB.fournisseurs.map(f=>`<option value="${f.id}">${fourLabel(f)}</option>`).join("");
   if(window.fnPays){const pl=(DB.pays&&DB.pays.length?DB.pays.filter(p=>p.actif!==0).map(p=>p.nom):PAYS);const opt=pl.map(p=>`<option>${esc(p)}</option>`).join("");fnPays.innerHTML='<option value="">Pays</option>'+opt;f_pays.innerHTML=opt;clPays.innerHTML='<option value="">Pays</option>'+opt;c_pays.innerHTML=opt;}
   if(window.s_pays)s_pays.innerHTML=(DB.pays&&DB.pays.length?DB.pays.filter(p=>p.actif!==0).map(p=>p.nom):PAYS).map(p=>`<option>${esc(p)}</option>`).join("");
@@ -10394,8 +10421,24 @@ function shopSaveTrackingCore(){
   if(!nEl)return false;
   const number=nEl.value.trim();if(!number){alert("Saisis un numéro de suivi.");return false;}
   const carrier=cEl?cEl.value:"";const url=shopTrackUrl(carrier,number);
+  /* CE QUI A DÉJÀ ÉTÉ ENVOYÉ NE SE RENVOIE PAS.
+     On le relève AVANT d'écrire, sinon la marque qu'on vient de poser rend
+     toute commande « déjà envoyée ».
+     Sans ce relevé, enregistrer un suivi sur une commande que Shopify tient
+     déjà pour expédiée — parce que l'étiquette GLS l'a fulfillée, ou qu'un
+     suivi y a déjà été saisi — déclenchait une alerte inquiétante qui, en
+     prime, accusait l'action « fulfill » de ne pas être déployée. Elle l'est.
+     Le mode plusieurs colis faisait ce filtrage depuis toujours ; le mode
+     simple, non. */
+  const dejaEnvoye=pieces.every(function(a){return !!a.shopifyTrackingSent;})||!!o.fulfilledShopify;
   pieces.forEach(function(a){a.shopifyTracking={company:carrier,number:number,url:url};a.shopifyTrackingSent=1;a.maj=today();});
-  logAct("Tracking Shopify",o.name,carrier+" "+number);save();
+  logAct("Tracking Shopify",o.name,carrier+" "+number+(dejaEnvoye?" (mise à jour locale)":""));save();
+  if(dejaEnvoye){
+    alert("Suivi mis à jour dans l'ERP.\n\nShopify tient déjà cette commande pour expédiée : "
+      +"son numéro de suivi n'y sera pas remplacé. Pour le corriger côté Shopify, annule "
+      +"l'expédition là-bas, puis réenregistre le suivi ici.");
+    return true;
+  }
   if(!o.duplicated)shopPushFulfillment(o,carrier,number,url);
   return true;
 }
@@ -10447,7 +10490,15 @@ async function shopPushFulfillment(o,carrier,number,url){
     o.fulfilledShopify=1;o.fulfillment="FULFILLED";try{shopCacheSave();}catch(e){}
     if(_shopCurOrderId===o.id){try{shopRefresh();}catch(e){}}
   }catch(e){
-    alert("⚠️ Suivi enregistré dans l'ERP, mais NON envoyé à Shopify : "+(e.message||e)+"\n(Vérifie que l'action « fulfill » est déployée dans ta fonction shopify-write.)");
+    /* Le message doit nommer la VRAIE raison. Il accusait l'action « fulfill »
+       de ne pas être déployée quel que soit le refus — y compris quand Shopify
+       répondait simplement que la commande était déjà expédiée. On envoyait
+       chercher un problème de déploiement qui n'existait pas. */
+    var _m=String((e&&e.message)||e);
+    alert(/déjà expédiée|rien à expédier/i.test(_m)
+      ? "Suivi enregistré dans l'ERP.\n\nShopify n'a rien à expédier sur cette commande : "
+        +"elle y est déjà marquée comme expédiée. Le suivi n'y a donc pas été remplacé."
+      : "⚠️ Suivi enregistré dans l'ERP, mais NON envoyé à Shopify : "+_m);
   }
 }
 function shopSaveTracking(){if(shopSaveTrackingCore())shopRefresh();}
@@ -10499,16 +10550,18 @@ var GLS_POIDS_MAX   = 20;
    Le bac à sable reste le défaut : une étiquette de production est réelle et
    facturée, ça ne doit jamais être l'état par accident. */
 function glsEnv(){
-  /* La PRODUCTION est désormais l'état normal : c'est là que vivent les vraies
-     expéditions, et le bac à sable n'est plus qu'un détour pour essayer.
-     Le défaut a donc été inversé, à la demande. Ce qui le rend acceptable,
-     c'est que l'environnement se VOIT maintenant : sélecteur dans l'en-tête,
-     bandeau rouge, badge rouge sur le récapitulatif. Un défaut dangereux et
-     muet serait un piège ; un défaut dangereux et affiché partout est un
-     choix. */
-  try{return localStorage.getItem("glsEnv")==="sandbox"?"sandbox":"prod";}catch(e){return "prod";}
+  /* PRODUCTION, TOUJOURS. Le bac à sable a servi à mettre au point le relais
+     et à faire valider nos étiquettes par GLS ; il ne sert plus à rien au
+     quotidien, et un sélecteur qu'on ne touche jamais n'est qu'une occasion
+     de se tromper un soir de rush.
+     Le relais, lui, accepte toujours env:"sandbox" : pour une mise au point,
+     ça se passe depuis la console, pas depuis l'écran d'expédition. */
+  return "prod";
 }
+
 function glsEnvSet(v){
+  /* Conservée pour une mise au point depuis la console. L'écran, lui, n'offre
+     plus le choix : glsEnv() rend toujours "prod". */
   var n=(v==="prod")?"prod":"sandbox";
   try{localStorage.setItem("glsEnv",n);}catch(e){}
   /* Les identifiants de points relais ne sont pas les mêmes d'un environnement
@@ -10799,20 +10852,6 @@ function glsRender(){
     +'<b style="font-size:16px">Expédier la commande '+esc(o.name)+'</b>'
     +'<span class="muted" style="font-size:12.5px;font-weight:600">'+esc(d.nom||"—")+' · '
       +g.pieces.length+' paire'+(g.pieces.length>1?"s":"")+'</span>'
-    +(function(){
-       /* Le choix se fait ICI, sous les yeux, avant de cliquer. Un réglage
-          caché dans un menu aurait reproduit le défaut qu'on corrige. */
-       var p=glsEnv()==="prod";
-       var bt=function(v,lib,on,fond,txt){
-         return '<button class="btn" onclick="glsEnvSet(\''+v+'\')" style="border:none;border-radius:0;'
-           +'font-size:12px;font-weight:700;padding:6px 11px;'
-           +(on?('background:'+fond+';color:'+txt):'background:#fff;color:var(--muted)')+'">'+lib+'</button>';
-       };
-       return '<div style="margin-left:auto;display:flex;border:1px solid '
-         +(p?'#fecaca':'var(--line)')+';border-radius:9px;overflow:hidden">'
-         +bt("sandbox","Bac à sable",!p,"#fef3c7","#92400e")
-         +bt("prod","Production",p,"#fee2e2","#b91c1c")+'</div>';
-     })()
     +'<button class="btn" onclick="glsFermer()" aria-label="Fermer" style="border:none;background:transparent;font-size:19px;color:var(--muted);padding:4px 8px;margin-left:8px">×</button>'
     +'</div>';
 
@@ -10825,8 +10864,7 @@ function glsRender(){
       +'<b style="font-size:15px">'+(r.etiquettes||[]).length+' étiquette'
         +((r.etiquettes||[]).length>1?"s":"")+' éditée'+((r.etiquettes||[]).length>1?"s":"")+'</b>'
       +(r.env==="sandbox"
-         ?'<span style="font-size:11px;font-weight:800;color:#92400e;background:#fef3c7;padding:3px 9px;border-radius:999px">BAC À SABLE</span>'
-         :'<span style="font-size:11px;font-weight:800;color:#b91c1c;background:#fee2e2;padding:3px 9px;border-radius:999px">PRODUCTION</span>')
+         ?'<span style="font-size:11px;font-weight:800;color:#92400e;background:#fef3c7;padding:3px 9px;border-radius:999px">BAC À SABLE</span>':'')
       +'</div>';
     (r.etiquettes||[]).forEach(function(e){
       var u="";try{u=e.pdf?glsPdfUrl(e.pdf):"";}catch(_){}
@@ -11030,20 +11068,13 @@ function glsRender(){
     +'</button>'
     +'<button class="btn" onclick="glsFermer()" '+(g.busy?"disabled":"")+' style="width:100%;margin-top:9px">Annuler</button>';
 
-  /* L'environnement se DIT, toujours. Le bac à sable était signalé et la
-     production ne l'était pas : rien ne distinguait alors une étiquette
-     d'essai d'une étiquette réelle, facturée, que GLS attend. L'absence de
-     message est le pire des signaux — c'est celui qu'on ne remarque pas. */
-  if(glsEnv()==="sandbox"){
-    droite+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;margin-top:13px">'
-      +'<p style="margin:0;font-size:11.5px;color:#92400e;line-height:1.6"><b>Bac à sable.</b> '
-      +'Les étiquettes portent la mention TEST et aucun colis n\'est attendu par GLS.</p></div>';
-  }else{
-    droite+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 12px;margin-top:13px">'
-      +'<p style="margin:0;font-size:11.5px;color:#b91c1c;line-height:1.6"><b>Production.</b> '
-      +'Étiquette réelle sur le compte GLS. Le colis doit partir — une étiquette '
-      +'éditée par erreur s\'annule depuis la carte Tracking.</p></div>';
-  }
+  /* Un seul rappel, et il dit ce qui engage : l'étiquette est réelle et
+     facturée. Ce n'est plus un choix d'environnement, c'est un fait. */
+  droite+='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 12px;margin-top:13px">'
+    +'<p style="margin:0;font-size:11.5px;color:#b91c1c;line-height:1.6"><b>Étiquette réelle.</b> '
+    +'Elle est facturée par GLS et le colis doit partir. Une étiquette éditée par '
+    +'erreur s\'annule depuis la carte Tracking.</p></div>';
+
   if(g.hub.length){
     droite+='<p class="muted" style="font-size:11.5px;line-height:1.6;margin:11px 0 0">'
       +'Expédition partielle : la commande ne sera complète sur Shopify qu\'une fois '
