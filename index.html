@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261104-225640";
+var ERP_VERSION="20261104-230313";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -9694,6 +9694,12 @@ async function shopChargerTout(){
   const msg=document.getElementById("shopAllMsg");
   const dire=function(t){if(msg)msg.textContent=t;};
   var pages=0,avant=(_shopOrders||[]).length,arret="";
+  /* Vrai quand la descente s'est arrêtée parce qu'une page passait SOUS
+     l'horizon : dans ce cas la plus ancienne commande gardée est forcément
+     juste au-dessus de la borne, et ce n'est pas une anomalie. Sans ce
+     témoin, l'alerte du mur des 60 jours se déclencherait à chaque descente
+     normale. */
+  var _horizonAtteint=false;
   try{
     while(!_shopFini&&pages<SHOP_ALL_MAX_PAGES){
       /* Même prudence que dans « Charger plus » : le curseur de tête n'amorce
@@ -9728,7 +9734,7 @@ async function shopChargerTout(){
       /* Horizon atteint : la descente est terminée pour ce que l'ERP garde.
          On le dit comme tel — « complet » ici veut dire « complet jusqu'à
          l'horizon », et l'annonce de fin précise jusqu'où on remonte. */
-      if(_deborde){_shopFini=true;_shopMore=false;}
+      if(_deborde){_shopFini=true;_shopMore=false;_horizonAtteint=true;}
       /* Sans curseur qui avance, la boucle rejouerait la même page sans fin. */
       if(pi.endCursor&&pi.endCursor!==depart)_shopFond=pi.endCursor;
       else if(!_shopFini){arret="Shopify n'a pas renvoyé de position suivante.";break;}
@@ -9768,6 +9774,35 @@ async function shopChargerTout(){
     }catch(_){}
     console.log("[Shopify] Historique déclaré complet : "+(_shopOrders||[]).length
       +" commandes, la plus ancienne du "+(_vieille?_vieille.slice(0,10):"?")+".");
+
+    /* LE MUR DES 60 JOURS.
+
+       Shopify ne donne que les 60 derniers jours de commandes à une
+       application qui n'a pas l'autorisation read_all_orders — et il ne le
+       dit PAS : il répond simplement hasNextPage=false au bord de la
+       fenêtre, exactement comme une vraie fin d'historique. Une descente
+       honnête s'arrête donc là en croyant avoir tout vu.
+
+       C'est ce qui a fait disparaître août : le cache accumulait depuis des
+       mois des commandes désormais hors fenêtre, et la troncature les a
+       emportées sans qu'aucun rechargement ne puisse les ramener.
+
+       On ne peut pas lever la limite d'ici, mais on peut refuser de la
+       confondre avec une fin d'historique. Si la descente s'arrête bien
+       au-dessus de l'horizon demandé, on le dit. */
+    if(!_horizonAtteint&&SHOP_HISTORIQUE_DEPUIS&&_vieille
+       &&_vieille.slice(0,10)>SHOP_HISTORIQUE_DEPUIS){
+      var _jours=Math.round((Date.now()-Date.parse(_vieille))/86400000);
+      var _msg="Historique INCOMPLET : on demandait depuis le "
+        +SHOP_HISTORIQUE_DEPUIS+", Shopify s'arrête au "+_vieille.slice(0,10)
+        +" ("+_jours+" jours). Au-delà de 60 jours il faut l'autorisation"
+        +" read_all_orders sur l'application Shopify, à ajouter à côté de"
+        +" read_orders. Tant qu'elle manque, les commandes plus anciennes"
+        +" sont hors d'atteinte.";
+      console.error("[Shopify] "+_msg);
+      arret=_msg;
+      _shopFini=false;   /* ne pas graver « complet » dans le cache */
+    }
   }
   dire(_shopFini
     ? ""                                     /* terminé : plus rien à annoncer */
