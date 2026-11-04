@@ -10435,7 +10435,27 @@ function shopClearTracking(){
 
 var GLS_POIDS_PAIRE = 2;      // kg par paire, le défaut ; modifiable par colis
 var GLS_POIDS_MAX   = 20;
-var GLS_ENV         = "sandbox";  // « prod » seulement quand GLS aura validé nos étiquettes
+/* L'ENVIRONNEMENT GLS EST UN RÉGLAGE, PAS UNE VARIABLE.
+
+   Il tenait dans un var que l'on basculait depuis la console. Ça a coûté deux
+   allers-retours avec GLS : la bascule disparaissait au rechargement suivant,
+   l'étiquette repartait en bac à sable, et rien ne le disait assez fort pour
+   qu'on le remarque avant de l'envoyer.
+
+   Il survit donc maintenant au rechargement, et il s'affiche dans la fenêtre.
+   Le bac à sable reste le défaut : une étiquette de production est réelle et
+   facturée, ça ne doit jamais être l'état par accident. */
+function glsEnv(){
+  try{return localStorage.getItem("glsEnv")==="prod"?"prod":"sandbox";}catch(e){return "sandbox";}
+}
+function glsEnvSet(v){
+  var n=(v==="prod")?"prod":"sandbox";
+  try{localStorage.setItem("glsEnv",n);}catch(e){}
+  /* Les identifiants de points relais ne sont pas les mêmes d'un environnement
+     à l'autre : garder la liste reviendrait à demander une étiquette de
+     production sur un relais de test. On repart de zéro. */
+  if(_gls){_gls.liste=null;_gls.relais=null;_gls.erreur="";glsRender();}
+}
 var _gls = null;                  // l'état de la fenêtre ouverte, ou null
 
 /* Un appel au relais. Toute erreur revient en français dans {ok:false,error},
@@ -10443,7 +10463,7 @@ var _gls = null;                  // l'état de la fenêtre ouverte, ou null
    quelle sans que le reste de l'ERP s'arrête. */
 async function glsAppel(action,corps){
   try{
-    var env={env:GLS_ENV};
+    var env={env:glsEnv()};
     var r=await sb.functions.invoke("gls-label",{body:Object.assign({action:action},env,corps||{})});
     if(r.error)return {ok:false,error:(r.error.message||"appel au relais échoué")};
     return r.data||{ok:false,error:"réponse vide du relais"};
@@ -10719,7 +10739,21 @@ function glsRender(){
     +'<b style="font-size:16px">Expédier la commande '+esc(o.name)+'</b>'
     +'<span class="muted" style="font-size:12.5px;font-weight:600">'+esc(d.nom||"—")+' · '
       +g.pieces.length+' paire'+(g.pieces.length>1?"s":"")+'</span>'
-    +'<button class="btn" onclick="glsFermer()" aria-label="Fermer" style="margin-left:auto;border:none;background:transparent;font-size:19px;color:var(--muted);padding:4px 8px">×</button>'
+    +(function(){
+       /* Le choix se fait ICI, sous les yeux, avant de cliquer. Un réglage
+          caché dans un menu aurait reproduit le défaut qu'on corrige. */
+       var p=glsEnv()==="prod";
+       var bt=function(v,lib,on,fond,txt){
+         return '<button class="btn" onclick="glsEnvSet(\''+v+'\')" style="border:none;border-radius:0;'
+           +'font-size:12px;font-weight:700;padding:6px 11px;'
+           +(on?('background:'+fond+';color:'+txt):'background:#fff;color:var(--muted)')+'">'+lib+'</button>';
+       };
+       return '<div style="margin-left:auto;display:flex;border:1px solid '
+         +(p?'#fecaca':'var(--line)')+';border-radius:9px;overflow:hidden">'
+         +bt("sandbox","Bac à sable",!p,"#fef3c7","#92400e")
+         +bt("prod","Production",p,"#fee2e2","#b91c1c")+'</div>';
+     })()
+    +'<button class="btn" onclick="glsFermer()" aria-label="Fermer" style="border:none;background:transparent;font-size:19px;color:var(--muted);padding:4px 8px;margin-left:8px">×</button>'
     +'</div>';
 
   /* --- écran de réussite : les étiquettes sont là, on les ouvre --- */
@@ -10730,7 +10764,9 @@ function glsRender(){
       +'<span style="color:var(--green);font-size:19px;font-weight:800">✓</span>'
       +'<b style="font-size:15px">'+(r.etiquettes||[]).length+' étiquette'
         +((r.etiquettes||[]).length>1?"s":"")+' éditée'+((r.etiquettes||[]).length>1?"s":"")+'</b>'
-      +(r.env==="sandbox"?'<span style="font-size:11px;font-weight:800;color:#92400e;background:#fef3c7;padding:3px 9px;border-radius:999px">BAC À SABLE</span>':'')
+      +(r.env==="sandbox"
+         ?'<span style="font-size:11px;font-weight:800;color:#92400e;background:#fef3c7;padding:3px 9px;border-radius:999px">BAC À SABLE</span>'
+         :'<span style="font-size:11px;font-weight:800;color:#b91c1c;background:#fee2e2;padding:3px 9px;border-radius:999px">PRODUCTION</span>')
       +'</div>';
     (r.etiquettes||[]).forEach(function(e){
       var u="";try{u=e.pdf?glsPdfUrl(e.pdf):"";}catch(_){}
@@ -10938,7 +10974,7 @@ function glsRender(){
      production ne l'était pas : rien ne distinguait alors une étiquette
      d'essai d'une étiquette réelle, facturée, que GLS attend. L'absence de
      message est le pire des signaux — c'est celui qu'on ne remarque pas. */
-  if(GLS_ENV==="sandbox"){
+  if(glsEnv()==="sandbox"){
     droite+='<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;margin-top:13px">'
       +'<p style="margin:0;font-size:11.5px;color:#92400e;line-height:1.6"><b>Bac à sable.</b> '
       +'Les étiquettes portent la mention TEST et aucun colis n\'est attendu par GLS.</p></div>';
