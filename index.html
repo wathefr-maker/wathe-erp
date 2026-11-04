@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261104-175605";
+var ERP_VERSION="20261104-182019";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -11180,12 +11180,17 @@ function glsManqueRetour(d){
     .filter(function(c){return !String((d||{})[c[0]]||"").trim();})
     .map(function(c){return c[1];});
 }
-function glsRetourDialog(o,dest){
+function glsRetourDialog(o,dest,poidsPropose){
   return new Promise(function(resolve){
     var ov=document.createElement("div");
     ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
       +"display:flex;align-items:center;justify-content:center;padding:20px";
-    var opts="";for(var k=1;k<=GLS_POIDS_MAX;k++)opts+='<option value="'+k+'"'+(k===GLS_POIDS_PAIRE?" selected":"")+'>'+k+' kg</option>';
+    /* Le poids proposé suit le nombre de paires de la commande : un client qui
+       renvoie ses deux paires les met presque toujours dans le MÊME carton, et
+       GLS ne compte pas les paires, il pèse le colis. Proposer 2 kg quelle que
+       soit la commande, c'était sous-déclarer une fois sur deux. */
+    var _p=Math.min(GLS_POIDS_MAX,Math.max(1,+poidsPropose||GLS_POIDS_PAIRE));
+    var opts="";for(var k=1;k<=GLS_POIDS_MAX;k++)opts+='<option value="'+k+'"'+(k===_p?" selected":"")+'>'+k+' kg</option>';
     ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:470px;width:100%;'
       +'padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
       +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'
@@ -11226,7 +11231,10 @@ async function glsRetour(orderId){
       +" sur l'adresse du client.\n\nComplète-les depuis la fenêtre d'expédition.");
     return;
   }
-  var ch=await glsRetourDialog(o,d);
+  /* Deux paires reviennent presque toujours dans le même carton : on propose
+     le poids de l'ensemble, qu'il reste libre de corriger. */
+  var _n=Math.max(1,shopOrderPieces(o).length);
+  var ch=await glsRetourDialog(o,d,GLS_POIDS_PAIRE*_n);
   if(!ch)return;
 
   var r=await glsAppel("label",{reference:o.name,service:"shopreturn",
