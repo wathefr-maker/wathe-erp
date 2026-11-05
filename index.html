@@ -6450,9 +6450,29 @@ function coefPourAchat(pa){
   return t?t.coef:PV_COEF;
 }
 function coefTxt(c){return "× "+String(+(+c).toFixed(2)).replace(".",",");}
-function pvAutomatique(pa,coef){
+/* VÊTEMENTS ET ACCESSOIRES : × 2 (même règle que le Sourcing Hub), au lieu du
+   coefficient des chaussures. Un palier plus élevé resterait prioritaire.
+   Chaussure ou pas : grille de la fiche (Textile, Vêtement, Maroquinerie, Taille
+   unique…), puis la taille (S, M, XL, TU… = pas une pointure), puis la
+   catégorie (Shoes / Clothing, Handbags…). Sans information : chaussure. */
+var PV_COEF_TEXTILE=2;
+function estChaussure(m,taille){
+  m=m||{};
+  var g=String(m.todsGrille||m.grille||""), tx=String(m.taxo||"");
+  if(/textile|v[êe]tement|maroquinerie|taille unique|accessoire/i.test(g))return false;
+  var t=String(taille==null?"":taille).trim();
+  if(t&&!/^(us|uk|eu)?\s*\d/i.test(t))return false;     // S, M, XL, OS, TU… : jamais une pointure
+  if(/shoes|chaussure|sneaker|basket/i.test(tx))return true;
+  if(/clothing|handbag|bag|hat|sock|jewel|accessor/i.test(tx))return false;
+  return true;
+}
+function coefPourArticle(pa,m,taille){
+  var c=coefPourAchat(pa);
+  return estChaussure(m,taille)?c:Math.max(PV_COEF_TEXTILE,c);
+}
+function pvAutomatique(pa,coef,m,taille){
   pa=+pa||0; if(pa<=0)return 0;
-  return pvArrondi(pa*((+coef>0)?+coef:coefPourAchat(pa)));
+  return pvArrondi(pa*((+coef>0)?+coef:(m?coefPourArticle(pa,m,taille):coefPourAchat(pa))));
 }
 
 /* Le test unique, utilisé partout. Une pièce sans prix cible ne part ni en
@@ -6972,7 +6992,7 @@ function aiBuildAchatFromInvoice(j){
       /* Le prix lu sur la facture passe par le MÊME arrondi que le prix
          déduit : la règle est « tout prix cible finit en X4,90 ou X9,90 »,
          pas « sauf quand le fournisseur en propose un ». */
-      pv:(pvLu>0?pvArrondi(pvLu):pvAutomatique(pa)),
+      pv:(pvLu>0?pvArrondi(pvLu):pvAutomatique(pa,0,mm.m,tval)),
       pvDeduit:!(pvLu>0),
       tva:((DB.taxes||[]).some(function(t){return t.nom===L.tva;})?L.tva:"TVASM"),
       etat:etatDef,
@@ -8033,11 +8053,12 @@ function addAchatLine(){const mid=+selMod||0,vid=+al_size.value,qte=parseInt(al_
   if(al_pv.value===""||isNaN(parseFloat(al_pv.value))||parseFloat(al_pv.value)<=0){
     /* On propose le prix calculé plutôt que de renvoyer l'utilisateur chercher
        une calculatrice : c'est la même règle que pour les imports. */
-    var _sg=pvAutomatique(parseFloat(al_prix.value));
+    var _alM=modeleById(mid),_alV=varById(vid);
+    var _sg=pvAutomatique(parseFloat(al_prix.value),0,_alM,_alV&&_alV.taille);
     return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire ne part ni en"
       +" boutique ni en ligne : elle reste en stock sans pouvoir être vendue."
       +(_sg>0?("\n\nSuggestion d'après ton coefficient : "+_sg.toFixed(2).replace(".",",")
-        +" €  (prix d'achat "+coefTxt(coefPourAchat(parseFloat(al_prix.value)))+", arrondi au palier)"):""));
+        +" €  (prix d'achat "+coefTxt(coefPourArticle(parseFloat(al_prix.value),_alM,_alV&&_alV.taille))+", arrondi au palier)"):""));
   }
   if(!al_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
@@ -8245,11 +8266,12 @@ function addDepotLine(){const mid=+selDepMod||0,vid=+dl_size.value,qte=parseInt(
      prétexte que la paire ne nous appartient pas. */
   if(parseFloat(dl_prix.value)<=0)return alert("Le prix dépôt doit être supérieur à 0.");
   if(dl_pv.value===""||isNaN(parseFloat(dl_pv.value))||parseFloat(dl_pv.value)<=0){
-    var _sgd=pvAutomatique(parseFloat(dl_prix.value));
+    var _dlM=modeleById(mid),_dlV=varById(vid);
+    var _sgd=pvAutomatique(parseFloat(dl_prix.value),0,_dlM,_dlV&&_dlV.taille);
     return alert("Le prix cible TTC est obligatoire.\n\nSans lui, la paire ne part ni en"
       +" boutique ni en ligne : elle reste en stock sans pouvoir être vendue."
       +(_sgd>0?("\n\nSuggestion d'après ton coefficient : "+_sgd.toFixed(2).replace(".",",")
-        +" €  (prix dépôt "+coefTxt(coefPourAchat(parseFloat(dl_prix.value)))+", arrondi au palier)"):""));
+        +" €  (prix dépôt "+coefTxt(coefPourArticle(parseFloat(dl_prix.value),_dlM,_dlV&&_dlV.taille))+", arrondi au palier)"):""));
   }
   if(!dl_tva.value)return alert("Choisis une TVA.");
   if(qte<1)return alert("Quantité invalide.");
@@ -13612,7 +13634,7 @@ function flowstockImport(txt,silent){
       if(m&&!v){const cs=fsCleanSize(it.size);const vid=fsVarianteId(m.id,cs);v={id:vid,modeleId:m.id,taille:cs,eu:cs,barcode:""};DB.variantes.push(v);}
       const qte=Math.max(1,+it.quantity||1);
       const _paFs=(+it.unit_price||((p.price||{}).amount)||0);
-      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:_paFs,pv:pvAutomatique(_paFs),tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};
+      const line={modeleId:m?m.id:null,varianteId:v?v.id:null,qte:qte,prixHT:_paFs,pv:pvAutomatique(_paFs,0,m,it.size),tva:"Exonéré",etat:"Neuf",dispo:0,tag:"Aucun",rawSku:modelRef,rawSize:it.size||""};
       /* FlowStock et Sourcing Hub (même chemin d'import) ne donnent aucun prix
          de vente : on ne le connaît qu'une fois la paire en main. Elles
          partaient donc en caisse à 0 € et sonnaient à zéro au comptoir.
