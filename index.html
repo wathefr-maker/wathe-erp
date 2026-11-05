@@ -1405,7 +1405,7 @@ try{
   });
   // Puis retirer les pièces appro restées en double sur les commandes déjà livrées.
   try{apPurgeApproOrphelins();}catch(e){}
-}catch(e){}/* Chargement instantané : lit les caches (commandes Shopify + achats FlowStock), importe les pièces et les relie AVANT le premier rendu -> pastilles justes tout de suite, sans attendre les 14s de FlowStock. */try{const _c=await shopCacheLoad();if(_c&&_c.orders&&_c.orders.length){_shopOrders=_c.orders;_shopMore=!!_c.hasNextPage;_shopCursor=_c.endCursor||null;_shopPage=1;_shopMinOrder=+((_c||{}).minOrder||0)||0;_fsHideBeforeDate=(_c||{}).fsHideBefore||"";_shopPartiel=+((_c||{}).partiel||0)||0;_shopFond=(_c||{}).fondCursor||null;_shopFini=!!((_c||{}).fini);}if(_c){if(Array.isArray(_c.dupOrders)&&_c.dupOrders.length)DB.shopDupOrders=_c.dupOrders;if(Array.isArray(_c.cancelled)&&_c.cancelled.length)DB.shopCancelled=_c.cancelled;}try{const _ov=await shopOverridesLoad();if(_ov){if(Array.isArray(_ov.dupOrders))DB.shopDupOrders=_ov.dupOrders;if(Array.isArray(_ov.cancelled))DB.shopCancelled=_ov.cancelled;}}catch(e){}try{mergeDupOrders();}catch(e){}}catch(e){}if(fsEnabled()){try{await flowstockKnownLoad();}catch(e){}try{const _fc=await flowstockCacheLoad();if(_fc&&_fc.purchases&&_fc.purchases.length){try{flowstockImport(JSON.stringify({purchases:_fc.purchases}),true);}catch(e){}}}catch(e){}}try{flowstockReconcile(true);}catch(e){}try{fsRepair();}catch(e){}try{fsDedupeAchats();}catch(e){}try{fixSocietes();}catch(e){}await save();fillSelects();renderAll();restoreView();
+}catch(e){}/* Chargement instantané : lit les caches (commandes Shopify + achats FlowStock), importe les pièces et les relie AVANT le premier rendu -> pastilles justes tout de suite, sans attendre les 14s de FlowStock. */try{const _c=await shopCacheLoad();if(_c&&_c.orders&&_c.orders.length){_shopOrders=_c.orders;_shopMore=!!_c.hasNextPage;_shopCursor=_c.endCursor||null;_shopPage=1;_shopMinOrder=+((_c||{}).minOrder||0)||0;_fsHideBeforeDate=(_c||{}).fsHideBefore||"";_shopPartiel=+((_c||{}).partiel||0)||0;_shopFond=(_c||{}).fondCursor||null;_shopFini=!!((_c||{}).fini);}if(_c){if(Array.isArray(_c.dupOrders)&&_c.dupOrders.length)DB.shopDupOrders=_c.dupOrders;if(Array.isArray(_c.cancelled)&&_c.cancelled.length)DB.shopCancelled=_c.cancelled;}try{const _ov=await shopOverridesLoad();if(_ov){if(Array.isArray(_ov.dupOrders))DB.shopDupOrders=_ov.dupOrders;if(Array.isArray(_ov.cancelled))DB.shopCancelled=_ov.cancelled;if(_ov.partiels)DB.shopPartiels=shopPartielsFusion(DB.shopPartiels,_ov.partiels);}}catch(e){}try{mergeDupOrders();}catch(e){}}catch(e){}if(fsEnabled()){try{await flowstockKnownLoad();}catch(e){}try{const _fc=await flowstockCacheLoad();if(_fc&&_fc.purchases&&_fc.purchases.length){try{flowstockImport(JSON.stringify({purchases:_fc.purchases}),true);}catch(e){}}}catch(e){}}try{flowstockReconcile(true);}catch(e){}try{fsRepair();}catch(e){}try{fsDedupeAchats();}catch(e){}try{fixSocietes();}catch(e){}await save();fillSelects();renderAll();restoreView();
   // Toute sizechart assignée doit contenir TOUTES ses tailles.
   // Fait en arrière-plan APRÈS l'affichage : sur un gros catalogue cela crée
   // des milliers de variantes, hors de question de bloquer l'écran.
@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261105-001432";
+var ERP_VERSION="20261105-182111";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -9274,7 +9274,17 @@ async function shopAutoSyncReceived(pieces){const toSync=(pieces||[]).filter(x=>
 async function shopResyncIds(ids){ids=[...new Set((ids||[]).filter(Boolean))];if(!ids.length)return;let touched=false;for(const id of ids){const m=modeleById(id);if(!m||!m.shopifyProductId)continue;try{await shopSyncModel(id);touched=true;}catch(_){}}if(touched){try{await save();}catch(_){}}}
 function shopModelIdsOf(list){return [...new Set((list||[]).map(a=>{const v=varById(a&&a.varianteId);return v?v.modeleId:null;}).filter(Boolean))];}
 function shopAssignedFor(orderId,idx){return DB.articles.filter(a=>a.shopifyOrderId===orderId&&a.shopifyLineIdx===idx&&!a.archived);}
-function shopOrderAssignCount(o){let need=0,have=0;(o.lines||[]).forEach(function(l,i){need+=(l.qty||1);have+=shopAssignedFor(o.id,i).length;});return {need:need,have:have};}
+function shopOrderAssignCount(o){
+  let need=0,have=0;var ann=shopAnnulesDe(o);
+  /* Une unité annulée ne compte plus dans ce que la commande attend : sans
+     ça, #8213 resterait éternellement à « 1/2 » et son étape « Produit
+     assigné » ne se validerait jamais. */
+  (o.lines||[]).forEach(function(l,i){
+    need+=Math.max(0,(l.qty||1)-(+ann[i]||0));
+    have+=shopAssignedFor(o.id,i).length;
+  });
+  return {need:need,have:have};
+}
 function shopDate(iso){const d=new Date(iso);if(isNaN(d))return esc(iso||"");const p=n=>String(n).padStart(2,"0");return p(d.getDate())+"/"+p(d.getMonth()+1)+"/"+d.getFullYear()+" "+p(d.getHours())+":"+p(d.getMinutes());}
 function shopPill(t,bg,fg){return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;background:'+bg+';color:'+fg+'">'+esc(t)+'</span>';}
 function shopFinBadge(s){const m={PAID:["Payé","#dcfce7","#166534"],PENDING:["En attente","#fef9c3","#854d0e"],PARTIALLY_PAID:["Partiel","#fef9c3","#854d0e"],REFUNDED:["Remboursé","#fee2e2","#991b1b"],PARTIALLY_REFUNDED:["Remb. partiel","#fee2e2","#991b1b"],VOIDED:["Annulé","#f1f5f9","#475569"],AUTHORIZED:["Autorisé","#dbeafe","#1e40af"],EXPIRED:["Expiré","#fee2e2","#991b1b"]};const x=m[s]||[s||"—","#f1f5f9","#475569"];return shopPill(x[0],x[1],x[2]);}
@@ -9363,9 +9373,53 @@ async function shopCacheLoad(){
 }
 // Copies et annulations : stockées dans une LIGNE DÉDIÉE (id=2), jamais écrasée par la synchro des commandes (id=1).
 // Doublées d'une copie locale : si le serveur refuse l'écriture, les données survivent au moins sur ce poste.
+/* ANNULATION PARTIELLE — POURQUOI UNE MÉCANIQUE À PART.
+
+   Shopify sait annuler une commande ENTIÈRE. Annuler une partie, chez lui,
+   c'est rembourser une ligne : un geste qui engage de l'argent. Cette
+   mécanique ne touche donc PAS Shopify — elle enregistre dans l'ERP ce qui a
+   déjà été décidé côté boutique, pour que la commande cesse de réclamer des
+   paires qui ne partiront jamais. Le dialogue le dit en toutes lettres,
+   sinon on croirait la boutique prévenue.
+
+   ON COMPTE EN UNITÉS, PAS EN LIGNES. La commande #8213 n'a qu'une seule
+   ligne, en quantité 2, et c'est UNE unité sur deux qui a été annulée :
+   raisonner par ligne n'aurait rien su en faire. */
+function shopPartielsAll(){
+  if(!DB.shopPartiels||typeof DB.shopPartiels!=="object"||Array.isArray(DB.shopPartiels))
+    DB.shopPartiels={};
+  return DB.shopPartiels;
+}
+/* {indexDeLigne: nombre d'unités annulées} pour une commande. */
+function shopAnnulesDe(o){
+  var m=shopPartielsAll()[String((o&&o.id)||"")];
+  return (m&&typeof m==="object")?m:{};
+}
+function shopNbAnnule(o){
+  var m=shopAnnulesDe(o),n=0;
+  Object.keys(m).forEach(function(k){n+=Math.max(0,+m[k]||0);});
+  return n;
+}
+/* Fusion de deux relevés d'annulations partielles. Le plus grand nombre
+   gagne : une annulation enregistrée sur un poste ne doit pas être effacée
+   par un poste qui ne l'a pas encore vue. */
+function shopPartielsFusion(a,b){
+  var out={};
+  [a||{},b||{}].forEach(function(src){
+    Object.keys(src).forEach(function(cmd){
+      var m=src[cmd];if(!m||typeof m!=="object")return;
+      if(!out[cmd])out[cmd]={};
+      Object.keys(m).forEach(function(i){
+        out[cmd][i]=Math.max(+out[cmd][i]||0,+m[i]||0);
+      });
+    });
+  });
+  return out;
+}
+
 const SHOP_OV_LS="shopOverrides";
 function shopOverridesLocalSave(){
-  try{localStorage.setItem(SHOP_OV_LS,JSON.stringify({dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[])}));}catch(e){}
+  try{localStorage.setItem(SHOP_OV_LS,JSON.stringify({dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),partiels:shopPartielsAll()}));}catch(e){}
 }
 function shopOverridesLocalLoad(){
   try{return JSON.parse(localStorage.getItem(SHOP_OV_LS)||"null");}catch(e){return null;}
@@ -9373,7 +9427,7 @@ function shopOverridesLocalLoad(){
 async function shopOverridesSave(){
   shopOverridesLocalSave();
   try{
-    const {error}=await sb.from("shopify_orders_cache").upsert([{id:2,data:{dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),savedAt:new Date().toISOString()}}]);
+    const {error}=await sb.from("shopify_orders_cache").upsert([{id:2,data:{dupOrders:(DB.shopDupOrders||[]),cancelled:(DB.shopCancelled||[]),partiels:shopPartielsAll(),savedAt:new Date().toISOString()}}]);
     if(error){
       console.error("shopOverridesSave — le serveur a REFUSÉ l'enregistrement :",error);
       alert("⚠️ Enregistrement serveur refusé pour les copies/annulations Shopify.\n\nMotif : "+(error.message||error.code||"inconnu")+"\n\nElles restent valables sur ce poste, mais pas sur les autres. Envoie-moi ce message.");
@@ -9397,7 +9451,8 @@ async function shopOverridesLoad(){
       (out&&out.dupOrders||[]).forEach(function(o){if(o&&!dup.some(function(x){return x.id===o.id;}))dup.push(o);});
       const can=(d.cancelled||[]).slice();
       (out&&out.cancelled||[]).forEach(function(id){if(can.indexOf(id)<0)can.push(id);});
-      out={dupOrders:dup,cancelled:can};
+      out={dupOrders:dup,cancelled:can,
+           partiels:shopPartielsFusion(d.partiels,(out&&out.partiels))};
     }else if(r.error){console.warn("shopOverridesLoad",r.error);}
   }catch(e){console.warn("shopOverridesLoad",e);}
   return out;
@@ -12096,6 +12151,15 @@ function renderShopRows(){
     const cliName=shopOrderClient(o),cliCell=cliName?esc(cliName):'<span class="muted">—</span>';
     const fact=(DB.factures||[]).find(f=>f.orderId===o.id);
     const _rets=shopOrderReturns(o);const retBadge=_rets.length?('<div style="margin-top:5px">'+shopPill((shopOrderPieces(o).length?"↩ Retour partiel":"↩ Retourné"),"#fef3c7","#92400e")+'</div>'):"";
+    /* Le badge d'annulation partielle vit à côté de l'avancement, pas dans la
+       colonne Actions : c'est un ÉTAT de la commande, pas un geste à faire.
+       Sans lui, une commande passée de 1/2 à 1/1 ressemblerait à une commande
+       complète ordinaire, et on aurait oublié dans la semaine pourquoi une
+       paire manque. */
+    const _nAnn=shopNbAnnule(o);
+    const partBadge=_nAnn?('<div style="margin-top:5px">'
+      +shopPill("Partiellement annulée · "+_nAnn+" article"+(_nAnn>1?"s":""),"#ffedd5","#9a3412")
+      +'</div>'):"";
     const actions='<button title="Modifier / voir la commande" style="'+SHOP_BTN+'" onclick="event.stopPropagation();openShopifyOrder(\''+o.id+'\')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>'+
       (fact?'<button title="Voir la facture" style="'+SHOP_BTN+'" onclick="event.stopPropagation();shopInvoicePDF('+fact.id+')">'+SHOP_SVG_FACT+'</button>':'')+
       '<button title="Retour en stock" style="'+SHOP_BTN+'" onclick="event.stopPropagation();openShopStep(\''+o.id+'\',\'return\')">'+SHOP_SVG_RET+'</button>'+
@@ -12105,7 +12169,7 @@ function renderShopRows(){
       '<button title="Dupliquer la commande" style="'+SHOP_BTN+'" onclick="event.stopPropagation();shopDuplicateOrder(\''+o.id+'\')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
       '<button title="Annuler la commande" style="'+SHOP_BTN+';color:#dc2626" onclick="event.stopPropagation();shopRowCancel(\''+o.id+'\')">'+SHOP_SVG_X+'</button>'+
       (o.duplicated?'<button title="Supprimer définitivement cette copie" style="'+SHOP_BTN+';color:#dc2626" onclick="event.stopPropagation();shopRowDeleteDup(\''+o.id+'\')"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg></button>':'');
-    return '<tr style="cursor:pointer'+(o.cancelled?';opacity:.55;background:#fef2f2':'')+'" onclick="openShopifyOrder(\''+o.id+'\')"><td><b'+(o.cancelled?' style="text-decoration:line-through"':'')+'>'+esc(o.name)+'</b>'+(o.cancelled?' <span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#fee2e2;color:#b91c1c">Annulée</span>':'')+(o.duplicated?' <span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;background:#ede9fe;color:#6d28d9">copie</span>':'')+'</td><td>'+shopDate(o.date)+'</td><td>'+cliCell+'</td><td>'+shopStepperMini(o)+retBadge+'</td><td style="max-width:300px">'+prod+'</td><td>'+pieces+'</td><td><b>'+money(o.totalTTC,o.currency)+'</b></td><td style="white-space:nowrap">'+actions+'</td></tr>';
+    return '<tr style="cursor:pointer'+(o.cancelled?';opacity:.55;background:#fef2f2':'')+'" onclick="openShopifyOrder(\''+o.id+'\')"><td><b'+(o.cancelled?' style="text-decoration:line-through"':'')+'>'+esc(o.name)+'</b>'+(o.cancelled?' <span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#fee2e2;color:#b91c1c">Annulée</span>':'')+(o.duplicated?' <span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;background:#ede9fe;color:#6d28d9">copie</span>':'')+'</td><td>'+shopDate(o.date)+'</td><td>'+cliCell+'</td><td>'+shopStepperMini(o)+retBadge+partBadge+'</td><td style="max-width:300px">'+prod+'</td><td>'+pieces+'</td><td><b>'+money(o.totalTTC,o.currency)+'</b></td><td style="white-space:nowrap">'+actions+'</td></tr>';
   }).join("");
   shopRenderPager(totalPages);
 }
@@ -12392,6 +12456,19 @@ function shopCancelDialog(o,nbPaires,fact,fsPieces){
       +'padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
       +'<div style="font-weight:800;font-size:17px;margin-bottom:3px">Annuler la commande '
         +esc(o.name)+'</div>'
+      /* La porte vers l'annulation partielle. Elle est ICI parce que c'est ici
+         qu'on arrive quand un client se ravise — et que la colonne Actions
+         porte déjà six boutons. */
+      +((function(){
+        var n=(o.lines||[]).reduce(function(s,l){return s+(+l.qty||1);},0);
+        if(n<2)return "";
+        return '<div style="border:1px solid var(--line);border-radius:10px;padding:9px 12px;'
+          +'margin-bottom:14px;display:flex;align-items:center;gap:10px">'
+          +'<span class="muted" style="flex:1;font-size:12px;line-height:1.5">'
+          +'Le client n\'annule qu\'une partie des '+n+' articles ?</span>'
+          +'<button class="btn" id="_versPartiel" style="padding:6px 11px;font-size:12px;'
+          +'white-space:nowrap">Annuler une partie</button></div>';
+      })())
       +(function(){
         /* Deux sorts différents selon l'origine, et il faut le dire avant de
            valider : une paire ordinaire revient en stock, une paire Sourcing
@@ -12449,6 +12526,12 @@ function shopCancelDialog(o,nbPaires,fact,fsPieces){
     document.body.appendChild(ov);
     var fin=function(v){try{document.body.removeChild(ov);}catch(_){}resolve(v);};
     ov.querySelector("#_scNon").onclick=function(){fin(null);};
+    /* La porte vers l'annulation partielle : on ferme ce dialogue en rendant
+       null — l'annulation totale n'aura donc PAS lieu — puis on ouvre
+       l'autre. Rendre autre chose ferait croire à shopRowCancel qu'il doit
+       poursuivre, et la commande entière partirait à l'annulation. */
+    var _vp=ov.querySelector("#_versPartiel");
+    if(_vp)_vp.onclick=function(){fin(null);shopAnnulerPartiel(o.id);};
     ov.querySelector("#_scOui").onclick=function(){
       fin({motif:ov.querySelector("#_scMotif").value,
            rembourser:ov.querySelector("#_scRemb").checked,
@@ -12469,6 +12552,100 @@ async function shopEnvoyerAnnulation(o,ch,note){
                      expediee:!!d.expediee,dejaAnnulee:!!d.dejaAnnulee};
     return d;
   }catch(e){return {ok:false,error:(e&&e.message)||String(e)};}
+}
+
+/* Le dialogue d'annulation partielle : une ligne par ligne de commande, avec
+   le nombre d'unités déjà assignées, et combien on en annule. */
+function shopPartielDialog(o){
+  return new Promise(function(resolve){
+    var ann=shopAnnulesDe(o);
+    var lignes=(o.lines||[]).map(function(l,i){
+      var qte=+l.qty||1;
+      var assignees=shopAssignedFor(o.id,i).length;
+      return {i:i,titre:l.title||"",variante:l.variantTitle||"",qte:qte,
+              assignees:assignees,deja:Math.max(0,+ann[i]||0)};
+    });
+    var ov=document.createElement("div");
+    ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;"
+      +"display:flex;align-items:center;justify-content:center;padding:20px";
+    var h='<div style="background:#fff;border-radius:16px;max-width:540px;width:100%;'
+      +'padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:88vh;overflow:auto">'
+      +'<div style="font-weight:800;font-size:17px;margin-bottom:3px">'
+      +'Annuler une partie de '+esc(o.name)+'</div>'
+      +'<div class="sub" style="margin-bottom:14px">Indique combien d\'articles ne '
+      +'partiront pas. La commande cessera de les réclamer.</div>';
+    lignes.forEach(function(L){
+      /* Le plafond : on ne peut pas annuler plus que ce qui reste non assigné.
+         Au-delà, il faut d'abord détacher la paire — l'ERP ne va pas décider
+         tout seul de sortir une paire d'une commande et de la remettre en
+         rayon. */
+      var max=Math.max(0,L.qte-L.assignees);
+      h+='<div style="border:1px solid var(--line);border-radius:11px;padding:12px 13px;'
+        +'margin-bottom:9px">'
+        +'<b style="font-size:13px">'+esc(L.titre)+'</b>'
+        +(L.variante?' <span class="muted" style="font-size:12px">· '+esc(L.variante)+'</span>':"")
+        +'<div class="muted" style="font-size:12px;margin:5px 0 9px">'
+        +'commandé ×'+L.qte+' · '+L.assignees+' paire'+(L.assignees>1?"s":"")+' assignée'
+        +(L.assignees>1?"s":"")+'</div>';
+      if(max<=0&&!L.deja){
+        h+='<div class="muted" style="font-size:12px;line-height:1.5">'
+          +'Tout est assigné. Détache d\'abord une paire depuis la commande '
+          +'si tu veux en annuler une.</div>';
+      }else{
+        h+='<label style="display:flex;align-items:center;gap:9px;font-size:12.5px">'
+          +'<span>Annulés :</span>'
+          +'<input type="number" class="txt _pa" data-i="'+L.i+'" min="0" max="'+(max+L.deja)
+          +'" value="'+L.deja+'" style="width:84px">'
+          +'<span class="muted">sur '+L.qte+'</span></label>';
+      }
+      h+='</div>';
+    });
+    h+='<div style="border:1px solid #fcd34d;background:#fffbeb;border-radius:10px;'
+      +'padding:10px 13px;margin:14px 0;font-size:12.5px;line-height:1.55;color:#92400e">'
+      +'<b>Shopify n\'est pas prévenu.</b> Une annulation partielle y est un '
+      +'remboursement de ligne, qui engage de l\'argent : fais-le toi-même sur la '
+      +'boutique. Ceci ne fait que mettre l\'ERP d\'accord avec ce que tu as décidé.'
+      +'</div>'
+      +'<div style="display:flex;gap:9px;justify-content:flex-end">'
+      +'<button class="btn" id="_paX">Annuler</button>'
+      +'<button class="btn v" id="_paOk">Enregistrer</button></div></div>';
+    ov.innerHTML=h;document.body.appendChild(ov);
+    var fin=function(v){ov.remove();resolve(v);};
+    ov.querySelector("#_paX").onclick=function(){fin(null);};
+    ov.querySelector("#_paOk").onclick=function(){
+      var out={};
+      ov.querySelectorAll("._pa").forEach(function(inp){
+        var n=Math.max(0,Math.min(+inp.max||0,parseInt(inp.value,10)||0));
+        if(n>0)out[inp.getAttribute("data-i")]=n;
+      });
+      fin(out);
+    };
+  });
+}
+
+async function shopAnnulerPartiel(orderId){
+  var o=_shopOrders.find(function(x){return x.id===orderId;});
+  if(!o){alert("Commande introuvable.");return;}
+  var ch=await shopPartielDialog(o);
+  if(!ch)return;
+  var avant=shopNbAnnule(o);
+  var tous=shopPartielsAll();
+  if(Object.keys(ch).length)tous[String(o.id)]=ch;
+  else delete tous[String(o.id)];
+  var apres=shopNbAnnule(o);
+  await shopOverridesSave();
+  logAct("Annulation partielle",o.name,
+    apres?(apres+" article(s) annulé(s) · ERP seul"):"annulation partielle levée");
+  save();try{shopCacheSave();}catch(e){}
+  renderShopRows();
+  if(apres!==avant){
+    var ac=shopOrderAssignCount(o);
+    alert(apres
+      ? (apres+" article"+(apres>1?"s":"")+" marqué"+(apres>1?"s":"")+" annulé"
+         +(apres>1?"s":"")+" sur "+o.name+".\n\nLa commande attend désormais "
+         +ac.need+" paire"+(ac.need>1?"s":"")+", "+ac.have+" assignée"+(ac.have>1?"s":"")+".")
+      : ("Annulation partielle levée sur "+o.name+"."));
+  }
 }
 
 async function shopRowCancel(orderId){
