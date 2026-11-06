@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261106-110925";
+var ERP_VERSION="20261106-184806";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -8098,6 +8098,48 @@ function depTotal(d){return (d.lignes||[]).reduce((s,l)=>s+(+l.prixHT||0)*(+l.qt
 function depVente(d){return (d.lignes||[]).reduce((s,l)=>s+(+l.pv||0)*(+l.qte||0),0);}
 function depRef(d){const dt=new Date(d.date||today());return "DEP-"+dt.getFullYear()+String(dt.getMonth()+1).padStart(2,"0")+String(d.id).padStart(4,"0");}
 function sizeOpts(mid){const m=modeleById(mid)||{};const order=DB.grilles[m.grille]||attrLabels("Taille");const vs=DB.variantes.filter(v=>v.modeleId==mid).slice().sort((x,y)=>{const ix=order.indexOf(String(x.taille)),iy=order.indexOf(String(y.taille));return (ix<0?9999:ix)-(iy<0?9999:iy);});return vs.length?('<option value="">-- Taille --</option>'+vs.map(v=>`<option value="${v.id}">${esc(vSizeTxt(v))}</option>`).join("")):'<option value="">-- Aucune taille (génère les variantes du modèle) --</option>';}
+/* LA SOCIÉTÉ D'UN BON DE DÉPÔT NE SUIT PAS TOUTE SEULE SUR SES PAIRES.
+
+   makePieceDepot copie la société du bon au moment où la paire est créée, et
+   plus jamais ensuite. Corriger l'en-tête d'un bon déjà réceptionné laissait
+   donc ses paires sur l'ancienne société, sans un mot — et c'est la société
+   de la PAIRE qui décide de sa boutique Shopify. Une paire SBT Store se
+   retrouvait en vente chez Wathe.
+
+   Les commandes d'achat avaient déjà leur achSocPropager ; les dépôts, non.
+   Même geste, mêmes précautions. */
+async function depSocPropager(d,ancienneSoc){
+  var pieces=(DB.articles||[]).filter(function(p){
+    return p.depotId===d.id&&!p.archived;});
+  if(!pieces.length)return;
+  /* Une paire vendue ou facturée porte sa société dans sa facture : la
+     déplacer décrocherait l'une de l'autre. */
+  var figees=pieces.filter(function(p){
+    return p.shopifyInvoiced||p.shopifyOrderId||p.factBoutique
+        ||p.statut==="Vendu"||p.statut==="Facturé boutique"||p.statut==="Livré";
+  });
+  var libres=pieces.filter(function(p){return figees.indexOf(p)<0;});
+  var av=(socById(ancienneSoc)||{}).nom||"—",ap=(socById(d.societeId)||{}).nom||"—";
+
+  var txt="La société du dépôt "+d.ref+" passe de "+av+" à "+ap+".\n\n";
+  if(libres.length)txt+=libres.length+" paire(s) encore en stock peuvent suivre.\n";
+  if(figees.length)txt+="\n"+figees.length+" paire(s) NE bougeront PAS : vendues ou facturées sous "
+    +av+", les déplacer décrocherait leur facture.\n"
+    +figees.slice(0,8).map(function(p){return "· "+(p.ref||p.id);}).join("\n")
+    +(figees.length>8?("\n· … et "+(figees.length-8)+" autre(s)"):"")+"\n";
+  if(!libres.length){alert(txt+"\nAucune paire déplaçable : le bon seul a changé de société.");return;}
+  if(!confirm(txt+"\nDéplacer ces paires sur "+ap+" ?")){
+    alert("Les paires restent sur "+av+".\n\nAttention : le bon et ses paires ne disent plus la même chose, "
+      +"et c'est la société de la PAIRE qui décide de sa boutique Shopify.");
+    return;
+  }
+  libres.forEach(function(p){p.societeId=d.societeId;p.maj=today();});
+  await save();
+  try{await shopSyncApresChangementSociete(libres);}catch(e){console.error(e);}
+  try{renderStock();}catch(e){}
+  logAct("Modification","Société dépôt",d.ref+" · "+libres.length+" paire(s) de "+av+" vers "+ap);
+  alert(libres.length+" paire(s) déplacée(s) sur "+ap+".");
+}
 function makePieceDepot(d,l,key){const id=key?stableId("piece",key,DB.articles,function(x){return x.fsKey===key;}):newId(DB.articles);const ref=newRef();DB.articles.unshift({id,ref,varianteId:l.varianteId,societeId:d.societeId,prix:l.prixHT,pv:l.pv||0,tva:l.tva,etat:l.etat,statut:"En Stock",date:d.date,fourId:d.fournId,ville:d.ville||"Vichy",emplacement:d.emplacement||"",tag:l.tag||"Aucun",fact:d.ref,dispo:l.dispo?1:0,depot:1,depotId:d.id,refDep:l.refDep||"",maj:today(),archived:0});}
 /* LES PIÈCES NÉES D'UNE COMMANDE DE DÉPÔT.
 
@@ -8198,7 +8240,15 @@ async function saveDepotHeader(){
   if(!dn_ville.value)return alert("Choisis une ville.");
   if(!dn_emp.value)return alert("Choisis un emplacement.");
   const data={date:dn_date.value,fournId:+selDep,societeId:+dn_soc.value,ville:dn_ville.value,emplacement:dn_emp.value,note:dn_note.value};
-  if(editDepotId){const d=DB.depots.find(x=>x.id==editDepotId);Object.assign(d,data);d.ref=depRef(d);logAct("Modification","Commande de dépôt",d.ref);await save();openDepot(d.id);}
+  if(editDepotId){const d=DB.depots.find(x=>x.id==editDepotId);
+    /* Relevé AVANT la fusion : après, l'ancienne valeur est perdue. */
+    const _ancSoc=d.societeId;
+    Object.assign(d,data);d.ref=depRef(d);
+    logAct("Modification","Commande de dépôt",d.ref);await save();
+    if(String(_ancSoc)!==String(d.societeId)){
+      try{await depSocPropager(d,_ancSoc);}catch(e){console.error(e);}
+    }
+    openDepot(d.id);}
   else{const id=newId(DB.depots);const d=Object.assign({id,statut:"En cours de réception",lignes:[],depot:1,createdAt:new Date().toISOString()},data);if(!d.createdAt)d.createdAt=new Date().toISOString();d.ref=depRef(d);DB.depots.push(d);logAct("Création","Commande de dépôt",d.ref);await save();openDepot(id);}}
 
 /* FICHE PRODUITS */
