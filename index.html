@@ -1721,7 +1721,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261105-182111";
+var ERP_VERSION="20261106-110925";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -5315,6 +5315,29 @@ function stockXlsxRows(list){return list.map(a=>{const v=varById(a.varianteId),m
   "DATE ENTREE":a.date,"DATE DE VENTE":a.dateVente||"","DISPO SHOPIFY":a.dispo?"Oui":"Non","EXPEDITION":expedInfoFor(a),"COMMANDE ACHAT":a.fact};});}
 function exportStockXlsx(list,name){const rows=stockXlsxRows(list);const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{"IDENTIFIANT INTERNE":"","NOM DU PRODUIT":"","SKU":"","TAILLE":""}]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Stock");XLSX.writeFile(wb,name);}
 function printLabels(list){if(!list.length)return;
+  /* RANGÉES PAR MODÈLE, PUIS PAR TAILLE.
+
+     Les pièces arrivent ici dans l'ordre où la base les rend, c'est-à-dire
+     l'ordre de création : modèles et tailles entremêlés. À l'étiquetage on a
+     devant soi une pile de vêtements triée par modèle, et il fallait chercher
+     chaque étiquette dans la planche. Soixante-six fois.
+
+     Le tri est fait ICI, pas chez l'appelant : commande d'achat, dépôt,
+     entrée en stock et sélection manuelle en profitent toutes, et aucune ne
+     peut l'oublier. On ne touche pas au tableau reçu — une planche
+     d'étiquettes n'a pas à réordonner la sélection de l'appelant. */
+  list=list.slice().sort(function(x,y){
+    var vx=varById(x.varianteId)||{}, vy=varById(y.varianteId)||{};
+    var mx=modeleById(vx.modeleId)||{}, my=modeleById(vy.modeleId)||{};
+    var n=String(mx.fr||"").localeCompare(String(my.fr||""),"fr");
+    if(n)return n;
+    /* Même nom mais deux fiches distinctes : on les garde séparées plutôt que
+       de les entrelacer. */
+    if((mx.id||0)!==(my.id||0))return (mx.id||0)-(my.id||0);
+    var t=tailleCmp(vx.taille||"",vy.taille||"");
+    if(t)return t;
+    return String(x.ref||"").localeCompare(String(y.ref||""),"fr");
+  });
   const cards=list.map(a=>{const v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};const soc=socById(a.societeId)||{};
     const ref=a.ref||"";const pv=+a.pv||0;
     const meta=[(String(a.etat||"").toUpperCase()+(m.sku?("-"+m.sku):"")),(v.taille||"")].filter(Boolean).join(" | ");
