@@ -1740,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-171853";
+var ERP_VERSION="20261109-172500";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -6333,6 +6333,7 @@ function buildAttestationDoc(achatId){
       x:+(x/W).toFixed(4),y:+(y/PH).toFixed(4),
       w:+(w/W).toFixed(4),h:+(h/PH).toFixed(4)});
   };
+  yt+=5;                                  /* un peu d'air : le bloc collait au texte au-dessus */
   placer(46);
   doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(35,35,35);
   doc.text("IDENTITE DU VENDEUR (a completer et signer par le vendeur)",M,yt);
