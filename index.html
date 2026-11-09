@@ -332,6 +332,7 @@
     <div class="item sub" data-view="deposants"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/><path d="M18 8h4M20 6v4"/></svg></span> Déposants</div>
     <div class="item sub" data-view="sourcinghub"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-10 0Z"/><path d="M12 15v7"/></svg></span> Sourcing Hub</div>
     <div class="item sub" data-view="justifs"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span> Justificatifs</div>
+    <div class="item sub" data-view="registre"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M9 7h7M9 11h7"/></svg></span> Registre des objets mobiliers</div>
 
     <div class="navsec">Ventes</div>
     <div class="item sub" data-view="vboutique"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 5 3h14l2 6M4 9v11h16V9M4 9h16"/><path d="M9 20v-6h6v6"/></svg></span> Vente boutique</div>
@@ -557,6 +558,18 @@
       <div class="tablecard"><div style="overflow-x:auto"><table>
         <thead><tr><th>Libellé</th><th>Statut</th><th>Actions</th></tr></thead>
         <tbody data-refrows="pays"></tbody></table></div><div class="pager" data-refpager="pays"></div></div>
+    </div>
+
+    <div class="wrap view hide" id="view-registre">
+      <h1>Registre des objets mobiliers</h1><div class="sub">Livre de police — code pénal, art. R321-3 et suivants. Une écriture par objet, dans l'ordre des numéros. Rien ne s'y modifie ni ne s'y efface.</div>
+      <div class="filters"><input id="rg_q" placeholder="Rechercher : vendeur, objet, SKU, n° d'ordre, commande…" style="width:340px">
+        <input id="rg_d1" type="date" title="Du"><input id="rg_d2" type="date" title="Au">
+        <span class="spacer"></span>
+        <button class="btn" id="rg_csv">Export CSV</button>
+        <button class="btn v" id="rg_pdf">Export PDF</button></div>
+      <div class="tablecard"><div class="tmeta" id="rg_meta"></div><div style="overflow-x:auto"><table>
+        <thead><tr><th>N°</th><th>Date</th><th>Nature / objet</th><th>Taille</th><th>ID interne</th><th>Prix</th><th>Règlement</th><th>Provenance</th><th>Vendeur</th><th>Pièce d'identité</th><th>Commande</th></tr></thead>
+        <tbody id="rg_rows"></tbody></table></div><div class="pager" id="rg_pager"></div></div>
     </div>
 
     <div class="wrap view hide" id="view-journal">
@@ -1740,7 +1753,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-181429";
+var ERP_VERSION="20261109-183701";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -2523,7 +2536,7 @@ function renderStock(){
   if(pages>7)pg+=`<span class="muted">… ${pages}</span>`;pg+=`<button ${page>=pages?'disabled':''} data-p="${page+1}">›</button>`;pager.innerHTML=pg;curStockIds=rows.map(a=>a.id);updateSelAll();renderBulkBar();
 }
 
-const CRUMBS={sourcinghub:"Achat › Sourcing Hub",tods:"Statistiques › TODS — Réassort",vinterne:"Vente › Vente interne",vboutique:"Vente › Vente boutique",dash:"Tableau de bord",modeles:"Catalogue Produits › Modèles de produits",stock:"Catalogue Produits › Stock",articleD:"Catalogue Produits › Stock › Fiche produit",fourn:"Tiers › Fournisseurs",cli:"Tiers › Clients",fournD:"Tiers › Fournisseurs › Fiche",cliD:"Tiers › Clients › Fiche",soc:"Administration › Sociétés",gr:"Outils › Grilles de tailles",tags:"Outils › Tags",statuts:"Outils › Statuts de disponibilité",taxes:"Outils › Taxes",attr:"Outils › Attributs",attrord:"Outils › Attributs › Ordre des valeurs",achats:"Achat › Commandes d'achat",achatNew:"Achat › Commandes d'achat › Ajouter",achatD:"Achat › Commande d'achat — produits",justifs:"Achat › Justificatif d'achat",depots:"Achat › Commande de dépôt",depotNew:"Achat › Commande de dépôt › Ajouter",depotD:"Achat › Commande de dépôt — produits",expeds:"Vente › Expéditions",expedNew:"Vente › Expéditions › Ajouter",shopify:"Vente › Vente Shopify",shopifyD:"Vente › Vente Shopify › Commande",factures:"Vente › Facturation",pays:"Outils › Pays",journal:"Outils › Journal d'activité",stats:"Statistiques",deposants:"Dépôt-vente › Déposants",ventesdep:"Dépôt-vente › Ventes dépôt"};
+const CRUMBS={sourcinghub:"Achat › Sourcing Hub",tods:"Statistiques › TODS — Réassort",vinterne:"Vente › Vente interne",vboutique:"Vente › Vente boutique",dash:"Tableau de bord",modeles:"Catalogue Produits › Modèles de produits",stock:"Catalogue Produits › Stock",articleD:"Catalogue Produits › Stock › Fiche produit",fourn:"Tiers › Fournisseurs",cli:"Tiers › Clients",fournD:"Tiers › Fournisseurs › Fiche",cliD:"Tiers › Clients › Fiche",soc:"Administration › Sociétés",gr:"Outils › Grilles de tailles",tags:"Outils › Tags",statuts:"Outils › Statuts de disponibilité",taxes:"Outils › Taxes",attr:"Outils › Attributs",attrord:"Outils › Attributs › Ordre des valeurs",achats:"Achat › Commandes d'achat",achatNew:"Achat › Commandes d'achat › Ajouter",achatD:"Achat › Commande d'achat — produits",justifs:"Achat › Justificatif d'achat",depots:"Achat › Commande de dépôt",depotNew:"Achat › Commande de dépôt › Ajouter",depotD:"Achat › Commande de dépôt — produits",expeds:"Vente › Expéditions",expedNew:"Vente › Expéditions › Ajouter",shopify:"Vente › Vente Shopify",shopifyD:"Vente › Vente Shopify › Commande",factures:"Vente › Facturation",pays:"Outils › Pays",registre:"Achat › Registre des objets mobiliers",journal:"Outils › Journal d'activité",stats:"Statistiques",deposants:"Dépôt-vente › Déposants",ventesdep:"Dépôt-vente › Ventes dépôt"};
 function vbArticleByCode(code){code=String(code||"").trim();if(!code)return null;return DB.articles.find(a=>String(a.ref)===code&&!a.archived&&a.statut==="En Stock")||DB.articles.find(a=>String(a.ref)===code&&!a.archived)||null;}
 function vbPrefill(){var a=vbArticleByCode(document.getElementById("vb_code").value);var hint=document.getElementById("vb_hint");var pv=document.getElementById("vb_pv");if(!a){hint.textContent="Aucun article avec ce code.";return;}var v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};hint.textContent="Article : "+(m.fr||a.ref)+(v.taille?(" · T"+v.taille):"")+" · régime "+(a.tva||"?")+" · coût "+(a.prix||0)+" €"+((a.statut&&a.statut!=="En Stock")?(" · ⚠ statut : "+a.statut):"");
   // Prévenir au scan plutôt qu'au moment d'encaisser : le client est devant toi.
@@ -4634,7 +4647,7 @@ function show(view,item){
   // Relève DocuSeal à l'ouverture des écrans où une signature peut arriver.
   if(view==="justifs"||view==="ventesdep"||view==="achats"){try{docusealSync();}catch(e){}}
   if(view==="vboutique"){try{rzCheckVentes();}catch(e){}}
-  if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="sourcinghub")renderSourcingHub();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
+  if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="registre")renderRegistre();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="sourcinghub")renderSourcingHub();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
 }
 document.querySelectorAll(".item[data-view]").forEach(it=>it.onclick=()=>show(it.dataset.view,it));
 document.querySelectorAll(".ghead[data-group]").forEach(h=>h.onclick=()=>document.getElementById(h.dataset.group).classList.toggle("open"));
@@ -8196,6 +8209,257 @@ async function saveAchatHeader(){
     await _afterSaveAppro();save();openAchat(a.id);}
   else{const id=newId(DB.achats);const a=Object.assign({id,statut:"En cours de livraison",lignes:[],justifs:[],createdAt:new Date().toISOString()},data);if(!a.createdAt)a.createdAt=new Date().toISOString();a.ref=achRef(a);DB.achats.push(a);logAct("Création","Commande d'achat",a.ref);await save();openAchat(id);}}
 
+/* ═══════════════ REGISTRE DES OBJETS MOBILIERS (« livre de police ») ═══════
+   Code pénal R321-3 et suivants. Trois choses le distinguent d'une table
+   ordinaire, et chacune a sa conséquence ici :
+
+     — une écriture PAR OBJET, pas par commande. Une commande de huit paires
+       donne huit numéros d'ordre, et c'est la pièce physique (son ID interne)
+       qui est inscrite. On n'inscrit donc rien tant que la commande n'est pas
+       réceptionnée : avant, les objets n'existent pas encore.
+
+     — le numéro d'ordre est attribué PAR LA BASE, sous verrou, jamais ici.
+       Deux onglets ouverts ne peuvent pas produire deux fois le même numéro.
+
+     — rien ne se corrige. La base refuse toute modification et toute
+       suppression. Une erreur se rattrape par une écriture d'annulation qui
+       garde la trace de l'ancienne.
+
+   D'où le choix de n'inscrire QUE sur geste explicite et confirmé. Accrocher
+   l'inscription à l'enregistrement d'une commande serait désastreux : une
+   commande se modifie dix fois avant d'être juste, et chaque passage aurait
+   laissé des écritures définitives. ═══════════════════════════════════════ */
+
+/* La taxonomie des modèles est celle de Google, en anglais. Illisible dans un
+   registre français qu'un gendarme peut demander à consulter. */
+var REG_NATURES=[["Sneakers","Paire de sneakers"],
+                 ["Shirts & Tops","Haut / t-shirt"],
+                 ["Hoodies & Sweatshirts","Sweat"],
+                 ["Pants","Pantalon"],["Shorts","Short"],
+                 ["Handbags","Sac à main"]];
+function registreNature(m){
+  var t=String((m&&m.taxo)||"");
+  for(var i=0;i<REG_NATURES.length;i++)
+    if(t.indexOf(REG_NATURES[i][0])>=0)return REG_NATURES[i][1];
+  return "Article de mode d'occasion";
+}
+
+function registrePieces(a){
+  return (DB.articles||[]).filter(function(p){return p.achatId===a.id&&!p.archived;});
+}
+
+/* Ce qui manque pour que l'écriture soit valable. On refuse plutôt que
+   d'inscrire des lignes trouées : un registre incomplet se complète, un
+   registre rempli de blancs est définitif et se retourne contre toi. */
+function registreManques(a){
+  var v=a.vendeur||null,m=[];
+  if(!v){m.push("l'identité du vendeur n'a pas été figée sur la commande — rouvre-la et enregistre-la");return m;}
+  if(!v.nom)m.push("le nom du vendeur");
+  if(!(v.adr&&v.ville))m.push("le domicile du vendeur");
+  if(!v.prof)m.push("la profession du vendeur");
+  if(!v.pidType)m.push("le type de pièce d'identité");
+  if(!v.pidNum)m.push("le numéro de la pièce");
+  if(!v.pidDate)m.push("la date de délivrance de la pièce");
+  if(!a.regMode)m.push("le mode de règlement");
+  if(!a.provenance)m.push("la provenance déclarée par le vendeur");
+  return m;
+}
+
+function registreEcritures(a){
+  var v=a.vendeur||{},soc=socById(a.societeId)||{};
+  return registrePieces(a).map(function(p){
+    var va=varById(p.varianteId)||{},m=modeleById(va.modeleId)||{};
+    return {
+      source:"achat",source_ref:a.ref,source_id:a.id,societe:soc.nom||"",
+      date_op:a.date,
+      objet_nature:registreNature(m),objet_marque:m.marque||"",
+      objet_desc:m.fr||"",objet_sku:m.sku||"",
+      objet_taille:va.taille||"",objet_ref:p.ref||"",
+      prix:(+p.prix||0),
+      reglement:a.regMode||"",provenance:a.provenance||"",
+      provenance_det:a.provenanceDet||"",
+      v_civilite:v.civilite||"",v_nom:v.nom||"",v_prenom:v.prenom||"",
+      v_qualite:v.prof||"",
+      v_domicile:[v.adr,v.cp,v.ville,v.pays].filter(Boolean).join(" "),
+      pid_type:v.pidType||"",pid_num:v.pidNum||"",
+      pid_date:v.pidDate||"",pid_par:v.pidPar||"",
+      saisi_par:_moi||""
+    };
+  });
+}
+
+async function registreInscrire(a){
+  if(a.registre&&a.registre.du)
+    return alert("Cette commande est déjà inscrite au registre, sous les numéros "
+      +a.registre.du+" à "+a.registre.au+".");
+  var ecr=registreEcritures(a);
+  if(!ecr.length)
+    return alert("Aucune pièce en stock pour cette commande.\n\nLe registre inscrit des objets, pas des lignes de commande : réceptionne-la d'abord.");
+  var manque=registreManques(a);
+  if(manque.length)
+    return alert("Inscription impossible, il manque :\n\n• "+manque.join("\n• ")
+      +"\n\nComplète la fiche du vendeur, puis rouvre et enregistre la commande pour y figer les mentions.");
+  if(!confirm(ecr.length+" objet(s) vont être inscrits au registre des objets mobiliers.\n\n"
+    +"Une écriture au registre est DÉFINITIVE : ni modification ni suppression. "
+    +"Une erreur se corrige par une écriture d'annulation, qui reste visible.\n\nContinuer ?"))return;
+  var r=await sb.from("registre_police").insert(ecr).select("num");
+  if(r.error)return alert("Le registre a refusé l'inscription :\n\n"+(r.error.message||r.error));
+  var nums=(r.data||[]).map(function(x){return +x.num;}).sort(function(x,y){return x-y;});
+  if(!nums.length)return alert("Le registre n'a renvoyé aucun numéro : vérifie avant de recommencer, les écritures ont peut-être été posées.");
+  a.registre={du:nums[0],au:nums[nums.length-1],n:nums.length,le:new Date().toISOString()};
+  logAct("Inscription","Registre des objets mobiliers",a.ref+" · n° "+a.registre.du+" à "+a.registre.au);
+  await save();renderAchatD();
+  alert("Inscrit au registre sous "+(nums.length>1?("les numéros "+a.registre.du+" à "+a.registre.au):("le numéro "+a.registre.du))+".");
+}
+
+/* ── Consultation du registre ─────────────────────────────────────────────
+   Le registre N'EST PAS dans ARR_TABLES, et ne doit jamais y entrer : save()
+   réécrit les tables qu'il connaît, or la base refuse toute réécriture ici.
+   On le lit donc directement, à l'ouverture de l'écran. */
+var _registre=[],_rgPage=1,RG_PS=100;
+var rgFilt={q:"",d1:"",d2:""};
+
+function rgLignesFiltrees(){
+  var q=(rgFilt.q||"").toLowerCase().trim();
+  return _registre.filter(function(e){
+    if(rgFilt.d1&&String(e.date_op||"")<rgFilt.d1)return false;
+    if(rgFilt.d2&&String(e.date_op||"")>rgFilt.d2)return false;
+    if(!q)return true;
+    return [e.num,e.objet_desc,e.objet_sku,e.objet_marque,e.objet_ref,e.v_nom,
+            e.v_prenom,e.source_ref,e.pid_num].join(" ").toLowerCase().indexOf(q)>=0;
+  });
+}
+
+async function renderRegistre(){
+  var meta=document.getElementById("rg_meta"),corps=document.getElementById("rg_rows");
+  if(!meta||!corps)return;
+  meta.textContent="Chargement…";
+  var r=await sb.from("registre_police").select("*").order("num",{ascending:true});
+  if(r.error){meta.textContent="Lecture impossible : "+(r.error.message||r.error);corps.innerHTML="";return;}
+  _registre=r.data||[];
+  rgPeindre();
+}
+
+function rgPeindre(){
+  var meta=document.getElementById("rg_meta"),corps=document.getElementById("rg_rows"),
+      pager=document.getElementById("rg_pager");
+  var L=rgLignesFiltrees();
+  var pages=Math.max(1,Math.ceil(L.length/RG_PS));
+  if(_rgPage>pages)_rgPage=pages;
+  var vue=L.slice((_rgPage-1)*RG_PS,_rgPage*RG_PS);
+  meta.textContent=L.length+" écriture(s)"
+    +(L.length!==_registre.length?(" sur "+_registre.length):"")
+    +(_registre.length?(" · dernier numéro d'ordre : "+_registre[_registre.length-1].num):"");
+  corps.innerHTML=vue.length?vue.map(function(e){
+    var annule=e.type_ecriture==="annulation";
+    var vise=annule?('<span class="badge" style="background:#fee2e2;color:#991b1b">annule le n° '+e.vise_num+'</span> '):"";
+    var pid=[e.pid_type,e.pid_num?("n° "+e.pid_num):"",e.pid_date?("délivrée le "+dateFr(e.pid_date)):""]
+            .filter(Boolean).join(" · ");
+    return '<tr'+(annule?' style="background:#fff7f7"':'')+'>'
+      +'<td><b>'+e.num+'</b></td>'
+      +'<td class="muted">'+esc(dateFr(e.date_op))+'</td>'
+      +'<td>'+vise+'<b>'+esc(e.objet_desc||"")+'</b><div class="muted" style="font-size:11.5px">'
+        +esc([e.objet_nature,e.objet_marque,e.objet_sku].filter(Boolean).join(" · "))+'</div></td>'
+      +'<td>'+esc(e.objet_taille||"")+'</td>'
+      +'<td class="muted">'+esc(e.objet_ref||"")+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+(e.prix!=null?(Number(e.prix).toFixed(2)+" €"):"")+'</td>'
+      +'<td>'+esc(e.reglement||"")+'</td>'
+      +'<td class="muted" style="font-size:12px">'+esc(e.provenance||"")+'</td>'
+      +'<td>'+esc([e.v_civilite,e.v_prenom,e.v_nom].filter(Boolean).join(" "))
+        +'<div class="muted" style="font-size:11.5px">'+esc(e.v_qualite||"")
+        +(e.v_domicile?(" · "+esc(e.v_domicile)):"")+'</div></td>'
+      +'<td class="muted" style="font-size:11.5px">'+esc(pid)+'</td>'
+      +'<td class="muted">'+esc(e.source_ref||"")+'</td></tr>';
+  }).join(""):'<tr><td colspan="11" class="empty">Aucune écriture au registre pour le moment.</td></tr>';
+  if(pager){
+    if(pages<=1){pager.innerHTML="";}
+    else{var h="";for(var i=1;i<=pages;i++)h+='<button class="btn '+(i===_rgPage?"g":"")+'" data-rgpg="'+i+'" style="padding:4px 11px">'+i+'</button>';
+      pager.innerHTML=h;
+      pager.querySelectorAll("[data-rgpg]").forEach(function(b){
+        b.onclick=function(){_rgPage=+b.dataset.rgpg;rgPeindre();};});}
+  }
+}
+
+var RG_COLS=[["num","N° d'ordre"],["saisi_le","Horodatage"],["type_ecriture","Type d'écriture"],
+  ["vise_num","Annule le n°"],["motif","Motif"],["date_op","Date d'acquisition"],
+  ["objet_nature","Nature"],["objet_marque","Marque"],["objet_desc","Désignation"],
+  ["objet_sku","SKU"],["objet_taille","Taille"],["objet_ref","Identifiant interne"],
+  ["prix","Prix"],["devise","Devise"],["reglement","Mode de règlement"],
+  ["provenance","Provenance déclarée"],["provenance_det","Précision"],
+  ["v_civilite","Civilité"],["v_nom","Nom"],["v_prenom","Prénom"],["v_qualite","Qualité / profession"],
+  ["v_domicile","Domicile"],["pid_type","Pièce — nature"],["pid_num","Pièce — numéro"],
+  ["pid_date","Pièce — délivrance"],["pid_par","Pièce — autorité"],
+  ["societe","Société"],["source_ref","Commande"],["saisi_par","Saisi par"]];
+
+function rgExportCSV(){
+  var L=rgLignesFiltrees();
+  if(!L.length)return alert("Aucune écriture à exporter.");
+  /* Point-virgule et BOM : sans eux Excel en français colle tout dans la
+     première colonne et mange les accents. */
+  var ech=function(v){var s=(v==null?"":String(v));
+    return /[";\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s;};
+  var txt=RG_COLS.map(function(c){return ech(c[1]);}).join(";")+"\n"
+    +L.map(function(e){return RG_COLS.map(function(c){return ech(e[c[0]]);}).join(";");}).join("\n");
+  var b=new Blob(["﻿"+txt],{type:"text/csv;charset=utf-8;"});
+  var u=URL.createObjectURL(b),a=document.createElement("a");
+  a.href=u;a.download="registre-objets-mobiliers-"+today()+".csv";a.click();
+  setTimeout(function(){URL.revokeObjectURL(u);},2000);
+}
+
+function rgExportPDF(){
+  if(!window.jspdf||!window.jspdf.jsPDF)
+    return alert("Le générateur PDF n'est pas encore chargé, réessaie dans un instant.");
+  var L=rgLignesFiltrees();
+  if(!L.length)return alert("Aucune écriture à exporter.");
+  var jsPDF=window.jspdf.jsPDF;
+  /* Paysage : onze colonnes dont trois d'identité ne tiennent pas en portrait,
+     et un registre qu'on doit tourner pour lire n'est pas présentable. */
+  var doc=pdfSansCharabia(new jsPDF({unit:"mm",format:"a4",orientation:"landscape"}));
+  var W=doc.internal.pageSize.getWidth(),M=10;
+  doc.setFont("helvetica","bold");doc.setFontSize(15);
+  doc.text("Registre des objets mobiliers",M,14);
+  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(110,110,110);
+  /* Les accents passent : pdfTexteSur garde tout ce qui tient dans le CP1252.
+     Les écrire sans serait une faute de français sur un document officiel. */
+  doc.text("Code pénal, art. R321-3 et suivants — "+L.length+" écriture(s)"
+    +" — édité le "+dateFr(today()),M,19.5);
+  var body=L.map(function(e){
+    return [String(e.num)+(e.type_ecriture==="annulation"?(" (annule "+e.vise_num+")"):""),
+      dateFr(e.date_op),
+      [e.objet_nature,e.objet_marque,e.objet_desc].filter(Boolean).join(" — "),
+      e.objet_taille||"",e.objet_ref||"",
+      (e.prix!=null?Number(e.prix).toFixed(2):""),
+      e.reglement||"",e.provenance||"",
+      [e.v_civilite,e.v_prenom,e.v_nom].filter(Boolean).join(" ")
+        +(e.v_qualite?("\n"+e.v_qualite):"")+(e.v_domicile?("\n"+e.v_domicile):""),
+      [e.pid_type,e.pid_num,e.pid_date?dateFr(e.pid_date):""].filter(Boolean).join("\n"),
+      e.source_ref||""];
+  });
+  doc.autoTable({startY:24,
+    head:[["N°","Date","Nature / objet","Taille","ID","Prix","Règlement","Provenance","Vendeur","Pièce d'identité","Commande"]],
+    body:body,margin:{left:M,right:M,top:14,bottom:12},
+    styles:{font:"helvetica",fontSize:7.2,cellPadding:1.8,textColor:[35,35,35],
+            lineColor:[225,225,225],lineWidth:0.1,valign:"top"},
+    headStyles:{fillColor:[79,70,229],textColor:[255,255,255],fontStyle:"bold",halign:"left"},
+    alternateRowStyles:{fillColor:[247,247,252]},
+    columnStyles:{0:{cellWidth:14},1:{cellWidth:17},3:{cellWidth:12,halign:"center"},
+                  4:{cellWidth:20},5:{cellWidth:15,halign:"right"},6:{cellWidth:22}}});
+  var n=doc.internal.getNumberOfPages();
+  for(var p=1;p<=n;p++){doc.setPage(p);doc.setFontSize(8);doc.setTextColor(150,150,150);
+    doc.text("Page "+p+" / "+n,W-M-20,doc.internal.pageSize.getHeight()-6);}
+  doc.save("registre-objets-mobiliers-"+today()+".pdf");
+}
+
+{
+  var _q=document.getElementById("rg_q"),_d1=document.getElementById("rg_d1"),
+      _d2=document.getElementById("rg_d2");
+  if(_q)_q.oninput=function(){rgFilt.q=_q.value;_rgPage=1;rgPeindre();};
+  if(_d1)_d1.onchange=function(){rgFilt.d1=_d1.value;_rgPage=1;rgPeindre();};
+  if(_d2)_d2.onchange=function(){rgFilt.d2=_d2.value;_rgPage=1;rgPeindre();};
+  var _c=document.getElementById("rg_csv");if(_c)_c.onclick=rgExportCSV;
+  var _p=document.getElementById("rg_pdf");if(_p)_p.onclick=rgExportPDF;
+}
+
 /* --- FICHE PRODUITS --- */
 let curAchat=null;const vachD=document.getElementById("view-achatD");
 function openAchat(id){curAchat=DB.achats.find(x=>x.id==id);if(!curAchat){show("achats");return renderAchats();}renderAchatD();show("achatD");}
@@ -8225,6 +8489,30 @@ function renderAchatD(){const a=curAchat;const four=fourById(a.fournId),soc=socB
          :`<div class="note" style="color:var(--violet);font-weight:600">📝 Fournisseur particulier : l'attestation de cession se génère ici (PDF à imprimer ou enregistrer). Pense à la faire signer par le vendeur.</div><button class="btn v" id="ad_attest" style="margin-top:10px">📝 Générer l'attestation</button>`}
      </div>
    </div>
+   ${achJustifTypeFour(four)==="Facture"?"":(function(){
+     /* Carte du registre, réservée aux achats à un particulier : c'est le seul
+        cas que le code pénal vise ici. Elle dit toujours où l'on en est —
+        inscrit, prêt, ou ce qui manque — parce qu'un bouton qui refuse sans
+        expliquer renvoie à chercher dans trois écrans. */
+     var _n=registrePieces(a).length,_mq=registreManques(a);
+     var _tete='<div class="dcard" style="margin-top:16px"><h3>Registre des objets mobiliers</h3>';
+     if(a.registre&&a.registre.du)
+       return _tete+'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+         +'<span class="badge" style="background:var(--green-soft);color:#166534">✓ Inscrit — '
+         +(a.registre.n>1?('n° '+a.registre.du+' à '+a.registre.au):('n° '+a.registre.du))+'</span>'
+         +'<span class="muted" style="font-size:12.5px">le '+esc(fmtTs(a.registre.le))+'</span></div>'
+         +'<div class="note" style="color:var(--muted);font-weight:400;font-size:12px;margin-top:10px">'
+         +'Une écriture au registre ne se modifie ni ne s\'efface. Pour corriger, il faut ajouter une annulation.</div></div>';
+     if(!_n)
+       return _tete+'<div class="note" style="color:var(--muted);font-weight:400;font-size:12.5px">'
+         +'Le registre inscrit des objets, pas des lignes de commande. Réceptionne d\'abord les produits.</div></div>';
+     if(_mq.length)
+       return _tete+'<div class="note" style="color:#b45309;font-weight:600;font-size:12.5px">'
+         +'Pas encore inscriptible — il manque : '+esc(_mq.join(", "))+'.</div></div>';
+     return _tete+'<div class="note" style="color:var(--muted);font-weight:400;font-size:12.5px;margin-bottom:10px">'
+       +_n+' objet(s) prêt(s) à inscrire, un numéro d\'ordre par objet. L\'écriture est définitive.</div>'
+       +'<button class="btn v" id="ad_registre">Inscrire au registre</button></div>';
+   })()}
    ${livree?"":`<div class="dcard" style="margin-top:16px"><h3>Ajouter un produit</h3>
      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end">
        <div class="fld" style="margin:0"><label>Modèle / SKU *</label><div class="ac-wrap"><input id="al_modq" placeholder="Nom ou SKU du produit…" autocomplete="off"><div id="al_modres" class="ac-res" style="display:none"></div></div></div>
@@ -8250,6 +8538,7 @@ function renderAchatD(){const a=curAchat;const four=fourById(a.fournId),soc=socB
   const dv=document.getElementById("ad_deliver");if(dv)dv.onclick=()=>openRecv(a.id);
   const al=document.getElementById("ad_labels");if(al)al.onclick=()=>{const pcs=DB.articles.filter(x=>x.achatId===a.id&&!x.archived);if(!pcs.length){alert("Aucune pièce de cette commande n'est encore entrée en stock. Réceptionne d'abord les produits.");return;}printLabels(pcs);};
   const at=document.getElementById("ad_attest");if(at)at.onclick=()=>printAttestation(a.id);
+  const arg=document.getElementById("ad_registre");if(arg)arg.onclick=()=>registreInscrire(a);
   const adFile=document.getElementById("ad_file");
   const adAdd=document.getElementById("ad_fileadd"),adChg=document.getElementById("ad_filechg"),adClr=document.getElementById("ad_fileclr");
   const adOpen=document.getElementById("ad_fileopen");if(adOpen)adOpen.onclick=()=>openFacture(a.id);
@@ -14839,7 +15128,13 @@ function saveFactureNew(){
     subtotal:r2(ttcSum),shipping:0,totalHT:r2(ht),totalTTC:r2(ttcSum),currency:"EUR",statut:"Validée",paiement:"En attente"};
   DB.factures.push(fact);logAct("Création","Facture",fact.num+" (manuelle)");save();openFactureD(id);
 }
-async function _afterAuth(){loginOverlay.style.display="none";await load();}
+/* Qui écrit au registre. Une écriture étant définitive, savoir de quelle main
+   elle vient n'est pas un luxe le jour où une ligne surprend tout le monde. */
+var _moi="";
+async function _afterAuth(){
+  try{const {data:{session}}=await sb.auth.getSession();
+      _moi=(session&&session.user&&session.user.email)||"";}catch(e){}
+  loginOverlay.style.display="none";await load();}
 loginBtn.onclick=async()=>{loginErr.textContent="";loginBtn.disabled=true;loginBtn.textContent="Connexion…";
   const {error}=await sb.auth.signInWithPassword({email:(loginEmail.value||"").trim(),password:loginPass.value||""});
   loginBtn.disabled=false;loginBtn.textContent="Se connecter";
