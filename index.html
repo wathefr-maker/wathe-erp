@@ -1002,7 +1002,7 @@
     </select></div>
     <div class="fld part"><label>Pièce d'identité — numéro</label><input id="f_pidNum"></div>
     <div class="fld part"><label>Délivrée le</label><input id="f_pidDate" type="date"></div>
-    <div class="fld part" style="grid-column:1/3"><label>Délivrée par (autorité)</label><input id="f_pidPar" placeholder="Ex. Préfecture de l'Allier, Mairie de Vichy…"></div>
+    <div class="fld part" style="grid-column:1/3"><label>Délivrée par (facultatif — absent des CNI depuis 2021)</label><input id="f_pidPar" placeholder="Ex. Préfecture de l'Allier, Mairie de Vichy…"></div>
     <div class="seclbl pro">Professionnel</div>
     <div class="fld pro"><label>Société</label><input id="f_soc"></div>
     <div class="fld pro"><label>SIRET</label><input id="f_siret"></div>
@@ -1740,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-173758";
+var ERP_VERSION="20261109-174651";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -6255,14 +6255,11 @@ function buildAttestationDoc(achatId){
     sellerLines.push(_pid("pidType")+(_pid("pidNum")?(" n "+_pid("pidNum")):""));
     /* pidDeliv est la mention d'un seul tenant saisie par le vendeur ; les
        deux champs separes restent lus pour les fiches d'avant ce changement. */
-    var _dv=_pid("pidDeliv");
-    if(!_dv){
-      var _d=[];
-      if(_pid("pidDate"))_d.push("delivree le "+dateFr(_pid("pidDate")));
-      if(_pid("pidPar"))_d.push("par "+_pid("pidPar"));
-      _dv=_d.join(" ");
-    }
-    if(_dv)sellerLines.push("Delivree : "+_dv);
+    var _d=[];
+    if(_pid("pidDate"))_d.push("delivree le "+dateFr(_pid("pidDate")));
+    else if(_pid("pidDeliv"))_d.push("delivree "+_pid("pidDeliv"));  /* ancienne saisie d'un bloc */
+    if(_pid("pidPar"))_d.push("par "+_pid("pidPar"));
+    if(_d.length)sellerLines.push(_d.join(" "));
   }
   const buyerLines=[s.nom,s.adr,((s.cp||"")+" "+(s.ville||"")).trim(),s.pays].filter(Boolean);
   const buyerMeta=[s.tva?("N TVA : "+s.tva):"",s.siret?("SIRET : "+s.siret):""].filter(Boolean);
@@ -6350,24 +6347,24 @@ function buildAttestationDoc(achatId){
      piece » est le mot du texte ; personne ne le comprend du premier coup.
      L'information exigee est la meme, seule la formulation change.
 
-     La delivrance tient en UNE case. Le registre demande la date ET
-     l'autorite, mais sur une piece d'identite les deux sont ecrites d'un
-     bloc — « delivree le 14/06/2021 par la Prefecture de l'Allier ». Les
-     separer en deux champs obligeait le vendeur a decouper ce qu'il a sous
-     les yeux, pour rien : l'information exigee est la meme, recopiee telle
-     quelle. */
-  var cases=[["Type de document (carte d'identite, passeport...)","pidType",0],
-             ["Numero du document","pidNum",0],
-             ["Delivre le et par qui (ex. 14/06/2021, Prefecture de l'Allier)","pidDeliv",1]];
+     ON NE DEMANDE PAS L'AUTORITE DE DELIVRANCE. Le registre la mentionne,
+     mais depuis 2021 la carte nationale d'identite ne l'imprime plus : on
+     demanderait au vendeur de recopier une information qui n'est plus sur
+     sa carte. Elle reste saisissable a la main sur la fiche du vendeur,
+     pour un passeport ou une ancienne carte qui la portent encore. */
+  var cases=[["Type de document (carte d'identite, passeport...)","pidType"],
+             ["Numero du document","pidNum"],
+             ["Date de delivrance (ex. 14/06/2021)","pidDate"]];
   var cx=M, cy=yt;
   cases.forEach(function(c){
-    var large=c[2]?(W-2*M):bw;
-    if(c[2]&&cx!==M){cx=M;cy+=16;}            /* une case pleine largeur repart a la ligne */
     doc.text(c[0],cx,cy);
-    doc.setDrawColor(190,190,190);doc.roundedRect(cx,cy+1.5,large,bh,1.5,1.5);
-    noter(c[1],"text",cx,cy+1.5,large,bh);
-    if(c[2]||cx!==M){cx=M;cy+=16;}else{cx=M+bw+6;}
+    doc.setDrawColor(190,190,190);doc.roundedRect(cx,cy+1.5,bw,bh,1.5,1.5);
+    noter(c[1],"text",cx,cy+1.5,bw,bh);
+    if(cx===M){cx=M+bw+6;}else{cx=M;cy+=16;}
   });
+  /* Si la derniere ligne est entamee, il faut quand meme descendre sous les
+     cases : sinon le texte suivant viendrait s'ecrire dedans. */
+  if(cx!==M)cy+=16;
   yt=cy+4;
 
   placer(31);
@@ -8136,13 +8133,16 @@ function anPartSync(){
   if(!String(f.pidType||"").trim())manque.push("nature de la pièce");
   if(!String(f.pidNum||"").trim())manque.push("numéro");
   if(!String(f.pidDate||"").trim())manque.push("date de délivrance");
-  if(!String(f.pidPar||"").trim())manque.push("autorité");
+  /* L'autorité ne figure plus sur une carte d'identité depuis 2021 : la
+     réclamer serait réclamer l'introuvable. Le champ reste saisissable pour
+     un passeport, il n'est simplement plus signalé comme manquant. */
   if(manque.length){
     info.innerHTML='<span style="color:var(--red);font-weight:600">Incomplet pour le registre :</span> '
       +esc(manque.join(", "))+'. À compléter sur la fiche de '+esc(fourLabel(f))+'.';
   }else{
     info.innerHTML='Identité relevée : '+esc(f.pidType)+' n° '+esc(f.pidNum)
-      +', délivrée le '+esc(dateFr(f.pidDate))+' par '+esc(f.pidPar)
+      +', délivrée le '+esc(dateFr(f.pidDate))
+      +(String(f.pidPar||"").trim()?(' par '+esc(f.pidPar)):"")
       +' · '+esc(f.prof)+'.';
   }
 }
