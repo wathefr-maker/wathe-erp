@@ -332,7 +332,6 @@
     <div class="item sub" data-view="deposants"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/><path d="M18 8h4M20 6v4"/></svg></span> Déposants</div>
     <div class="item sub" data-view="sourcinghub"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-10 0Z"/><path d="M12 15v7"/></svg></span> Sourcing Hub</div>
     <div class="item sub" data-view="justifs"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span> Justificatifs</div>
-    <div class="item sub" data-view="registre"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M9 7h7M9 11h7"/></svg></span> Registre des objets mobiliers</div>
 
     <div class="navsec">Ventes</div>
     <div class="item sub" data-view="vboutique"><span class="ic"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 5 3h14l2 6M4 9v11h16V9M4 9h16"/><path d="M9 20v-6h6v6"/></svg></span> Vente boutique</div>
@@ -560,18 +559,6 @@
         <tbody data-refrows="pays"></tbody></table></div><div class="pager" data-refpager="pays"></div></div>
     </div>
 
-    <div class="wrap view hide" id="view-registre">
-      <h1>Registre des objets mobiliers</h1><div class="sub">Livre de police — code pénal, art. R321-3 et suivants. Une écriture par objet, dans l'ordre des numéros. Rien ne s'y modifie ni ne s'y efface.</div>
-      <div class="filters"><input id="rg_q" placeholder="Rechercher : vendeur, objet, SKU, n° d'ordre, commande…" style="width:340px">
-        <input id="rg_d1" type="date" title="Du"><input id="rg_d2" type="date" title="Au">
-        <span class="spacer"></span>
-        <button class="btn" id="rg_csv">Export CSV</button>
-        <button class="btn v" id="rg_pdf">Export PDF</button></div>
-      <div class="tablecard"><div class="tmeta" id="rg_meta"></div><div style="overflow-x:auto"><table>
-        <thead><tr><th>N°</th><th>Date</th><th>Nature / objet</th><th>Taille</th><th>ID interne</th><th>Prix</th><th>Règlement</th><th>Provenance</th><th>Vendeur</th><th>Pièce d'identité</th><th>Commande</th></tr></thead>
-        <tbody id="rg_rows"></tbody></table></div><div class="pager" id="rg_pager"></div></div>
-    </div>
-
     <div class="wrap view hide" id="view-journal">
       <h1>Journal d'activité</h1><div class="sub">Toutes les opérations enregistrées dans l'ERP (Outils)</div>
       <div class="bar"><span class="spacer"></span><button class="btn" id="clearJournal">Vider le journal</button></div>
@@ -608,7 +595,12 @@
     <div class="wrap view hide" id="view-achatNew"></div>
     <div class="wrap view hide" id="view-achatD"></div>
     <div class="wrap view hide" id="view-justifs">
-      <h1>Justificatif d'achat</h1><div class="sub">Toutes les factures ajoutées aux commandes d'achat</div>
+      <h1>Justificatifs d'achat</h1><div class="sub">Les pièces qui justifient chaque achat, et le registre légal qu'elles alimentent</div>
+      <div class="bar" style="gap:8px;margin:12px 0 0">
+        <button class="btn g" id="ju_tab_j">Factures et attestations</button>
+        <button class="btn" id="ju_tab_r">Registre des objets mobiliers</button>
+      </div>
+      <div id="ju_bloc">
       <div class="tablecard" style="padding:14px;margin:12px 0 14px"><div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
         <div class="fld" style="margin:0"><label>Afficher</label><select id="jMode"><option>Transmises</option><option>Manquantes</option><option>Toutes</option></select></div>
         <div class="fld" style="margin:0;flex:1;min-width:230px"><label>Rechercher</label><input id="jQ" placeholder="Fournisseur, déposant, n° de commande…" autocomplete="off"></div>
@@ -618,6 +610,18 @@
       <div class="tablecard"><div style="overflow-x:auto"><table>
         <thead><tr><th>N° de commande</th><th>Date</th><th>Fournisseur</th><th>Société</th><th>Fichier</th><th>Montant HT</th><th>Statut</th><th>Actions</th></tr></thead>
         <tbody id="juRows"></tbody></table></div></div>
+      </div>
+      <div id="rg_bloc" style="display:none">
+        <div class="sub" style="margin:12px 0 0">Livre de police — code pénal, art. R321-3 et suivants. Une écriture par objet, dans l'ordre des numéros. Rien ne s'y modifie ni ne s'y efface.</div>
+        <div class="filters"><input id="rg_q" placeholder="Rechercher : vendeur, objet, SKU, n° d'ordre, commande…" style="width:340px">
+          <input id="rg_d1" type="date" title="Du"><input id="rg_d2" type="date" title="Au">
+          <span class="spacer"></span>
+          <button class="btn" id="rg_csv">Export CSV</button>
+          <button class="btn v" id="rg_pdf">Export PDF</button></div>
+        <div class="tablecard"><div class="tmeta" id="rg_meta"></div><div style="overflow-x:auto"><table>
+          <thead><tr><th>N°</th><th>Date</th><th>Nature / objet</th><th>Taille</th><th>ID interne</th><th>Prix</th><th>Règlement</th><th>Provenance</th><th>Vendeur</th><th>Pièce d'identité</th><th>Commande</th></tr></thead>
+          <tbody id="rg_rows"></tbody></table></div><div class="pager" id="rg_pager"></div></div>
+      </div>
     </div>
     <div class="wrap view hide" id="view-depots">
       <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
@@ -1753,7 +1757,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-183701";
+var ERP_VERSION="20261109-184822";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -2536,7 +2540,7 @@ function renderStock(){
   if(pages>7)pg+=`<span class="muted">… ${pages}</span>`;pg+=`<button ${page>=pages?'disabled':''} data-p="${page+1}">›</button>`;pager.innerHTML=pg;curStockIds=rows.map(a=>a.id);updateSelAll();renderBulkBar();
 }
 
-const CRUMBS={sourcinghub:"Achat › Sourcing Hub",tods:"Statistiques › TODS — Réassort",vinterne:"Vente › Vente interne",vboutique:"Vente › Vente boutique",dash:"Tableau de bord",modeles:"Catalogue Produits › Modèles de produits",stock:"Catalogue Produits › Stock",articleD:"Catalogue Produits › Stock › Fiche produit",fourn:"Tiers › Fournisseurs",cli:"Tiers › Clients",fournD:"Tiers › Fournisseurs › Fiche",cliD:"Tiers › Clients › Fiche",soc:"Administration › Sociétés",gr:"Outils › Grilles de tailles",tags:"Outils › Tags",statuts:"Outils › Statuts de disponibilité",taxes:"Outils › Taxes",attr:"Outils › Attributs",attrord:"Outils › Attributs › Ordre des valeurs",achats:"Achat › Commandes d'achat",achatNew:"Achat › Commandes d'achat › Ajouter",achatD:"Achat › Commande d'achat — produits",justifs:"Achat › Justificatif d'achat",depots:"Achat › Commande de dépôt",depotNew:"Achat › Commande de dépôt › Ajouter",depotD:"Achat › Commande de dépôt — produits",expeds:"Vente › Expéditions",expedNew:"Vente › Expéditions › Ajouter",shopify:"Vente › Vente Shopify",shopifyD:"Vente › Vente Shopify › Commande",factures:"Vente › Facturation",pays:"Outils › Pays",registre:"Achat › Registre des objets mobiliers",journal:"Outils › Journal d'activité",stats:"Statistiques",deposants:"Dépôt-vente › Déposants",ventesdep:"Dépôt-vente › Ventes dépôt"};
+const CRUMBS={sourcinghub:"Achat › Sourcing Hub",tods:"Statistiques › TODS — Réassort",vinterne:"Vente › Vente interne",vboutique:"Vente › Vente boutique",dash:"Tableau de bord",modeles:"Catalogue Produits › Modèles de produits",stock:"Catalogue Produits › Stock",articleD:"Catalogue Produits › Stock › Fiche produit",fourn:"Tiers › Fournisseurs",cli:"Tiers › Clients",fournD:"Tiers › Fournisseurs › Fiche",cliD:"Tiers › Clients › Fiche",soc:"Administration › Sociétés",gr:"Outils › Grilles de tailles",tags:"Outils › Tags",statuts:"Outils › Statuts de disponibilité",taxes:"Outils › Taxes",attr:"Outils › Attributs",attrord:"Outils › Attributs › Ordre des valeurs",achats:"Achat › Commandes d'achat",achatNew:"Achat › Commandes d'achat › Ajouter",achatD:"Achat › Commande d'achat — produits",justifs:"Achat › Justificatif d'achat",depots:"Achat › Commande de dépôt",depotNew:"Achat › Commande de dépôt › Ajouter",depotD:"Achat › Commande de dépôt — produits",expeds:"Vente › Expéditions",expedNew:"Vente › Expéditions › Ajouter",shopify:"Vente › Vente Shopify",shopifyD:"Vente › Vente Shopify › Commande",factures:"Vente › Facturation",pays:"Outils › Pays",journal:"Outils › Journal d'activité",stats:"Statistiques",deposants:"Dépôt-vente › Déposants",ventesdep:"Dépôt-vente › Ventes dépôt"};
 function vbArticleByCode(code){code=String(code||"").trim();if(!code)return null;return DB.articles.find(a=>String(a.ref)===code&&!a.archived&&a.statut==="En Stock")||DB.articles.find(a=>String(a.ref)===code&&!a.archived)||null;}
 function vbPrefill(){var a=vbArticleByCode(document.getElementById("vb_code").value);var hint=document.getElementById("vb_hint");var pv=document.getElementById("vb_pv");if(!a){hint.textContent="Aucun article avec ce code.";return;}var v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};hint.textContent="Article : "+(m.fr||a.ref)+(v.taille?(" · T"+v.taille):"")+" · régime "+(a.tva||"?")+" · coût "+(a.prix||0)+" €"+((a.statut&&a.statut!=="En Stock")?(" · ⚠ statut : "+a.statut):"");
   // Prévenir au scan plutôt qu'au moment d'encaisser : le client est devant toi.
@@ -4045,6 +4049,9 @@ async function docusealSync(opts){
         e.obj.attestStatut="Signée";e.obj.attestSignedAt=(res.completedAt||today()).slice(0,10);
         e.obj.attestMode="Électronique";
         e.obj.factStatut="Facture transmise";e.obj.factNom="Attestation signée (électronique)";e.obj.factUrl=url;
+        /* La signature est le moment où l'écriture au registre devient
+           possible ET due : le vendeur vient d'attester ses mentions. */
+        try{await registreALaSignature(e.obj);}catch(_e){console.warn("[Registre]",_e);}
       }else{
         e.pieces.forEach(function(a){
           a.attestDepStatut="Signée";a.attestDepSignedAt=(res.completedAt||today()).slice(0,10);
@@ -4643,11 +4650,16 @@ function show(view,item){
   if(item){item.classList.add("on");const g=item.closest(".group");if(g){g.querySelector(".ghead").classList.add("on");g.classList.add("open");}}
   if(view==="soon"){const [t,s,p]=(item?.dataset.soon||"Module|À venir|").split("|");soonTitle.textContent=t;soonSub.textContent=s;soonPhase.textContent=p||"";document.getElementById("view-soon").classList.remove("hide");crumb.innerHTML=`<b>${t}</b>`;return;}
   var _realView=view;
+  /* Le registre a eu son propre écran pendant une heure avant d'être rangé
+     dans les justificatifs. Un onglet qui a gardé « registre » en mémoire
+     planterait sur un élément disparu : on le renvoie là où il vit. */
+  if(_realView==="registre")_realView="justifs";
+  if(!document.getElementById("view-"+_realView))_realView="dash";
   document.getElementById("view-"+_realView).classList.remove("hide");crumb.innerHTML=`<b>${CRUMBS[view]||view}</b>`;
   // Relève DocuSeal à l'ouverture des écrans où une signature peut arriver.
   if(view==="justifs"||view==="ventesdep"||view==="achats"){try{docusealSync();}catch(e){}}
   if(view==="vboutique"){try{rzCheckVentes();}catch(e){}}
-  if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="registre")renderRegistre();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="sourcinghub")renderSourcingHub();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
+  if(view==="dash")renderDash();if(view==="modeles")renderModeles();if(view==="stock")renderStock();if(view==="fourn")renderFournisseurs();if(view==="cli")renderClients();if(view==="soc")renderSocietes();if(view==="gr"){_grBrand="";_grSeg="";renderGrilles();}if(view==="tags")renderTags();if(view==="statuts")renderStatuts();if(view==="taxes")renderTaxes();if(view==="attr")renderAttr();if(view==="pays")renderPays();if(view==="journal")renderJournal();if(view==="achats")renderAchats();if(view==="justifs")renderJustifs();if(view==="depots")renderDepots();if(view==="expeds")renderExpeds();if(view==="shopify")renderShopify();if(view==="sourcinghub")renderSourcingHub();if(view==="factures")renderFactures();if(view==="vboutique")renderVBoutique();if(view==="deposants")renderDeposants();if(view==="ventesdep")renderVentesDep();if(view==="vinterne")renderVinterne();
 }
 document.querySelectorAll(".item[data-view]").forEach(it=>it.onclick=()=>show(it.dataset.view,it));
 document.querySelectorAll(".ghead[data-group]").forEach(h=>h.onclick=()=>document.getElementById(h.dataset.group).classList.toggle("open"));
@@ -6813,6 +6825,14 @@ async function recvDo(all){const a=DB.achats.find(x=>x.id==_recvId);if(!a)return
   const allDone=a.lignes.every(l=>(+l.recu||0)>=(+l.qte||0));
   a.statut=allDone?"Livrée":"Partiellement livrée";if(allDone)a.delivered=1;
   logAct("Réception","Commande d'achat",a.ref+" · "+created.length+" pièce(s) au stock"+(allDone?" (complète)":" (partielle)"));
+  /* Rattrapage : une attestation signée AVANT l'arrivée des paires n'a pas pu
+     s'inscrire au registre, faute d'objets à inscrire. Les voilà. On n'attend
+     la réception complète que pour ne pas couper une commande en deux
+     écritures, ce que le registre ne saurait pas recoller. */
+  if(allDone&&a.registreEnAttente&&a.attestStatut==="Signée"){
+    try{var _p=await registrePoser(a);if(!_p.ok)console.warn("[Registre] "+a.ref+" : "+_p.raison);}
+    catch(_e){console.warn("[Registre]",_e);}
+  }
   save();ovRecv.classList.remove("show");renderAll();await shopAutoSyncReceived(created);
   if(confirm(created.length+" pièce(s) ajoutée(s) au stock.\nImprimer leurs étiquettes maintenant ?"))printLabels(created);
 }
@@ -8288,6 +8308,27 @@ function registreEcritures(a){
   });
 }
 
+/* Pose les écritures, sans rien demander et sans rien afficher. C'est la
+   seule fonction qui écrit : le bouton et la relève de signature passent tous
+   les deux par elle, pour qu'il n'existe pas deux façons différentes
+   d'inscrire au registre. */
+async function registrePoser(a){
+  if(a.registre&&a.registre.du)return {ok:true,deja:true};
+  var ecr=registreEcritures(a);
+  if(!ecr.length)return {ok:false,attente:1,raison:"aucune pièce reçue : le registre inscrit des objets, pas des lignes de commande"};
+  var mq=registreManques(a);
+  if(mq.length)return {ok:false,attente:1,raison:"mentions manquantes — "+mq.join(", ")};
+  var r=await sb.from("registre_police").insert(ecr).select("num");
+  if(r.error)return {ok:false,raison:(r.error.message||String(r.error))};
+  var nums=(r.data||[]).map(function(x){return +x.num;}).sort(function(x,y){return x-y;});
+  if(!nums.length)return {ok:false,raison:"le registre n'a renvoyé aucun numéro"};
+  a.registre={du:nums[0],au:nums[nums.length-1],n:nums.length,le:new Date().toISOString()};
+  delete a.registreEnAttente;delete a.registreMotif;
+  logAct("Inscription","Registre des objets mobiliers",a.ref+" · n° "+a.registre.du+" à "+a.registre.au);
+  return {ok:true,nums:nums};
+}
+
+/* Le bouton : mêmes écritures, mais on explique et on fait confirmer. */
 async function registreInscrire(a){
   if(a.registre&&a.registre.du)
     return alert("Cette commande est déjà inscrite au registre, sous les numéros "
@@ -8302,14 +8343,35 @@ async function registreInscrire(a){
   if(!confirm(ecr.length+" objet(s) vont être inscrits au registre des objets mobiliers.\n\n"
     +"Une écriture au registre est DÉFINITIVE : ni modification ni suppression. "
     +"Une erreur se corrige par une écriture d'annulation, qui reste visible.\n\nContinuer ?"))return;
-  var r=await sb.from("registre_police").insert(ecr).select("num");
-  if(r.error)return alert("Le registre a refusé l'inscription :\n\n"+(r.error.message||r.error));
-  var nums=(r.data||[]).map(function(x){return +x.num;}).sort(function(x,y){return x-y;});
-  if(!nums.length)return alert("Le registre n'a renvoyé aucun numéro : vérifie avant de recommencer, les écritures ont peut-être été posées.");
-  a.registre={du:nums[0],au:nums[nums.length-1],n:nums.length,le:new Date().toISOString()};
-  logAct("Inscription","Registre des objets mobiliers",a.ref+" · n° "+a.registre.du+" à "+a.registre.au);
+  var p=await registrePoser(a);
+  if(!p.ok)return alert("Le registre a refusé l'inscription :\n\n"+p.raison);
   await save();renderAchatD();
-  alert("Inscrit au registre sous "+(nums.length>1?("les numéros "+a.registre.du+" à "+a.registre.au):("le numéro "+a.registre.du))+".");
+  alert("Inscrit au registre sous "+(p.nums.length>1
+    ?("les numéros "+a.registre.du+" à "+a.registre.au):("le numéro "+a.registre.du))+".");
+}
+
+/* Inscription À LA SIGNATURE. C'est le bon moment : le vendeur vient de
+   remplir sa pièce d'identité, donc toutes les mentions existent enfin, et il
+   atteste lui-même de leur exactitude en signant.
+
+   Les mentions qu'il vient de taper sont écrites par docuseal-webhook,
+   directement en base. Notre copie en mémoire date d'avant la signature : on
+   la rafraîchit, sinon on inscrirait des cases vides. */
+async function registreALaSignature(a){
+  try{
+    var frais=await sb.from("achats").select("data").eq("id",a.id).maybeSingle();
+    var v=frais&&frais.data&&frais.data.data&&frais.data.data.vendeur;
+    if(v)a.vendeur=Object.assign({},a.vendeur||{},v);
+  }catch(_e){/* pas de relève possible : on tente avec ce qu'on a */}
+  var p=await registrePoser(a);
+  if(!p.ok){
+    /* On n'alerte pas : la relève tourne toute seule en fond, une boîte de
+       dialogue surgirait au milieu d'autre chose. On marque, et l'écran de la
+       commande dira ce qui manque. */
+    if(p.attente){a.registreEnAttente=1;a.registreMotif=p.raison;}
+    console.warn("[Registre] "+a.ref+" non inscrite : "+p.raison);
+  }
+  return p;
 }
 
 /* ── Consultation du registre ─────────────────────────────────────────────
@@ -8458,6 +8520,21 @@ function rgExportPDF(){
   if(_d2)_d2.onchange=function(){rgFilt.d2=_d2.value;_rgPage=1;rgPeindre();};
   var _c=document.getElementById("rg_csv");if(_c)_c.onclick=rgExportCSV;
   var _p=document.getElementById("rg_pdf");if(_p)_p.onclick=rgExportPDF;
+
+  /* Les deux onglets de l'écran « Justificatifs ». Le registre n'est chargé
+     qu'à son premier affichage : c'est une requête réseau, inutile de la
+     lancer à chaque passage sur les factures. */
+  var _tj=document.getElementById("ju_tab_j"),_tr=document.getElementById("ju_tab_r"),
+      _bj=document.getElementById("ju_bloc"),_br=document.getElementById("rg_bloc");
+  function juOnglet(reg){
+    if(!_tj||!_tr||!_bj||!_br)return;
+    _bj.style.display=reg?"none":"";_br.style.display=reg?"":"none";
+    _tj.className=reg?"btn":"btn g";_tr.className=reg?"btn g":"btn";
+    if(reg&&!_registre.length)renderRegistre();
+  }
+  if(_tj)_tj.onclick=function(){juOnglet(false);};
+  if(_tr)_tr.onclick=function(){juOnglet(true);};
+  window.juVersRegistre=function(){show("justifs",null);juOnglet(true);renderRegistre();};
 }
 
 /* --- FICHE PRODUITS --- */
@@ -8510,8 +8587,9 @@ function renderAchatD(){const a=curAchat;const four=fourById(a.fournId),soc=socB
        return _tete+'<div class="note" style="color:#b45309;font-weight:600;font-size:12.5px">'
          +'Pas encore inscriptible — il manque : '+esc(_mq.join(", "))+'.</div></div>';
      return _tete+'<div class="note" style="color:var(--muted);font-weight:400;font-size:12.5px;margin-bottom:10px">'
-       +_n+' objet(s) prêt(s) à inscrire, un numéro d\'ordre par objet. L\'écriture est définitive.</div>'
-       +'<button class="btn v" id="ad_registre">Inscrire au registre</button></div>';
+       +_n+' objet(s) prêt(s) à inscrire, un numéro d\'ordre par objet. L\'écriture est définitive.'
+       +(a.attestStatut==="Signée"?"":" L'inscription se fait d'elle-même dès que le vendeur a signé l'attestation ; ce bouton ne sert qu'à la devancer.")
+       +'</div><button class="btn v" id="ad_registre">Inscrire au registre</button></div>';
    })()}
    ${livree?"":`<div class="dcard" style="margin-top:16px"><h3>Ajouter un produit</h3>
      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end">
