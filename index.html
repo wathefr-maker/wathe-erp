@@ -1757,7 +1757,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-184822";
+var ERP_VERSION="20261109-185511";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -8414,7 +8414,12 @@ function rgPeindre(){
     +(_registre.length?(" · dernier numéro d'ordre : "+_registre[_registre.length-1].num):"");
   corps.innerHTML=vue.length?vue.map(function(e){
     var annule=e.type_ecriture==="annulation";
-    var vise=annule?('<span class="badge" style="background:#fee2e2;color:#991b1b">annule le n° '+e.vise_num+'</span> '):"";
+    var regul=e.type_ecriture==="regularisation";
+    /* On ne cache pas qu'une écriture a été posée après coup : l'horodatage
+       le dirait de toute façon, et un contrôleur qui le découvre seul le
+       prend moins bien que si le registre l'annonce. */
+    var vise=annule?('<span class="badge" style="background:#fee2e2;color:#991b1b">annule le n° '+e.vise_num+'</span> ')
+            :(regul?'<span class="badge" style="background:#fef3c7;color:#92400e" title="Écriture de reprise : l\'achat est antérieur à la tenue du registre">régularisation</span> ':"");
     var pid=[e.pid_type,e.pid_num?("n° "+e.pid_num):"",e.pid_date?("délivrée le "+dateFr(e.pid_date)):""]
             .filter(Boolean).join(" · ");
     return '<tr'+(annule?' style="background:#fff7f7"':'')+'>'
@@ -8486,7 +8491,8 @@ function rgExportPDF(){
   doc.text("Code pénal, art. R321-3 et suivants — "+L.length+" écriture(s)"
     +" — édité le "+dateFr(today()),M,19.5);
   var body=L.map(function(e){
-    return [String(e.num)+(e.type_ecriture==="annulation"?(" (annule "+e.vise_num+")"):""),
+    return [String(e.num)+(e.type_ecriture==="annulation"?(" (annule "+e.vise_num+")"):"")
+             +(e.type_ecriture==="regularisation"?" (régul.)":""),
       dateFr(e.date_op),
       [e.objet_nature,e.objet_marque,e.objet_desc].filter(Boolean).join(" — "),
       e.objet_taille||"",e.objet_ref||"",
