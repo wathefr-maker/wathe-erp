@@ -992,7 +992,7 @@
          en conserver une ferait entrer Thibaud dans des obligations RGPD que la
          loi ne lui demande pas. -->
     <div class="seclbl part">Registre des objets mobiliers</div>
-    <div class="fld part"><label>Profession</label><input id="f_prof" placeholder="Ex. étudiant, artisan, retraité…"></div>
+    <div class="fld part"><label>Profession *</label><input id="f_prof" placeholder="Ex. étudiant, artisan, retraité…"></div>
     <div class="fld part"><label>Pièce d'identité — nature</label><select id="f_pidType">
       <option value="">—</option>
       <option>Carte nationale d'identité</option>
@@ -1740,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-170443";
+var ERP_VERSION="20261109-171853";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -5591,7 +5591,13 @@ function openFourn(id){editF=id;mFTitle.textContent=id?"Modifier le fournisseur"
 saveFourn.onclick=async()=>{const miss=[],pro=f_type.value==="Professionnel";
   if(!f_email.value.trim())miss.push("E-mail");
   if(pro){if(!f_soc.value.trim())miss.push("Société");if(!f_siret.value.trim())miss.push("SIRET");if(!f_tva.value.trim())miss.push("N° TVA");}
-  else{if(!f_nom.value.trim())miss.push("Nom");if(!f_prenom.value.trim())miss.push("Prénom");}
+  else{if(!f_nom.value.trim())miss.push("Nom");if(!f_prenom.value.trim())miss.push("Prénom");
+    /* La PROFESSION est une mention obligatoire du registre des objets
+       mobiliers, et c'est la seule qu'on ne peut pas demander au vendeur au
+       moment de signer : elle sert à l'identifier, pas à le faire attester.
+       Les quatre mentions de sa pièce d'identité, elles, sont saisies par le
+       vendeur lui-même lors de la signature de l'attestation. */
+    if(!f_prof.value.trim())miss.push("Profession (registre des objets mobiliers)");}
   if(!f_adr.value.trim())miss.push("Adresse");if(!f_cp.value.trim())miss.push("Code postal");if(!f_ville.value.trim())miss.push("Ville");if(!f_pays.value)miss.push("Pays");
   if(miss.length)return alert("Champs obligatoires manquants : "+miss.join(", "));
   const o={type:f_type.value,email:f_email.value,societe:f_soc.value,siret:f_siret.value,tvaIntra:f_tva.value,civilite:f_civ.value,nom:f_nom.value,prenom:f_prenom.value,tel:f_tel.value,reg:f_reg.value,prof:f_prof.value,pidType:f_pidType.value,pidNum:f_pidNum.value,pidDate:f_pidDate.value,pidPar:f_pidPar.value,iban:f_iban.value,bic:f_bic.value,coord:f_coord.value,adr:f_adr.value,adr2:f_adr2.value,cp:f_cp.value,ville:f_ville.value,pays:f_pays.value};
@@ -6310,12 +6316,47 @@ function buildAttestationDoc(achatId){
   }
   /* 31 mm : la phrase, l'espace de signature et les libellés sous les traits.
      Réservés d'un bloc, sinon les traits se retrouvent sur l'autre page. */
+  /* ─── IDENTITÉ DU VENDEUR, REMPLIE PAR LE VENDEUR LUI-MÊME ───────────
+     Le registre des objets mobiliers exige quatre mentions sur la pièce
+     d'identité. Plutôt que Thibaud les recopie, le vendeur les saisit en
+     signant : c'est lui qui en atteste, et c'est une ligne de moins à taper.
+     On dessine les cases ICI, et on retient leur position exacte pour la
+     transmettre à DocuSeal. Jusqu'à présent la zone de signature était
+     déclarée à DocuSeal sur une coordonnée fixe, devinée : dès qu'une
+     commande avait beaucoup de lignes, le texte descendait et le champ
+     restait en place. Le générateur sait où il écrit — autant le lui
+     demander. */
+  var PH=doc.internal.pageSize.getHeight();
+  var champs=[];
+  var noter=function(nom,type,x,y,w,h){
+    champs.push({nom:nom,type:type,page:doc.internal.getNumberOfPages(),
+      x:+(x/W).toFixed(4),y:+(y/PH).toFixed(4),
+      w:+(w/W).toFixed(4),h:+(h/PH).toFixed(4)});
+  };
+  placer(46);
+  doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(35,35,35);
+  doc.text("IDENTITE DU VENDEUR (a completer et signer par le vendeur)",M,yt);
+  yt+=5;
+  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(110,110,110);
+  var bw=(W-2*M-6)/2, bh=9;
+  var cases=[["Nature de la piece d'identite","pidType"],["Numero","pidNum"],
+             ["Delivree le","pidDate"],["Delivree par (autorite)","pidPar"]];
+  cases.forEach(function(c,i){
+    var cx=M+(i%2)*(bw+6), cy=yt+Math.floor(i/2)*16;
+    doc.text(c[0],cx,cy);
+    doc.setDrawColor(190,190,190);doc.roundedRect(cx,cy+1.5,bw,bh,1.5,1.5);
+    noter(c[1],"text",cx,cy+1.5,bw,bh);
+  });
+  yt+=16*Math.ceil(cases.length/2)+4;
+
   placer(31);
+  doc.setFont("helvetica","normal");doc.setFontSize(10);
   doc.setTextColor(35,35,35);doc.text("Pour faire valoir ce que de droit.",M,yt);yt+=26;
   doc.setDrawColor(160,160,160);doc.line(M,yt,M+62,yt);doc.line(W-M-62,yt,W-M,yt);
   // Signature de l'entreprise (enregistree dans la fiche Societe) apposee automatiquement
   if(s&&s.signature){try{doc.addImage(s.signature,"PNG",W-M-58,yt-17,52,15);}catch(e){}}
   doc.setFontSize(9);doc.setTextColor(130,130,130);
+  noter("Signature","signature",M,yt-17,62,16);
   doc.text("Le vendeur",M,yt+5);doc.text("La societe acheteuse",W-M-62,yt+5);
   /* Le pied sur chaque page : dessiné une seule fois, il manquait sur toutes
      celles que le tableau avait ajoutées. */
@@ -6327,10 +6368,10 @@ function buildAttestationDoc(achatId){
     if(_np>1)doc.text(_pg+" / "+_np,W-M,PDF_PIED,{align:"right"});
   }
   doc.setPage(_np);
-  return {doc:doc,ref:ref,f:f,s:s,yt:yt,M:M,W:W};
+  return {doc:doc,ref:ref,f:f,s:s,yt:yt,M:M,W:W,champs:champs};
 }
 function printAttestation(achatId){var r=buildAttestationDoc(achatId);if(r&&r.doc)r.doc.save("Attestation-"+r.ref+".pdf");}
-function attestationBase64(achatId){var r=buildAttestationDoc(achatId);if(!r||!r.doc)return null;var uri=r.doc.output("datauristring");var b64=uri.indexOf(",")>=0?uri.split(",")[1]:uri;return {base64:b64,ref:r.ref,f:r.f};}
+function attestationBase64(achatId){var r=buildAttestationDoc(achatId);if(!r||!r.doc)return null;var uri=r.doc.output("datauristring");var b64=uri.indexOf(",")>=0?uri.split(",")[1]:uri;return {base64:b64,ref:r.ref,f:r.f,champs:r.champs||[]};}
 async function sendAttestationForSignature(achatId){
   var a=DB.achats.find(function(x){return x.id==achatId;});if(!a)return;
   var f=fourById(a.fournId);
@@ -6338,7 +6379,7 @@ async function sendAttestationForSignature(achatId){
   if(a.attestStatut==="En attente de signature"&&!confirm("Une demande de signature est déjà en attente pour cette commande. En renvoyer une nouvelle ?"))return;
   var att=attestationBase64(achatId);if(!att)return;
   try{
-    var res=await sb.functions.invoke("docuseal-send",{body:{achatId:a.id,pdfBase64:att.base64,signerName:(fourLabel(f)||f.nom||"Vendeur"),signerEmail:f.email,title:"Attestation de cession — "+achRef(a)}});
+    var res=await sb.functions.invoke("docuseal-send",{body:{achatId:a.id,pdfBase64:att.base64,signerName:(fourLabel(f)||f.nom||"Vendeur"),signerEmail:f.email,title:"Attestation de cession — "+achRef(a),champs:att.champs||[]}});
     if(res.error||!res.data||res.data.error||!res.data.documentId){console.log("docuseal-send",res);alert("L'envoi a échoué. Vérifie ta clé API DocuSeal et le déploiement de la fonction « docuseal-send ». (détail en console)");return;}
     a.attestStatut="En attente de signature";a.attestDocId=res.data.documentId;a.attestSentAt=today();
     logAct("Signature","Attestation envoyée",achRef(a)+" → "+f.email);
