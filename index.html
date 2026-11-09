@@ -1740,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-180158";
+var ERP_VERSION="20261109-181429";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -7990,8 +7990,6 @@ function openAchatNew(id){editAchatId=id;const a=id?DB.achats.find(x=>x.id==id):
           <option>Succession</option>
           <option>Autre</option>
         </select></div>
-        <div class="fld" style="grid-column:1/3"><label>Précision sur la provenance</label>
-          <input id="an_provDet" placeholder="Ex. achetée chez Courir à Clermont en 2024"></div>
       </div>
       <div id="an_pidInfo" class="sub" style="margin-top:2px;line-height:1.55"></div>
     </div>
@@ -8120,7 +8118,6 @@ function anPartSync(){
   var a=editAchatId?(DB.achats.find(function(x){return x.id==editAchatId;})||{}):{};
   var reg=document.getElementById("an_reg"),
       prov=document.getElementById("an_prov"),
-      det=document.getElementById("an_provDet"),
       info=document.getElementById("an_pidInfo");
   /* Déjà saisi sur la commande ? on le garde. Sinon on propose le mode de
      règlement habituel du vendeur, qu'on peut toujours changer. */
@@ -8130,7 +8127,6 @@ function anPartSync(){
      une attestation sans la mention que le registre exige. Le menu reste
      ouvert : les autres cas se choisissent en un clic, et « — » efface. */
   if(!prov.value)prov.value=a.provenance||PROV_DEFAUT;
-  if(!det.value)det.value=a.provenanceDet||"";
 
   /* L'identité du vendeur n'est pas ressaisie ici : elle vit sur sa fiche.
      On AFFICHE ce qu'on en sait, et on dit ce qui manque — c'est là, devant
@@ -8172,11 +8168,14 @@ async function saveAchatHeader(){
      personne ne le voie. On fige donc, comme la loi le demande. */
   if(four.type!=="Professionnel"){
     var _reg=document.getElementById("an_reg"),
-        _prov=document.getElementById("an_prov"),
-        _det=document.getElementById("an_provDet");
+        _prov=document.getElementById("an_prov");
     data.regMode=_reg?_reg.value:"";
     data.provenance=_prov?_prov.value:"";
-    data.provenanceDet=_det?_det.value:"";
+    /* provenanceDet n'est plus saisissable : le champ a été retiré du
+       formulaire. On ne l'écrase surtout PAS ici — des commandes anciennes en
+       portent une, et la remettre à vide au premier enregistrement effacerait
+       une mention du registre sans que personne ne s'en aperçoive.
+       L'attestation continue de l'imprimer quand elle existe. */
     data.vendeur={
       nom:four.nom||"", prenom:four.prenom||"", civilite:four.civilite||"",
       adr:[four.adr,four.adr2].filter(Boolean).join(" "),
