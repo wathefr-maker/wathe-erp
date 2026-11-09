@@ -1758,7 +1758,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-191004";
+var ERP_VERSION="20261109-192304";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -8406,9 +8406,22 @@ async function renderRegistre(){
   var meta=document.getElementById("rg_meta"),corps=document.getElementById("rg_rows");
   if(!meta||!corps)return;
   meta.textContent="Chargement…";
-  var r=await sb.from("registre_police").select("*").order("num",{ascending:true});
-  if(r.error){meta.textContent="Lecture impossible : "+(r.error.message||r.error);corps.innerHTML="";return;}
-  _registre=r.data||[];
+  /* PAR TRANCHES DE 1000. L'API en renvoie au plus mille par requête et ne
+     prévient pas : un select simple aurait montré 1 000 écritures sur 1 200
+     sans le moindre message, et l'export aurait été amputé d'autant. C'est
+     une erreur qu'on ne voit que le jour du contrôle. Au rythme actuel, le
+     mur tombe vers 2028 — autant ne pas l'y laisser. */
+  var tout=[],depuis=0,TRANCHE=1000;
+  while(true){
+    var r=await sb.from("registre_police").select("*")
+            .order("num",{ascending:true}).range(depuis,depuis+TRANCHE-1);
+    if(r.error){meta.textContent="Lecture impossible : "+(r.error.message||r.error);corps.innerHTML="";return;}
+    var lot=r.data||[];
+    tout=tout.concat(lot);
+    if(lot.length<TRANCHE)break;
+    depuis+=TRANCHE;
+  }
+  _registre=tout;
   rgPeindre();
 }
 
