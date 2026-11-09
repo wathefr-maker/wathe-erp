@@ -1740,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-173009";
+var ERP_VERSION="20261109-173758";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -6253,10 +6253,16 @@ function buildAttestationDoc(achatId){
   if(_pid("prof"))sellerLines.push("Profession : "+_pid("prof"));
   if(_pid("pidType")){
     sellerLines.push(_pid("pidType")+(_pid("pidNum")?(" n "+_pid("pidNum")):""));
-    var _d=[];
-    if(_pid("pidDate"))_d.push("delivree le "+dateFr(_pid("pidDate")));
-    if(_pid("pidPar"))_d.push("par "+_pid("pidPar"));
-    if(_d.length)sellerLines.push(_d.join(" "));
+    /* pidDeliv est la mention d'un seul tenant saisie par le vendeur ; les
+       deux champs separes restent lus pour les fiches d'avant ce changement. */
+    var _dv=_pid("pidDeliv");
+    if(!_dv){
+      var _d=[];
+      if(_pid("pidDate"))_d.push("delivree le "+dateFr(_pid("pidDate")));
+      if(_pid("pidPar"))_d.push("par "+_pid("pidPar"));
+      _dv=_d.join(" ");
+    }
+    if(_dv)sellerLines.push("Delivree : "+_dv);
   }
   const buyerLines=[s.nom,s.adr,((s.cp||"")+" "+(s.ville||"")).trim(),s.pays].filter(Boolean);
   const buyerMeta=[s.tva?("N TVA : "+s.tva):"",s.siret?("SIRET : "+s.siret):""].filter(Boolean);
@@ -6342,18 +6348,27 @@ function buildAttestationDoc(achatId){
   var bw=(W-2*M-6)/2, bh=9;
   /* Libelles ecrits POUR LE VENDEUR, pas pour le Code penal. « Nature de la
      piece » est le mot du texte ; personne ne le comprend du premier coup.
-     L'information exigee est la meme, seule la formulation change. */
-  var cases=[["Type de document (carte d'identite, passeport...)","pidType"],
-             ["Numero du document","pidNum"],
-             ["Date de delivrance","pidDate"],
-             ["Delivre par (mairie, prefecture...)","pidPar"]];
-  cases.forEach(function(c,i){
-    var cx=M+(i%2)*(bw+6), cy=yt+Math.floor(i/2)*16;
+     L'information exigee est la meme, seule la formulation change.
+
+     La delivrance tient en UNE case. Le registre demande la date ET
+     l'autorite, mais sur une piece d'identite les deux sont ecrites d'un
+     bloc — « delivree le 14/06/2021 par la Prefecture de l'Allier ». Les
+     separer en deux champs obligeait le vendeur a decouper ce qu'il a sous
+     les yeux, pour rien : l'information exigee est la meme, recopiee telle
+     quelle. */
+  var cases=[["Type de document (carte d'identite, passeport...)","pidType",0],
+             ["Numero du document","pidNum",0],
+             ["Delivre le et par qui (ex. 14/06/2021, Prefecture de l'Allier)","pidDeliv",1]];
+  var cx=M, cy=yt;
+  cases.forEach(function(c){
+    var large=c[2]?(W-2*M):bw;
+    if(c[2]&&cx!==M){cx=M;cy+=16;}            /* une case pleine largeur repart a la ligne */
     doc.text(c[0],cx,cy);
-    doc.setDrawColor(190,190,190);doc.roundedRect(cx,cy+1.5,bw,bh,1.5,1.5);
-    noter(c[1],"text",cx,cy+1.5,bw,bh);
+    doc.setDrawColor(190,190,190);doc.roundedRect(cx,cy+1.5,large,bh,1.5,1.5);
+    noter(c[1],"text",cx,cy+1.5,large,bh);
+    if(c[2]||cx!==M){cx=M;cy+=16;}else{cx=M+bw+6;}
   });
-  yt+=16*Math.ceil(cases.length/2)+4;
+  yt=cy+4;
 
   placer(31);
   doc.setFont("helvetica","normal");doc.setFontSize(10);
