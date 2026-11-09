@@ -1740,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-172500";
+var ERP_VERSION="20261109-173009";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -6340,8 +6340,13 @@ function buildAttestationDoc(achatId){
   yt+=5;
   doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(110,110,110);
   var bw=(W-2*M-6)/2, bh=9;
-  var cases=[["Nature de la piece d'identite","pidType"],["Numero","pidNum"],
-             ["Delivree le","pidDate"],["Delivree par (autorite)","pidPar"]];
+  /* Libelles ecrits POUR LE VENDEUR, pas pour le Code penal. « Nature de la
+     piece » est le mot du texte ; personne ne le comprend du premier coup.
+     L'information exigee est la meme, seule la formulation change. */
+  var cases=[["Type de document (carte d'identite, passeport...)","pidType"],
+             ["Numero du document","pidNum"],
+             ["Date de delivrance","pidDate"],
+             ["Delivre par (mairie, prefecture...)","pidPar"]];
   cases.forEach(function(c,i){
     var cx=M+(i%2)*(bw+6), cy=yt+Math.floor(i/2)*16;
     doc.text(c[0],cx,cy);
