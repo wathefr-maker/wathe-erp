@@ -615,6 +615,7 @@
         <div class="sub" style="margin:12px 0 0">Livre de police — code pénal, art. R321-3 et suivants. Une écriture par objet, dans l'ordre des numéros. Rien ne s'y modifie ni ne s'y efface.</div>
         <div class="filters"><input id="rg_q" placeholder="Rechercher : vendeur, objet, SKU, n° d'ordre, commande…" style="width:340px">
           <input id="rg_d1" type="date" title="Du"><input id="rg_d2" type="date" title="Au">
+          <button class="btn" id="rg_ordre" title="Inverser l'ordre d'affichage">↓ Plus récentes d'abord</button>
           <span class="spacer"></span>
           <button class="btn" id="rg_csv">Export CSV</button>
           <button class="btn v" id="rg_pdf">Export PDF</button></div>
@@ -1757,7 +1758,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-185511";
+var ERP_VERSION="20261109-191004";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -8379,17 +8380,26 @@ async function registreALaSignature(a){
    réécrit les tables qu'il connaît, or la base refuse toute réécriture ici.
    On le lit donc directement, à l'ouverture de l'écran. */
 var _registre=[],_rgPage=1,RG_PS=100;
-var rgFilt={q:"",d1:"",d2:""};
+/* recent:1 = la plus récente en tête. C'est l'ordre pour travailler — sans
+   lui, ouvrir le registre affiche juillet et il faut dérouler 156 lignes pour
+   voir l'achat du jour. L'EXPORT, lui, reste toujours dans l'ordre des
+   numéros : un registre se présente dans son ordre de tenue, pas à l'envers. */
+var rgFilt={q:"",d1:"",d2:"",recent:1};
 
-function rgLignesFiltrees(){
+function rgLignesFiltrees(ordreRegistre){
   var q=(rgFilt.q||"").toLowerCase().trim();
-  return _registre.filter(function(e){
+  var L=_registre.filter(function(e){
     if(rgFilt.d1&&String(e.date_op||"")<rgFilt.d1)return false;
     if(rgFilt.d2&&String(e.date_op||"")>rgFilt.d2)return false;
     if(!q)return true;
     return [e.num,e.objet_desc,e.objet_sku,e.objet_marque,e.objet_ref,e.v_nom,
             e.v_prenom,e.source_ref,e.pid_num].join(" ").toLowerCase().indexOf(q)>=0;
   });
+  /* On trie sur le NUMÉRO, pas sur la date : plusieurs achats partagent le
+     même jour, et seul le numéro d'ordre les départage sans ambiguïté. Il
+     suit la chronologie par construction, la base l'attribue dans l'ordre. */
+  L.sort(function(x,y){return (ordreRegistre||!rgFilt.recent)?(x.num-y.num):(y.num-x.num);});
+  return L;
 }
 
 async function renderRegistre(){
@@ -8459,7 +8469,10 @@ var RG_COLS=[["num","N° d'ordre"],["saisi_le","Horodatage"],["type_ecriture","T
   ["societe","Société"],["source_ref","Commande"],["saisi_par","Saisi par"]];
 
 function rgExportCSV(){
-  var L=rgLignesFiltrees();
+  // L'export sort TOUJOURS dans l'ordre des numéros, quel que soit
+  // l'ordre choisi à l'écran : un registre se présente dans son ordre
+  // de tenue, et un PDF numéroté 156 → 1 serait illisible en contrôle.
+  var L=rgLignesFiltrees(true);
   if(!L.length)return alert("Aucune écriture à exporter.");
   /* Point-virgule et BOM : sans eux Excel en français colle tout dans la
      première colonne et mange les accents. */
@@ -8476,7 +8489,10 @@ function rgExportCSV(){
 function rgExportPDF(){
   if(!window.jspdf||!window.jspdf.jsPDF)
     return alert("Le générateur PDF n'est pas encore chargé, réessaie dans un instant.");
-  var L=rgLignesFiltrees();
+  // L'export sort TOUJOURS dans l'ordre des numéros, quel que soit
+  // l'ordre choisi à l'écran : un registre se présente dans son ordre
+  // de tenue, et un PDF numéroté 156 → 1 serait illisible en contrôle.
+  var L=rgLignesFiltrees(true);
   if(!L.length)return alert("Aucune écriture à exporter.");
   var jsPDF=window.jspdf.jsPDF;
   /* Paysage : onze colonnes dont trois d'identité ne tiennent pas en portrait,
@@ -8524,6 +8540,12 @@ function rgExportPDF(){
   if(_q)_q.oninput=function(){rgFilt.q=_q.value;_rgPage=1;rgPeindre();};
   if(_d1)_d1.onchange=function(){rgFilt.d1=_d1.value;_rgPage=1;rgPeindre();};
   if(_d2)_d2.onchange=function(){rgFilt.d2=_d2.value;_rgPage=1;rgPeindre();};
+  var _o=document.getElementById("rg_ordre");
+  if(_o)_o.onclick=function(){
+    rgFilt.recent=rgFilt.recent?0:1;_rgPage=1;
+    _o.textContent=rgFilt.recent?"↓ Plus récentes d'abord":"↑ Ordre du registre (n° 1 en tête)";
+    rgPeindre();
+  };
   var _c=document.getElementById("rg_csv");if(_c)_c.onclick=rgExportCSV;
   var _p=document.getElementById("rg_pdf");if(_p)_p.onclick=rgExportPDF;
 
