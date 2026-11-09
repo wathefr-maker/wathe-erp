@@ -984,6 +984,25 @@
     <div class="fld"><label>Prénom *</label><input id="f_prenom"></div>
     <div class="fld"><label>N° de téléphone</label><input id="f_tel"></div>
     <div class="fld"></div>
+    <!-- LE REGISTRE DES OBJETS MOBILIERS (livre de police) EXIGE CES MENTIONS.
+         Code pénal R321-3 : pour un achat à un particulier, il faut sa qualité
+         (profession) et sa pièce d'identité — nature, numéro, date et autorité
+         de délivrance. Quatre mentions, pas une de moins.
+         On ne stocke PAS de photo de la pièce : le registre ne l'exige pas, et
+         en conserver une ferait entrer Thibaud dans des obligations RGPD que la
+         loi ne lui demande pas. -->
+    <div class="seclbl part">Registre des objets mobiliers</div>
+    <div class="fld part"><label>Profession</label><input id="f_prof" placeholder="Ex. étudiant, artisan, retraité…"></div>
+    <div class="fld part"><label>Pièce d'identité — nature</label><select id="f_pidType">
+      <option value="">—</option>
+      <option>Carte nationale d'identité</option>
+      <option>Passeport</option>
+      <option>Titre de séjour</option>
+      <option>Permis de conduire</option>
+    </select></div>
+    <div class="fld part"><label>Pièce d'identité — numéro</label><input id="f_pidNum"></div>
+    <div class="fld part"><label>Délivrée le</label><input id="f_pidDate" type="date"></div>
+    <div class="fld part" style="grid-column:1/3"><label>Délivrée par (autorité)</label><input id="f_pidPar" placeholder="Ex. Préfecture de l'Allier, Mairie de Vichy…"></div>
     <div class="seclbl pro">Professionnel</div>
     <div class="fld pro"><label>Société</label><input id="f_soc"></div>
     <div class="fld pro"><label>SIRET</label><input id="f_siret"></div>
@@ -1721,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261106-184806";
+var ERP_VERSION="20261109-170443";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -5554,6 +5573,9 @@ detailFourn.onclick=async e=>{const back=e.target.closest("[data-back]"),ed=e.ta
   if(del){const id=+del.dataset.del;if(DB.articles.some(a=>a.fourId==id))return alert("Impossible : des pièces de stock sont liées à ce fournisseur.");if(confirm("Supprimer ce fournisseur ?")){const _f=DB.fournisseurs.find(f=>f.id==id);DB.fournisseurs=DB.fournisseurs.filter(f=>f.id!=id);logAct("Suppression","Fournisseur",fourLabel(_f));await save();fillSelects();show("fourn");}}};
 function toggleProFields(){const pro=f_type.value==="Professionnel";
   document.querySelectorAll("#ovF .pro").forEach(el=>el.classList.toggle("hide",!pro));
+  /* Les mentions du registre ne concernent QUE les particuliers : un
+     professionnel a un SIRET, c'est lui qui tient son propre registre. */
+  document.querySelectorAll("#ovF .part").forEach(el=>el.classList.toggle("hide",pro));
   const lbl=(inp,t)=>{const l=inp.parentElement.querySelector("label");if(l)l.textContent=t;};
   lbl(f_nom,pro?"Nom":"Nom *");lbl(f_prenom,pro?"Prénom":"Prénom *");
   lbl(f_soc,"Société *");lbl(f_siret,"SIRET *");lbl(f_tva,"N° TVA intracommunautaire *");}
@@ -5563,7 +5585,7 @@ function openFourn(id){editF=id;mFTitle.textContent=id?"Modifier le fournisseur"
   const f=id?DB.fournisseurs.find(x=>x.id==id):{type:"Particulier",email:"",societe:"",siret:"",tvaIntra:"",civilite:"M.",nom:"",prenom:"",tel:"",reg:"",iban:"",bic:"",coord:"",adr:"",adr2:"",cp:"",ville:"",pays:"France"};
   f_type.value=f.type||"Particulier";f_email.value=f.email||"";f_soc.value=f.societe||"";f_siret.value=f.siret||"";f_tva.value=f.tvaIntra||"";
   f_civ.value=f.civilite||"";f_nom.value=f.nom||"";f_prenom.value=f.prenom||"";f_tel.value=f.tel||"";
-  f_reg.value=f.reg||"";f_iban.value=f.iban||"";f_bic.value=f.bic||"";f_coord.value=f.coord||"";
+  f_reg.value=f.reg||"";f_prof.value=f.prof||"";f_pidType.value=f.pidType||"";f_pidNum.value=f.pidNum||"";f_pidDate.value=f.pidDate||"";f_pidPar.value=f.pidPar||"";f_iban.value=f.iban||"";f_bic.value=f.bic||"";f_coord.value=f.coord||"";
   f_adr.value=f.adr||"";f_adr2.value=f.adr2||"";f_cp.value=f.cp||"";f_ville.value=f.ville||"";f_pays.value=f.pays||"France";
   toggleProFields();ovF.classList.add("show");}
 saveFourn.onclick=async()=>{const miss=[],pro=f_type.value==="Professionnel";
@@ -5572,7 +5594,7 @@ saveFourn.onclick=async()=>{const miss=[],pro=f_type.value==="Professionnel";
   else{if(!f_nom.value.trim())miss.push("Nom");if(!f_prenom.value.trim())miss.push("Prénom");}
   if(!f_adr.value.trim())miss.push("Adresse");if(!f_cp.value.trim())miss.push("Code postal");if(!f_ville.value.trim())miss.push("Ville");if(!f_pays.value)miss.push("Pays");
   if(miss.length)return alert("Champs obligatoires manquants : "+miss.join(", "));
-  const o={type:f_type.value,email:f_email.value,societe:f_soc.value,siret:f_siret.value,tvaIntra:f_tva.value,civilite:f_civ.value,nom:f_nom.value,prenom:f_prenom.value,tel:f_tel.value,reg:f_reg.value,iban:f_iban.value,bic:f_bic.value,coord:f_coord.value,adr:f_adr.value,adr2:f_adr2.value,cp:f_cp.value,ville:f_ville.value,pays:f_pays.value};
+  const o={type:f_type.value,email:f_email.value,societe:f_soc.value,siret:f_siret.value,tvaIntra:f_tva.value,civilite:f_civ.value,nom:f_nom.value,prenom:f_prenom.value,tel:f_tel.value,reg:f_reg.value,prof:f_prof.value,pidType:f_pidType.value,pidNum:f_pidNum.value,pidDate:f_pidDate.value,pidPar:f_pidPar.value,iban:f_iban.value,bic:f_bic.value,coord:f_coord.value,adr:f_adr.value,adr2:f_adr2.value,cp:f_cp.value,ville:f_ville.value,pays:f_pays.value};
   if(editF)Object.assign(DB.fournisseurs.find(x=>x.id==editF),o);else{o.id=newId(DB.fournisseurs);DB.fournisseurs.push(o);}
   logAct(editF?"Modification":"Création","Fournisseur",fourLabel(o)||o.email);await save();fillSelects();ovF.classList.remove("show");renderFournisseurs();if(editF&&!detailFourn.classList.contains("hide"))openFournDetail(editF);if(_qaCb){const cb=_qaCb;_qaCb=null;cb(editF?DB.fournisseurs.find(x=>x.id==editF):o);}};
 [ovF].forEach(o=>o.addEventListener("click",e=>{if(e.target===o)o.classList.remove("show");}));
@@ -6214,7 +6236,22 @@ function buildAttestationDoc(achatId){
   if(!window.jspdf||!window.jspdf.jsPDF){alert("Le generateur PDF n'est pas encore charge (verifie ta connexion internet), reessaie dans un instant.");return;}
   const s=socById(a.societeId)||{};
   const sellerName=fourLabel(f)||((f.civilite||"")+" "+(f.nom||"")+" "+(f.prenom||"")).trim();
+  /* On lit d'abord l'identité FIGÉE sur la commande ; la fiche vendeur ne
+     sert que de repli pour les attestations d'avant ce relevé. */
+  const _v=(a&&a.vendeur)||{};
+  const _pid=function(k){return String(_v[k]||f[k]||"").trim();};
   const sellerLines=[sellerName,f.adr,f.adr2,((f.cp||"")+" "+(f.ville||"")).trim(),f.pays].filter(Boolean);
+  /* Les mentions du registre des objets mobiliers. Le vendeur SIGNE cette
+     attestation : en les y imprimant, c'est lui qui atteste de leur
+     exactitude, et non Thibaud qui l'affirme seul en cas de contrôle. */
+  if(_pid("prof"))sellerLines.push("Profession : "+_pid("prof"));
+  if(_pid("pidType")){
+    sellerLines.push(_pid("pidType")+(_pid("pidNum")?(" n "+_pid("pidNum")):""));
+    var _d=[];
+    if(_pid("pidDate"))_d.push("delivree le "+dateFr(_pid("pidDate")));
+    if(_pid("pidPar"))_d.push("par "+_pid("pidPar"));
+    if(_d.length)sellerLines.push(_d.join(" "));
+  }
   const buyerLines=[s.nom,s.adr,((s.cp||"")+" "+(s.ville||"")).trim(),s.pays].filter(Boolean);
   const buyerMeta=[s.tva?("N TVA : "+s.tva):"",s.siret?("SIRET : "+s.siret):""].filter(Boolean);
   const ref=a.ref||achRef(a);
@@ -6261,7 +6298,16 @@ function buildAttestationDoc(achatId){
   doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setTextColor(20,20,20);
   doc.text("Total TTC : "+eur(total),W-M,yt,{align:"right"});yt+=11;
   doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(70,70,70);
-  if(f.reg){placer(7);doc.text("Mode de reglement : "+f.reg,M,yt);yt+=7;}
+  /* Le règlement de CETTE transaction, pas le mode habituel du vendeur. */
+  var _regT=String((a&&a.regMode)||f.reg||"").trim();
+  if(_regT){placer(7);doc.text("Mode de reglement : "+_regT,M,yt);yt+=7;}
+  var _prov=String((a&&a.provenance)||"").trim();
+  var _provD=String((a&&a.provenanceDet)||"").trim();
+  if(_prov){
+    placer(7);
+    doc.text(("Provenance declaree par le vendeur : "+_prov+(_provD?(" ("+_provD+")"):"")).slice(0,110),M,yt);
+    yt+=7;
+  }
   /* 31 mm : la phrase, l'espace de signature et les libellés sous les traits.
      Réservés d'un bloc, sinon les traits se retrouvent sur l'autre page. */
   placer(31);
@@ -7865,6 +7911,31 @@ function openAchatNew(id){editAchatId=id;const a=id?DB.achats.find(x=>x.id==id):
       <div class="fld" id="an_factwrap"><label>N° Facture</label><input id="an_fact" value="${esc(a.nFacture||"")}" placeholder="N° Facture pour autofacturation"></div>
       <div class="fld"><label>Société *</label><select id="an_soc"></select><div id="an_socerr" style="display:none;color:var(--red);font-size:13px;margin-top:6px;font-weight:600"></div></div>
     </div>
+    <!-- RACHAT À UN PARTICULIER : les mentions du registre des objets
+         mobiliers. Caché pour un professionnel, qui tient son propre
+         registre. -->
+    <div class="dcard" id="an_partBloc" style="display:none;grid-column:1/3">
+      <h3>Rachat à un particulier — registre des objets mobiliers</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="fld"><label>Mode de règlement</label><select id="an_reg">
+          <option value="">—</option>
+          <option>Espèces</option><option>Virement</option><option>Chèque</option>
+          <option>Carte bancaire</option><option>Avoir / bon d'achat</option>
+        </select></div>
+        <div class="fld"><label>Provenance déclarée par le vendeur</label><select id="an_prov">
+          <option value="">—</option>
+          <option>Achetée neuve par le vendeur</option>
+          <option>Achetée d'occasion par le vendeur</option>
+          <option>Reçue en cadeau</option>
+          <option>Reçue dans un lot / dressing personnel</option>
+          <option>Succession</option>
+          <option>Autre</option>
+        </select></div>
+        <div class="fld" style="grid-column:1/3"><label>Précision sur la provenance</label>
+          <input id="an_provDet" placeholder="Ex. achetée chez Courir à Clermont en 2024"></div>
+      </div>
+      <div id="an_pidInfo" class="sub" style="margin-top:2px;line-height:1.55"></div>
+    </div>
     <div class="dcard"><h3>Stockage</h3>
       <div class="fld"><label>Ville *</label><div style="display:flex;gap:8px"><select id="an_ville" style="flex:1"></select><button class="iconbtn" id="an_addville" title="Ajouter une ville">+</button></div></div>
       <div class="fld"><label>Emplacement *</label><div style="display:flex;gap:8px"><select id="an_emp" style="flex:1"></select><button class="iconbtn" id="an_addemp" title="Ajouter un emplacement">+</button></div></div>
@@ -7880,7 +7951,8 @@ function openAchatNew(id){editAchatId=id;const a=id?DB.achats.find(x=>x.id==id):
   fillVille();fillEmp();
   const upJustif=()=>{const f=fourById(selFour);if(!f||!f.id){an_justif.innerHTML='<span class="muted" style="font-weight:400">Sélectionne un fournisseur pour déterminer le justificatif.</span>';an_factwrap.style.display="";return;}
     if(achJustifTypeFour(f)==="Facture"){an_justif.innerHTML='<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2Z"/><path d="M8 8h8M8 12h8"/></svg> <b>Facture</b> requise — fournisseur professionnel';an_factwrap.style.display="";}
-    else{an_justif.innerHTML='📝 <b>Attestation de cession</b> générée automatiquement — fournisseur particulier';an_factwrap.style.display="none";}};
+    else{an_justif.innerHTML='📝 <b>Attestation de cession</b> générée automatiquement — fournisseur particulier';an_factwrap.style.display="none";}
+    anPartSync();};
   const q=an_fourq,res=an_fourres;
   if(selFour)q.value=fourLabel(fourById(selFour));
   const renderRes=term=>{const t=(term||"").toLowerCase();const ms=DB.fournisseurs.filter(f=>!t||(fourLabel(f)+" "+(f.email||"")).toLowerCase().includes(t)).slice(0,8);res.innerHTML=(ms.length?ms.map(f=>`<div class="opt" data-f="${f.id}">${esc(fourLabel(f))} <span class="muted" style="font-size:12px">· ${f.type||"Particulier"}</span></div>`).join(""):'<div class="opt muted" style="font-weight:400">Aucun fournisseur</div>')+`<div class="opt" data-fnew="1" style="color:var(--violet);font-weight:700;border-top:1px solid var(--line)">+ Créer un nouveau fournisseur</div>`;res.style.display="block";};
@@ -7960,6 +8032,59 @@ async function shopSyncApresChangementSociete(pieces){
   await shopSyncModelsForArticles(pieces||[]);
 }
 
+/* LE BLOC « RACHAT À UN PARTICULIER ».
+
+   Il n'apparaît que pour un fournisseur particulier : un professionnel a un
+   SIRET et tient son propre registre.
+
+   Le mode de règlement est pré-rempli depuis la fiche vendeur, mais il se
+   SAISIT ICI, par commande : on peut payer Nathan en espèces une fois et par
+   virement la suivante, et c'est le règlement de CETTE transaction que le
+   registre doit porter. */
+/* L'ERP n'a pas d'utilitaire de date : il écrit partout
+   split("-").reverse().join("/"). On le nomme une fois, ici, pour les deux
+   endroits qui affichent la date de délivrance de la pièce. */
+function dateFr(s){
+  s=String(s||"").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)?s.split("-").reverse().join("/"):s;
+}
+function anPartSync(){
+  var bloc=document.getElementById("an_partBloc");
+  if(!bloc)return;
+  var f=fourById(selFour);
+  var part=!!(f&&f.id&&f.type!=="Professionnel");
+  bloc.style.display=part?"":"none";
+  if(!part)return;
+  var a=editAchatId?(DB.achats.find(function(x){return x.id==editAchatId;})||{}):{};
+  var reg=document.getElementById("an_reg"),
+      prov=document.getElementById("an_prov"),
+      det=document.getElementById("an_provDet"),
+      info=document.getElementById("an_pidInfo");
+  /* Déjà saisi sur la commande ? on le garde. Sinon on propose le mode de
+     règlement habituel du vendeur, qu'on peut toujours changer. */
+  if(!reg.value)reg.value=a.regMode||f.reg||"";
+  if(!prov.value)prov.value=a.provenance||"";
+  if(!det.value)det.value=a.provenanceDet||"";
+
+  /* L'identité du vendeur n'est pas ressaisie ici : elle vit sur sa fiche.
+     On AFFICHE ce qu'on en sait, et on dit ce qui manque — c'est là, devant
+     la personne, qu'on peut encore le demander. */
+  var manque=[];
+  if(!String(f.prof||"").trim())manque.push("profession");
+  if(!String(f.pidType||"").trim())manque.push("nature de la pièce");
+  if(!String(f.pidNum||"").trim())manque.push("numéro");
+  if(!String(f.pidDate||"").trim())manque.push("date de délivrance");
+  if(!String(f.pidPar||"").trim())manque.push("autorité");
+  if(manque.length){
+    info.innerHTML='<span style="color:var(--red);font-weight:600">Incomplet pour le registre :</span> '
+      +esc(manque.join(", "))+'. À compléter sur la fiche de '+esc(fourLabel(f))+'.';
+  }else{
+    info.innerHTML='Identité relevée : '+esc(f.pidType)+' n° '+esc(f.pidNum)
+      +', délivrée le '+esc(dateFr(f.pidDate))+' par '+esc(f.pidPar)
+      +' · '+esc(f.prof)+'.';
+  }
+}
+
 async function saveAchatHeader(){
   var _afterSaveAppro=function(){try{if(curAchat)apSyncAchat(curAchat);}catch(e){}};
   if(!selFour)return alert("Choisis un fournisseur.");
@@ -7969,6 +8094,30 @@ async function saveAchatHeader(){
   if(!an_emp.value)return alert("Choisis un emplacement.");
   const four=fourById(selFour);
   const data={date:an_date.value,fournId:+selFour,nFacture:an_fact.value,societeId:+an_soc.value,ville:an_ville.value,emplacement:an_emp.value,attestation:(four.type!=="Professionnel")?1:0};
+  /* ON RECOPIE L'IDENTITÉ SUR LA COMMANDE, ON NE S'Y RÉFÈRE PAS.
+
+     Le registre doit dire ce qui était vrai LE JOUR DE L'ACHAT. Si l'on se
+     contentait de pointer vers la fiche du vendeur, le jour où il revient
+     avec un nouveau passeport et qu'on met sa fiche à jour, l'écriture
+     d'aujourd'hui afficherait rétroactivement le mauvais document — sans que
+     personne ne le voie. On fige donc, comme la loi le demande. */
+  if(four.type!=="Professionnel"){
+    var _reg=document.getElementById("an_reg"),
+        _prov=document.getElementById("an_prov"),
+        _det=document.getElementById("an_provDet");
+    data.regMode=_reg?_reg.value:"";
+    data.provenance=_prov?_prov.value:"";
+    data.provenanceDet=_det?_det.value:"";
+    data.vendeur={
+      nom:four.nom||"", prenom:four.prenom||"", civilite:four.civilite||"",
+      adr:[four.adr,four.adr2].filter(Boolean).join(" "),
+      cp:four.cp||"", ville:four.ville||"", pays:four.pays||"",
+      prof:four.prof||"",
+      pidType:four.pidType||"", pidNum:four.pidNum||"",
+      pidDate:four.pidDate||"", pidPar:four.pidPar||"",
+      figeLe:new Date().toISOString(),
+    };
+  }
   if(editAchatId){const a=DB.achats.find(x=>x.id==editAchatId);
     /* On retient la société AVANT de l'écraser : c'est la seule façon de
        savoir qu'elle a changé, et donc que les paires doivent suivre. */
