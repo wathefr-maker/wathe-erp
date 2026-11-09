@@ -1740,7 +1740,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-174651";
+var ERP_VERSION="20261109-180158";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -8107,6 +8107,9 @@ function dateFr(s){
   s=String(s||"").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(s)?s.split("-").reverse().join("/"):s;
 }
+/* Doit correspondre AU MOT PRÈS à une des options de #an_prov : un libellé
+   qui n'existe pas dans la liste laisserait le menu sur « — » sans rien dire. */
+var PROV_DEFAUT="Achetée neuve par le vendeur";
 function anPartSync(){
   var bloc=document.getElementById("an_partBloc");
   if(!bloc)return;
@@ -8122,7 +8125,11 @@ function anPartSync(){
   /* Déjà saisi sur la commande ? on le garde. Sinon on propose le mode de
      règlement habituel du vendeur, qu'on peut toujours changer. */
   if(!reg.value)reg.value=a.regMode||f.reg||"";
-  if(!prov.value)prov.value=a.provenance||"";
+  /* Provenance : « achetée neuve par le vendeur » par défaut, parce que c'est
+     le cas de très loin le plus fréquent et que la laisser vide fait sortir
+     une attestation sans la mention que le registre exige. Le menu reste
+     ouvert : les autres cas se choisissent en un clic, et « — » efface. */
+  if(!prov.value)prov.value=a.provenance||PROV_DEFAUT;
   if(!det.value)det.value=a.provenanceDet||"";
 
   /* L'identité du vendeur n'est pas ressaisie ici : elle vit sur sa fiche.
