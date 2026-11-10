@@ -809,11 +809,11 @@
           <div class="fld" style="margin:0;flex:2;min-width:220px"><label>Code article (réf. / code-barres)</label><input id="vb_code" placeholder="ex. 2606190000165" oninput="vbPrefill()"></div>
           <div class="fld" style="margin:0;min-width:150px"><label>Prix de vente TTC (€)</label><input id="vb_pv" type="number" step="0.01"></div>
           <div class="fld" style="margin:0;min-width:128px"><label>Règlement</label>
-            <select id="vb_reg"><option>CB</option><option>Espèces</option><option>Chèque</option><option>PNF</option><option>Avoir</option></select></div>
+            <select id="vb_reg"><option value="">— à choisir —</option><option>CB</option><option>Espèces</option><option>Chèque</option><option>PNF</option><option>Avoir</option></select></div>
           <button class="btn" id="vbM2Btn" onclick="vbM2Toggle()" style="align-self:flex-end;padding:9px 12px;font-size:12.5px">+ 2ᵉ moyen</button>
           <div id="vbM2Box" class="hide" style="display:flex;gap:10px;align-items:flex-end">
             <div class="fld" style="margin:0;min-width:122px"><label>2ᵉ moyen</label>
-              <select id="vb_reg2"><option>Espèces</option><option>CB</option><option>Chèque</option><option>PNF</option><option>Avoir</option></select></div>
+              <select id="vb_reg2"><option value="">— à choisir —</option><option>Espèces</option><option>CB</option><option>Chèque</option><option>PNF</option><option>Avoir</option></select></div>
             <div class="fld" style="margin:0;width:110px"><label>Montant</label>
               <input id="vb_mt2" type="number" step="0.01" min="0" placeholder="0" oninput="vbM2Info()"></div>
             <div id="vbM2Info" class="muted" style="font-size:11.5px;padding-bottom:9px"></div>
@@ -1758,7 +1758,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261110-093255";
+var ERP_VERSION="20261110-095327";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -2573,7 +2573,7 @@ function vbM2Get(){
   if(!bx||bx.classList.contains("hide"))return null;
   var m=parseFloat((document.getElementById("vb_mt2")||{}).value)||0;
   if(!(m>0))return null;
-  return {moyen:(document.getElementById("vb_reg2")||{}).value||"Espèces",montant:Math.round(m*100)/100};
+  return {moyen:(document.getElementById("vb_reg2")||{}).value||"",montant:Math.round(m*100)/100};
 }
 function vbM2Info(){
   var el=document.getElementById("vbM2Info");if(!el)return;
@@ -2581,15 +2581,15 @@ function vbM2Info(){
   var d=vbM2Get();
   if(!d){el.textContent="";el.style.color="";return;}
   var reste=Math.round((pv-d.montant)*100)/100;
-  var reg1=(document.getElementById("vb_reg")||{}).value||"CB";
+  var reg1=(document.getElementById("vb_reg")||{}).value||"";
   if(reste<-0.005){el.textContent="Montant supérieur au prix.";el.style.color="#b91c1c";}
-  else{el.textContent="→ "+reg1+" "+eur(reste)+" + "+d.moyen+" "+eur(d.montant);el.style.color="";}
+  else{el.textContent="→ "+(reg1||"(règlement à choisir)")+" "+eur(reste)+" + "+(d.moyen||"(2ᵉ moyen à choisir)")+" "+eur(d.montant);el.style.color="";}
 }
 function vbM2Split(pv){
   var d=vbM2Get();if(!d)return null;
   var reste=Math.round((pv-d.montant)*100)/100;
   if(reste<-0.005)return null;
-  var reg1=(document.getElementById("vb_reg")||{}).value||"CB";
+  var reg1=(document.getElementById("vb_reg")||{}).value||"";
   var o={};o[d.moyen]=d.montant;
   if(reste>0.004)o[reg1]=(o[reg1]||0)+reste;
   return o;
@@ -3146,7 +3146,7 @@ function rz2Get(i){
   if(!bx||bx.classList.contains("hide"))return null;
   var m=parseFloat((document.querySelector('._rzPv2[data-i="'+i+'"]')||{}).value)||0;
   if(!(m>0))return null;
-  return {moyen:(document.querySelector('._rzReg2[data-i="'+i+'"]')||{}).value||"Espèces",montant:Math.round(m*100)/100};
+  return {moyen:(document.querySelector('._rzReg2[data-i="'+i+'"]')||{}).value||"",montant:Math.round(m*100)/100};
 }
 function rz2Info(i){
   var el=document.querySelector('._rz2Info[data-i="'+i+'"]');if(!el)return;
@@ -3154,16 +3154,16 @@ function rz2Info(i){
   var d=rz2Get(i);
   if(!d){el.textContent="";el.style.color="";return;}
   var reste=Math.round((pv-d.montant)*100)/100;
-  var reg1=(document.querySelector('._rzReg[data-i="'+i+'"]')||{}).value||"CB";
+  var reg1=(document.querySelector('._rzReg[data-i="'+i+'"]')||{}).value||"";
   if(reste<-0.005){el.textContent="Montant supérieur au prix.";el.style.color="#b91c1c";}
-  else{el.textContent="→ "+reg1+" "+eur(reste)+" + "+d.moyen+" "+eur(d.montant);el.style.color="";}
+  else{el.textContent="→ "+(reg1||"(règlement à choisir)")+" "+eur(reste)+" + "+(d.moyen||"(2ᵉ moyen à choisir)")+" "+eur(d.montant);el.style.color="";}
 }
 /* Ventilation d'une pièce : {moyen: montant}, ou null si un seul règlement. */
 function rz2Split(i,pv){
   var d=rz2Get(i);if(!d)return null;
   var reste=Math.round((pv-d.montant)*100)/100;
   if(reste<-0.005)return null;
-  var reg1=(document.querySelector('._rzReg[data-i="'+i+'"]')||{}).value||"CB";
+  var reg1=(document.querySelector('._rzReg[data-i="'+i+'"]')||{}).value||"";
   var o={};o[d.moyen]=d.montant;
   if(reste>0.004)o[reg1]=(o[reg1]||0)+reste;
   return o;
@@ -3219,7 +3219,7 @@ function rzT2Get(){
   if(!bx||bx.classList.contains("hide"))return null;
   var m=parseFloat((document.getElementById("_rzTicketMt2")||{}).value)||0;
   if(!(m>0))return null;
-  return {moyen:(document.getElementById("_rzTicketReg2")||{}).value||"Espèces",montant:Math.round(m*100)/100};
+  return {moyen:(document.getElementById("_rzTicketReg2")||{}).value||"",montant:Math.round(m*100)/100};
 }
 window.rzT2Toggle=rzT2Toggle;
 
@@ -3250,8 +3250,8 @@ function rzTicketPick(){
   else{
     msg=n+" paire(s) cochée(s) · total "+eur(tot);
     if(d){
-      var reg1=(document.getElementById("_rzTicketReg")||{}).value||"CB";
-      msg+=" · "+reg1+" "+eur(Math.round((tot-d.montant)*100)/100)+" + "+d.moyen+" "+eur(d.montant);
+      var reg1=(document.getElementById("_rzTicketReg")||{}).value||"";
+      msg+=" · "+(reg1||"(règlement à choisir)")+" "+eur(Math.round((tot-d.montant)*100)/100)+" + "+(d.moyen||"(2ᵉ moyen à choisir)")+" "+eur(d.montant);
     }
   }
   if(go){go.disabled=(n<1);go.textContent=n?("Encaisser les "+n+" paire(s) cochée(s)"):"Encaisser les paires cochées";}
@@ -3260,7 +3260,10 @@ function rzTicketPick(){
 /* Le règlement choisi en haut s'applique aux paires cochées, sans toucher
    à celles qui ont un second moyen déjà renseigné. */
 function rzTicketReg(){
-  var v=(document.getElementById("_rzTicketReg")||{}).value||"CB";
+  var v=(document.getElementById("_rzTicketReg")||{}).value||"";
+  // Revenir sur « à choisir » ne doit pas effacer ce qui a déjà été choisi
+  // paire par paire : on ne propage qu'un vrai moyen de paiement.
+  if(!v)return;
   document.querySelectorAll("._rzPick").forEach(function(ck){
     if(!ck.checked)return;
     var sel=document.querySelector('._rzReg[data-i="'+ck.dataset.i+'"]');
@@ -3271,7 +3274,13 @@ function rzTicketReg(){
 function rzTicketValider(){
   var picks=[].slice.call(document.querySelectorAll("._rzPick")).filter(function(c){return c.checked;});
   if(!picks.length)return;
-  var tot=rzTicketTotal(),dT=rzT2Get(),libelle=(document.getElementById("_rzTicketReg")||{}).value||"CB";
+  var tot=rzTicketTotal(),dT=rzT2Get(),libelle=String((document.getElementById("_rzTicketReg")||{}).value||"").trim();
+  /* Vérifié AVANT la confirmation : rzTicketValider déclenche ensuite les
+     boutons paire par paire, et un refus au milieu de la série laisserait un
+     ticket à moitié encaissé. */
+  if(!libelle){alert("Choisis le règlement du ticket avant d'encaisser.");
+    try{document.getElementById("_rzTicketReg").focus();}catch(_e){}return;}
+  if(dT&&!dT.moyen){alert("Tu as saisi un montant pour le 2ᵉ moyen de paiement du ticket, mais pas lequel.");return;}
   if(dT){
     if(dT.montant-tot>0.005){alert("Le 2ᵉ moyen de paiement dépasse le total du ticket.");return;}
     // Répartition au prorata : chaque paire reçoit sa part du 2ᵉ moyen, la
@@ -3317,6 +3326,7 @@ function rzOpenPop(list){
       +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
         +'<div><label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:3px">Règlement du ticket</label>'
           +'<select id="_rzTicketReg" onchange="rzTicketReg()" style="padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:118px">'
+          +'<option value="">— à choisir —</option>'
           +REGLEMENTS.map(function(m){return '<option>'+m+'</option>';}).join("")+'</select></div>'
         /* Montant du 1er moyen, visible et modifiable. Les deux champs sont liés :
            saisir l'un ajuste l'autre, la somme fait toujours le total du ticket. */
@@ -3326,7 +3336,8 @@ function rzOpenPop(list){
         +'<div id="_rzT2Box" class="hide" style="display:flex;gap:8px;align-items:flex-end">'
           +'<div><label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:3px">2ᵉ moyen</label>'
             +'<select id="_rzTicketReg2" style="padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:112px">'
-            +REGLEMENTS.map(function(m){return '<option'+(m==="Espèces"?" selected":"")+'>'+m+'</option>';}).join("")+'</select></div>'
+            +'<option value="">— à choisir —</option>'
+            +REGLEMENTS.map(function(m){return '<option>'+m+'</option>';}).join("")+'</select></div>'
           +'<div><label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:3px">Montant</label>'
             +'<input id="_rzTicketMt2" type="number" step="0.01" min="0" placeholder="0" oninput="rzT2Sync(2)" style="'+css+';width:100px"></div>'
         +'</div>'
@@ -3356,13 +3367,15 @@ function rzOpenPop(list){
                de l'enregistrement. */
             +'<div'+(list.length>1?' class="hide"':'')+'><label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:3px">Règlement</label>'
               +'<select class="_rzReg" data-i="'+i+'" style="padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:118px">'
+              +'<option value="">— à choisir —</option>'
               +REGLEMENTS.map(function(m){return '<option>'+m+'</option>';}).join("")+'</select></div>'
             +(list.length>1?'':(
               '<button class="btn _rz2Btn" data-i="'+i+'" onclick="rz2Toggle('+i+')" style="padding:7px 10px;font-size:12px">+ 2ᵉ moyen</button>'
               +'<div class="_rz2Box hide" data-i="'+i+'" style="display:flex;gap:8px;align-items:flex-end">'
                 +'<div><label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:3px">2ᵉ moyen</label>'
                   +'<select class="_rzReg2" data-i="'+i+'" style="padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:112px">'
-                  +REGLEMENTS.map(function(m){return '<option'+(m==="Espèces"?" selected":"")+'>'+m+'</option>';}).join("")+'</select></div>'
+                  +'<option value="">— à choisir —</option>'
+                  +REGLEMENTS.map(function(m){return '<option>'+m+'</option>';}).join("")+'</select></div>'
                 +'<div><label style="display:block;font-size:11px;font-weight:700;color:#475569;margin-bottom:3px">Montant</label>'
                   +'<input class="_rzPv2" data-i="'+i+'" type="number" step="0.01" min="0" placeholder="0" oninput="rz2Info('+i+')" style="'+css+';width:100px"></div>'
                 +'<div class="_rz2Info muted" data-i="'+i+'" style="font-size:11.5px;padding-bottom:8px"></div>'
@@ -3392,7 +3405,17 @@ function rzOpenPop(list){
       if(pv===0&&!_rzZeroOk&&!confirm("Enregistrer cette vente à 0 € ?\n\nLa paire sortira du stock sans chiffre d'affaires."))return;
       b.disabled=true;b.textContent="…";
       try{
-        var _rg=(ov.querySelector('._rzReg[data-i="'+i+'"]')||{}).value||"CB";
+        /* Même exigence qu'en saisie manuelle : aucun règlement présumé. C'est
+           ici que ça compte le plus, le pop-up caisse étant le chemin emprunté
+           à chaque vente du comptoir. */
+        var _rg=String((ov.querySelector('._rzReg[data-i="'+i+'"]')||{}).value||"").trim();
+        if(!_rg){alert("Choisis le moyen de paiement pour cette paire.");
+          b.disabled=false;b.textContent="Enregistrer la vente";
+          try{ov.querySelector('._rzReg[data-i="'+i+'"]').focus();}catch(_e){}return;}
+        var _d2=rz2Get(i);
+        if(_d2&&!_d2.moyen){alert("Tu as saisi un montant pour le 2ᵉ moyen de paiement, mais pas lequel.");
+          b.disabled=false;b.textContent="Enregistrer la vente";
+          try{ov.querySelector('._rzReg2[data-i="'+i+'"]').focus();}catch(_e){}return;}
         var _pk=ov.querySelector('._rzPick[data-i="'+i+'"]');
         var _sp=null;
         try{if(_pk&&_pk.dataset.split)_sp=JSON.parse(_pk.dataset.split);}catch(_e){}
@@ -3572,6 +3595,16 @@ async function vbSellPiece(a,pv,opts){
 window.vbSellPiece=vbSellPiece;
 
 async function vbRecord(){var code=document.getElementById("vb_code").value.trim();var pv=parseFloat(document.getElementById("vb_pv").value)||0;var a=vbArticleByCode(code);if(!a){alert("Aucun article trouvé avec le code "+code);return;}if(!pv){alert("Renseigne le prix de vente TTC.");return;}
+  /* Le moyen de paiement ne se devine pas. Il partait sur « CB » par défaut,
+     donc une vente encaissée en espèces et enregistrée sans y toucher était
+     comptée en CB — faute invisible, qui ne se voit qu'au rapprochement de
+     caisse. On exige un choix explicite. */
+  var _reg1=String((document.getElementById("vb_reg")||{}).value||"").trim();
+  if(!_reg1){alert("Choisis le moyen de paiement avant d'enregistrer.");
+    try{document.getElementById("vb_reg").focus();}catch(_e){}return;}
+  var _m2=vbM2Get();
+  if(_m2&&!_m2.moyen){alert("Tu as saisi un montant pour le 2ᵉ moyen de paiement, mais pas lequel.");
+    try{document.getElementById("vb_reg2").focus();}catch(_e){}return;}
   // Même garde-fou que vbSellPiece : on ne facture pas deux fois le même exemplaire.
   var _df=(typeof cohVenteDe==="function")?cohVenteDe(a.ref):null;
   if(_df){alert("Cette paire est déjà facturée.\n\nFacture "+_df.num+" du "+_df.date
@@ -3583,7 +3616,7 @@ async function vbRecord(){var code=document.getElementById("vb_code").value.trim
   if(_isCession){a.viSoldBy=_vc.taker;a.viCededAtSale=viCededCost(a);}
   var _factSoc=_isCession?_vc.taker:a.societeId;
   var _cli=null;try{_cli=vbResolveClient();}catch(_e){alert(_e);return;}
-  var facts=buildSaleFactures({source:"boutique",date:today(),societeId:_factSoc,buyer:(_cli?_cli.buyer:"Client boutique"),clientId:(_cli?_cli.client.id:""),buyerAddr:(_cli?cliAddr(_cli.client):null),buyerMeta:(_cli?cliMeta(_cli.client):null),currency:"EUR",saleLines:[{title:m.fr||a.ref,sku:m.sku||"",qty:1,puTTC:pv,ref:a.ref,tva:a.tva||"TVA 20%",cost:(_isCession?viCededCost(a):(+a.prix||0)),viGiver:(_isCession?_vc.giver:null),viCeded:(_isCession?viCededCost(a):null),viPa:(+a.prix||0)}]});var _now=new Date();var _hm=String(_now.getHours()).padStart(2,"0")+":"+String(_now.getMinutes()).padStart(2,"0");facts.forEach(function(f){f.heure=_hm;});a.statut="Vendu";a.venteTTC=pv;a.dateVente=today();a.heureVente=_hm;a.canal="Boutique";a.regMode=String((document.getElementById("vb_reg")||{}).value||"CB");var _sp2=vbM2Split(pv);if(_sp2)a.regSplit=_sp2;else delete a.regSplit;a.maj=today();await save();try{if(a.depot&&a.fourId)await depNotifySale([a]);}catch(e){console.log("mail dépôt",e);}try{await enforceDispoStock(true);}catch(e){}try{fillSelects();}catch(e){}try{renderVBoutique();}catch(e){}try{renderStock();}catch(e){}try{logAct("Création","Vente boutique",(m.fr||a.ref)+" · "+pv+" € · facture "+facts.map(function(f){return f.num;}).join(", "));}catch(e){}document.getElementById("vb_code").value="";document.getElementById("vb_pv").value="";document.getElementById("vb_hint").textContent="";
+  var facts=buildSaleFactures({source:"boutique",date:today(),societeId:_factSoc,buyer:(_cli?_cli.buyer:"Client boutique"),clientId:(_cli?_cli.client.id:""),buyerAddr:(_cli?cliAddr(_cli.client):null),buyerMeta:(_cli?cliMeta(_cli.client):null),currency:"EUR",saleLines:[{title:m.fr||a.ref,sku:m.sku||"",qty:1,puTTC:pv,ref:a.ref,tva:a.tva||"TVA 20%",cost:(_isCession?viCededCost(a):(+a.prix||0)),viGiver:(_isCession?_vc.giver:null),viCeded:(_isCession?viCededCost(a):null),viPa:(+a.prix||0)}]});var _now=new Date();var _hm=String(_now.getHours()).padStart(2,"0")+":"+String(_now.getMinutes()).padStart(2,"0");facts.forEach(function(f){f.heure=_hm;});a.statut="Vendu";a.venteTTC=pv;a.dateVente=today();a.heureVente=_hm;a.canal="Boutique";a.regMode=String((document.getElementById("vb_reg")||{}).value||"");var _sp2=vbM2Split(pv);if(_sp2)a.regSplit=_sp2;else delete a.regSplit;a.maj=today();await save();try{if(a.depot&&a.fourId)await depNotifySale([a]);}catch(e){console.log("mail dépôt",e);}try{await enforceDispoStock(true);}catch(e){}try{fillSelects();}catch(e){}try{renderVBoutique();}catch(e){}try{renderStock();}catch(e){}try{logAct("Création","Vente boutique",(m.fr||a.ref)+" · "+pv+" € · facture "+facts.map(function(f){return f.num;}).join(", "));}catch(e){}document.getElementById("vb_code").value="";document.getElementById("vb_pv").value="";document.getElementById("vb_hint").textContent="";
   // Le bloc client est refermé après chaque vente : la vente suivante repart
   // anonyme, sans risque de facturer au nom du client précédent.
   try{var _b=document.getElementById("vbCliBox");if(_b&&!_b.classList.contains("hide")){vbCliClear();_b.classList.add("hide");vbPaintCliBtn();}}catch(_e){}
@@ -4473,7 +4506,11 @@ function vbEditLine(ref,factId){
   var m1=moyens.length?moyens[0]:((a&&a.regMode)||"CB");
   var m2=moyens.length>1?moyens[1]:"";
   var mt2=m2?(+sp[m2]||0):0;
-  var opt=function(sel){return REGLEMENTS.map(function(m){
+  /* Si la ligne ne portait aucun moyen de paiement, le menu s'ouvre sur
+     « à choisir » plutôt que sur le premier de la liste : corriger un prix ne
+     doit pas inventer un règlement au passage. */
+  var opt=function(sel){return (sel?"":'<option value="" selected>— à choisir —</option>')
+    +REGLEMENTS.map(function(m){
     return '<option'+(m===sel?' selected':'')+'>'+m+'</option>';}).join("");};
 
   /* LE LIBELLÉ suit la même règle que le prix : il décrit CE QUI A ÉTÉ VENDU.
@@ -4535,7 +4572,8 @@ function vbEditLine(ref,factId){
     var pv=prixModifiable?parseFloat(ov.querySelector("#_vbePv").value):(+l.puTTC||0);
     if(!isFinite(pv)||pv<0){err.textContent="Prix invalide.";return;}
     pv=r2(pv);
-    var n1=ov.querySelector("#_vbeM1").value||"CB";
+    var n1=String(ov.querySelector("#_vbeM1").value||"").trim();
+    if(!n1){err.textContent="Choisis le moyen de paiement.";return;}
     var n2=ov.querySelector("#_vbeM2").value||"";
     var v2=parseFloat(ov.querySelector("#_vbeMt2").value)||0;
     if(n2&&v2>pv+0.005){err.textContent="Le 2ᵉ montant dépasse le prix de vente.";return;}
