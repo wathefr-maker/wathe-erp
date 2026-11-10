@@ -168,7 +168,7 @@
   .badge{display:inline-block;padding:3px 9px;border-radius:7px;font-size:11px;font-weight:700;white-space:nowrap}
   .b-stock{background:var(--green-soft);color:var(--green)}.b-transit{background:var(--blue-soft);color:var(--blue)}
 .b-appro{background:#e0f2fe;color:#0284c7}
-  .b-fact{background:#11182710;color:#111827}.b-vendu{background:var(--amber-soft);color:var(--amber)}
+  .b-fact{background:#11182710;color:#111827}.b-vendu{background:var(--amber-soft);color:var(--amber)}.b-retour{background:#fee2e2;color:#991b1b}.b-offert{background:#ede9fe;color:#6d28d9}
   .b-part{background:var(--slate-soft);color:#475569}.b-pro{background:#ccfbf1;color:#0d9488}
   .seclbl{grid-column:1/-1;font-weight:800;font-size:13px;margin-top:6px;padding-top:10px;border-top:1px solid var(--line);color:var(--ink)}
   .tag-soc{background:var(--violet-soft);color:var(--violet);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700}
@@ -1376,7 +1376,21 @@ try{Object.keys(BRAND_GRILLES).forEach(k=>{const a=DB.grilles[k];if(!a||!a.lengt
 if(!Array.isArray(DB.tags))DB.tags=["Aucun","Vitrine","Réservé","Promo","Abîmé"].map((n,i)=>({id:i+1,nom:n,color:"#64748b",actif:1}));
 DB.tags.forEach(t=>{if(!t.color)t.color="#64748b";if(t.actif===undefined)t.actif=1;});
 if(!Array.isArray(DB.statuts))DB.statuts=[["En Stock","#16a34a"],["Vendu","#f59e0b"],["Transit","#2563eb"],["Perdu","#dc2626"],["Listé","#eab308"],["Livré","#ec4899"],["Facturé","#111827"],["Facturé boutique","#111827"],["Réservé web","#2563eb"]].map((s,i)=>({id:i+1,nom:s[0],color:s[1],actif:1}));
-{const SC={"En Stock":"#16a34a","Approvisionnement":"#0ea5e9","Vendu":"#f59e0b","Transit":"#2563eb","Perdu":"#dc2626","Listé":"#eab308","Livré":"#ec4899","Facturé":"#111827","Facturé boutique":"#111827","Réservé web":"#2563eb"};if(Array.isArray(DB.statuts)&&!DB.statuts.some(s=>(s.nom||s[0])==="Approvisionnement")){DB.statuts.splice(1,0,{nom:"Approvisionnement",color:"#0ea5e9",actif:1});}DB.statuts.forEach(s=>{if(!s.color)s.color=SC[s.nom]||"#64748b";if(s.actif===undefined)s.actif=1;});}
+{const SC={"En Stock":"#16a34a","Approvisionnement":"#0ea5e9","Vendu":"#f59e0b","Transit":"#2563eb","Perdu":"#dc2626","Listé":"#eab308","Livré":"#ec4899","Facturé":"#111827","Facturé boutique":"#111827","Réservé web":"#2563eb","Retourné":"#dc2626","Offert":"#6d28d9"};if(Array.isArray(DB.statuts)&&!DB.statuts.some(s=>(s.nom||s[0])==="Approvisionnement")){DB.statuts.splice(1,0,{nom:"Approvisionnement",color:"#0ea5e9",actif:1});}DB.statuts.forEach(s=>{if(!s.color)s.color=SC[s.nom]||"#64748b";if(s.actif===undefined)s.actif=1;});
+ /* Les deux statuts ajoutés en novembre 2026. « Retourné » pour une paire
+    renvoyée au fournisseur, « Offert » pour une paire donnée : dans les deux
+    cas elle est sortie du stock sans être vendue, et la ranger dans « Vendu »
+    faussait les ventes. On les injecte ici plutôt que dans la graine, sinon
+    ils n'existeraient que pour une base créée après cette version. */
+ [["Retourné","#dc2626"],["Offert","#6d28d9"]].forEach(function(n){
+   if(!DB.statuts.some(function(s){return (s.nom||s[0])===n[0];}))
+     DB.statuts.push({id:newId(DB.statuts),nom:n[0],color:n[1],actif:1});});
+ /* Statuts morts : aucun code ne les attribue et plus aucune pièce ne les
+    porte. On ne les retire QUE s'ils sont vides, au cas où une base en
+    contiendrait encore. */
+ ["Listé","Réservé web","Facturé boutique"].forEach(function(n){
+   if((DB.articles||[]).some(function(a){return a&&a.statut===n;}))return;
+   DB.statuts=DB.statuts.filter(function(s){return (s.nom||s[0])!==n;});});}
 if(!Array.isArray(DB.taxes))DB.taxes=[{id:1,nom:"TVASM",taux:0,actif:1},{id:2,nom:"Exonéré",taux:0,actif:1},{id:3,nom:"TVA 20%",taux:20,actif:1}];
 /* Uniformisation des régimes à taux : « 20% » et « TVA 20% » désignaient la même
    chose et produisaient deux factures distinctes. Forme retenue : « TVA 20% ».
@@ -1678,7 +1692,44 @@ function countryStdTaxName(countryName){if(countryName){const p=paysByName(count
 function fmtRate(r){r=Math.round((+r||0)*100)/100;return String(r).replace(".",",");}
 function regimeLabel(reg){reg=String(reg||"");if(/marge/i.test(reg)||reg==="TVASM")return "TVA sur marge";if(/exon/i.test(reg))return "Exonéré";var m=reg.match(/(\d+(?:[.,]\d+)?)/);if(m)return "TVA "+fmtRate(parseFloat(m[1].replace(",",".")))+" %";return reg;}
 const inStock=a=>a.statut==="En Stock"||a.statut==="Transit";
-const badge=s=>({"En Stock":'b-stock',"Approvisionnement":'b-appro',"Transit":'b-transit',"Vendu":'b-vendu',"Facturé boutique":'b-fact'}[s]||'b-fact');
+
+/* ═══════════════ STATUTS DES PIÈCES ═══════════════════════════════════════
+   LIBELLÉS. « Facturé », « Vendu », « Livré » disaient tous les trois que la
+   pièce est partie ; seul le canal changeait, et personne ne pouvait deviner
+   que « Facturé » voulait dire Shopify. On renomme donc CE QUI S'AFFICHE.
+
+   La valeur stockée ne bouge pas : une quarantaine d'endroits du code
+   comparent au mot exact, et des milliers de pièces le portent en base.
+   Renommer la donnée voudrait dire une migration et quarante relectures ;
+   renommer l'étiquette ne coûte rien. Corollaire : tout <option> doit porter
+   la VALEUR en attribut et le libellé en texte, sinon le formulaire
+   enregistrerait le libellé. */
+var STATUT_LIB={
+  "En Stock":"En Stock",
+  "Approvisionnement":"Approvisionnement",
+  "Transit":"En transit",
+  "Vendu":"Vendue en boutique",
+  "Facturé":"Vendue en ligne",
+  "Livré":"Vendue via expédition",
+  "Retourné":"Paire retournée",
+  "Offert":"Offerte",
+  "Perdu":"Perte",
+  "Facturé boutique":"Vendue en boutique"
+};
+function statutLib(s){return STATUT_LIB[s]||s||"";}
+
+/* PROTECTION. Une pièce au statut « Vendu » était protégée : on ne la purge
+   pas, on ne la déplace pas de société, on ne la libère pas d'une commande.
+   Les 119 paires renvoyées chez Turum portaient « Vendu » à tort et passent
+   à « Retourné » ; sans cette liste elles PERDRAIENT cette protection et
+   redeviendraient purgeables. « Offert » entre pour la même raison : une
+   paire donnée est sortie pour de bon, elle n'est pas réutilisable.
+
+   On n'ajoute volontairement PAS « Facturé » ni « Livré » ici : ils n'y
+   étaient pas avant, et le but est que rien d'autre ne change. */
+var STATUTS_SORTIS=["Vendu","Retourné","Offert"];
+function pieceSortie(st){return STATUTS_SORTIS.indexOf(String(st||""))>=0;}
+const badge=s=>({"En Stock":'b-stock',"Approvisionnement":'b-appro',"Transit":'b-transit',"Vendu":'b-vendu',"Facturé boutique":'b-fact',"Retourné":'b-retour',"Offert":'b-offert'}[s]||'b-fact');
 const artOfVar=vid=>DB.articles.filter(a=>a.varianteId==vid&&inStock(a)&&(!socFilter||a.societeId==socFilter));
 const artOfModele=mid=>DB.articles.filter(a=>{const v=varById(a.varianteId);return v.modeleId==mid&&inStock(a)&&(!socFilter||a.societeId==socFilter);});
 const allArticles=()=>{
@@ -1758,7 +1809,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261110-095327";
+var ERP_VERSION="20261110-110800";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -1808,7 +1859,7 @@ function fillSelects(){
   if(window.s_pays)s_pays.innerHTML=(DB.pays&&DB.pays.length?DB.pays.filter(p=>p.actif!==0).map(p=>p.nom):PAYS).map(p=>`<option>${esc(p)}</option>`).join("");
   if(window.marqueList){const _mq=((DB.attributs||[]).find(a=>a.nom==="Marque")||{valeurs:[]}).valeurs.map(v=>v.label);marqueList.innerHTML=_mq.map(n=>`<option value="${esc(n)}">`).join("");}
   if(window.a_tva){const tx=(DB.taxes||[]).filter(t=>t.actif!==0).map(t=>`<option>${esc(t.nom)}</option>`).join("");a_tva.innerHTML=tx;fTva.innerHTML='<option value="">TVA</option>'+tx;}
-  if(window.a_statut){const st=(DB.statuts||[]).filter(s=>s.actif!==0).map(s=>`<option>${esc(s.nom)}</option>`).join("");a_statut.innerHTML=st;fStatut.innerHTML='<option value="">Statut</option>'+st;}
+  if(window.a_statut){const st=(DB.statuts||[]).filter(s=>s.actif!==0).map(s=>`<option value="${esc(s.nom)}">${esc(statutLib(s.nom))}</option>`).join("");a_statut.innerHTML=st;fStatut.innerHTML='<option value="">Statut</option>'+st;}
   if(window.a_tag){a_tag.innerHTML=(DB.tags||[]).filter(t=>t.actif!==0).map(t=>`<option>${esc(t.nom)}</option>`).join("");}
   if(_keepF)stockFiltersApply(_keepF);
 }
@@ -2525,7 +2576,7 @@ function renderStock(){
   sRows.innerHTML=rows.length?rows.map(a=>{const v=varById(a.varianteId),m=modeleById(v.modeleId);return `<tr><td class="ck"><input type="checkbox" class="rowchk" data-chk="${a.id}" ${selStock.has(a.id)?"checked":""}></td>
     <td class="ref" data-va="${a.id}" style="cursor:pointer;color:var(--violet);font-weight:700">${a.ref}</td><td class="lib">${m.fr}</td><td class="sku">${m.sku}</td><td>${szcellV(v)}</td>
     <td>${a.depot?`<span class="badge" style="background:#fef3c7;color:#92400e">Dépôt</span>${a.refDep?`<br><small class="muted">${esc(a.refDep)}</small>`:""}`:`<span class="badge" style="background:#e5e7eb;color:#374151">Stock propre</span>`}</td>
-    <td><span class="badge ${badge(a.statut)}">${a.statut}</span></td>
+    <td><span class="badge ${badge(a.statut)}">${esc(statutLib(a.statut))}</span></td>
     <td class="price">${(function(){
       if(viViewingTaker()&&viIsGiverStock(a)){
         var cc=viCededCost(a);
@@ -3656,7 +3707,7 @@ function depStockRowsHtml(f){
       +'<td class="muted">'+esc(a.refDep||"—")+'</td>'
       +'<td class="price"><b>'+eur(a.prix)+'</b></td>'
       +'<td class="price">'+(a.pv?eur(a.pv):'<span class="muted">—</span>')+'</td>'
-      +'<td><span class="badge '+badge(a.statut)+'">'+esc(a.statut)+'</span></td>'
+      +'<td><span class="badge '+badge(a.statut)+'">'+esc(statutLib(a.statut))+'</span></td>'
       +'<td class="muted">'+esc(a.date||"—")+'</td></tr>';}).join("");
 }
 function renderDeposants(){
@@ -5406,7 +5457,7 @@ function articleDetailHTML(a){const v=varById(a.varianteId)||{},m=modeleById(v.m
     <div class="dcard"><h3>Produit</h3>${row("Référence interne",a.ref)}${row("Modèle",m.fr)}${row("Marque",m.marque)}${row("SKU",m.sku)}${row("Taille",v.taille)}${row("État",a.etat)}${row("Tag",a.tag)}</div>
     <div class="dcard"><h3>Prix & TVA</h3>${row("Prix d'achat HT",eur(a.prix))}${row("Prix d'achat TTC",eur(ttc(a.prix,a.tva)))}${row("Prix cible",a.pv?eur(a.pv):"—")}${row("Prix de vente TTC (réel)",a.venteTTC?eur(a.venteTTC):"—")}${row("Prix de vente HT (réel)",a.venteTTC?eur(pvHTof(a)):"—")}${row("TVA",a.tva)}</div>
     <div class="dcard"><h3>Stock & emplacement</h3>${row("Type",a.depot?"Dépôt-vente":"Stock propre")}${a.depot?row("Réf. déposant",a.refDep):""}${row("Société",(socById(a.societeId)||{}).nom)}${row(a.depot?"Déposant":"Fournisseur",fourLabel(fourById(a.fourId)))}${row("Ville",a.ville)}${row("Emplacement",a.emplacement)}${row("Dispo e-commerce",a.dispo?"Oui":"Non")}${row("Commande d'origine",a.fact)}</div>
-    <div class="dcard"><h3>Suivi</h3>${row("Statut",a.statut)}${row("Date d'entrée",a.date)}${row("Dernière mise à jour",a.maj)}${row("Archivé",a.archived?"Oui":"Non")}</div>
+    <div class="dcard"><h3>Suivi</h3>${row("Statut",statutLib(a.statut))}${row("Date d'entrée",a.date)}${row("Dernière mise à jour",a.maj)}${row("Archivé",a.archived?"Oui":"Non")}</div>
     <div class="dcard"><h3>Shopify</h3>${(function(){const v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};const onShop=!!m.shopifyProductId;const dispoArts=DB.articles.filter(x=>x.varianteId===v.id&&!x.archived&&inStock(x)&&x.dispo).length;return row("SKU Shopify (prévu)",shopSkuEU(a))+row("Produit Shopify",onShop?(m.shopifyOnline?"Publié (modèle sur la vitrine)":"Créé dans l'admin"):"Pas encore créé")+row("Cette pièce dispo Shopify",a.dispo?"Oui":"Non")+row("Stock Shopify de cette taille",onShop?String(dispoArts):"—")+'<div class="muted" style="margin-top:10px;font-size:12.5px">La mise en ligne est pilotée par la case <b>Dispo Shopify</b> (liste du stock). Cocher = la pièce compte dans le stock Shopify de sa taille ; le modèle est créé/mis à jour automatiquement.</div>';})()}</div>
     <div class="dcard" style="grid-column:1/-1"><h3>Traçabilité / Historique du produit</h3>
       <div class="tl">${hist.map(x=>`<div class="tlrow"><span class="tldot" style="background:${x.c}"></span><span class="tldate">${dt(x.date)}</span><div class="tlbody"><b>${x.label}</b><small>${x.detail}</small></div></div>`).join("")}</div>
@@ -5429,7 +5480,7 @@ function pieceProtected(a){if(!a)return false;
   var onum=nn(a.shopifyOrderName||a.flowstockOrderNumber||"");
   var onumN=parseInt(onum.replace(/[^0-9]/g,""),10)||0;
   // commande sous le seuil (ancienne, masquée) -> on la purge, donc pas de protection
-  if(a.statut==="Vendu")return true;
+  if(pieceSortie(a.statut))return true;
   if(a.shopifyOrderId)return true;
   if(a.flowstockOrderNumber&&onum&&(window._shopOrders||[]).some(function(o){return nn(o.name)===onum;}))return true;
   return false;}
@@ -8194,7 +8245,7 @@ async function achSocPropager(a,ancienneSoc){
   if(!pieces.length)return;
   var figees=pieces.filter(function(p){
     return p.shopifyInvoiced||p.shopifyOrderId||p.factBoutique
-        ||p.statut==="Vendu"||p.statut==="Facturé boutique"||p.statut==="Livré";
+        ||pieceSortie(p.statut)||p.statut==="Facturé boutique"||p.statut==="Livré";
   });
   var libres=pieces.filter(function(p){return figees.indexOf(p)<0;});
   var av=socById(ancienneSoc).nom||"—",ap=socById(a.societeId).nom||"—";
@@ -8855,7 +8906,7 @@ async function depSocPropager(d,ancienneSoc){
      déplacer décrocherait l'une de l'autre. */
   var figees=pieces.filter(function(p){
     return p.shopifyInvoiced||p.shopifyOrderId||p.factBoutique
-        ||p.statut==="Vendu"||p.statut==="Facturé boutique"||p.statut==="Livré";
+        ||pieceSortie(p.statut)||p.statut==="Facturé boutique"||p.statut==="Livré";
   });
   var libres=pieces.filter(function(p){return figees.indexOf(p)<0;});
   var av=(socById(ancienneSoc)||{}).nom||"—",ap=(socById(d.societeId)||{}).nom||"—";
@@ -14163,7 +14214,7 @@ async function deleteAchatWithPieces(a){
   // Modèles cités par la commande : candidats à la purge une fois les paires retirées.
   var _candM=((a.lignes)||[]).map(function(l){return l&&l.modeleId;}).filter(function(x){return x!=null;});
   var pcs=(DB.articles||[]).filter(function(p){return p.achatId===a.id;});
-  var free=pcs.filter(function(p){return !(p.statut==="Vendu"||p.shopifyOrderId);});
+  var free=pcs.filter(function(p){return !(pieceSortie(p.statut)||p.shopifyOrderId);});
   // free peut être élargi plus bas si l'utilisateur force la suppression d'un doublon
   var used=pcs.length-free.length;
   var alsoPieces=false;
@@ -14381,7 +14432,7 @@ function fsDupPanelHtml(){
     +'</div>';
 }
 function fsDedupeAchats(){
-  var reallyUsed=function(p){return p&&(p.statut==="Vendu"||p.shopifyOrderId);};
+  var reallyUsed=function(p){return p&&(pieceSortie(p.statut)||p.shopifyOrderId);};
   var piecesOf=function(a){return (DB.articles||[]).filter(function(p){return p.achatId===a.id;});};
   var rmAch=new Set(),rmPcs=new Set();
   var alive=function(a){return !rmAch.has(a.id);};
