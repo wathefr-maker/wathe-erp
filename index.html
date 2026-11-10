@@ -1758,7 +1758,7 @@ function tailleCmp(a,b){
 
    On interroge version.json — quelques octets, jamais mis en cache — et non la
    page elle-même, qui pèse un mégaoctet. */
-var ERP_VERSION="20261109-192304";
+var ERP_VERSION="20261110-093255";
 function erpBandeauMaj(v){
   if(document.getElementById("_erpMaj"))return;
   var d=document.createElement("div");
@@ -4634,14 +4634,90 @@ function vbRegTxt(a){
 }
 
 function renderVBoutique(){var _wb=watheSocId();var _tb0=document.getElementById("vbRows");if(socFilter&&_wb!=null&&socFilter==_wb){if(_tb0)_tb0.innerHTML='<tr><td colspan="10" class="muted" style="text-align:center;padding:20px">Les ventes boutique sont rattachées à SBT STORE. Sélectionne « SBT STORE » (ou « Toutes les sociétés ») pour les voir.</td></tr>';return;}
-  var rows=[];(DB.factures||[]).filter(function(f){return f.source==="boutique";}).sort(function(a,b){
-    var ka=(a.date||"")+" "+(a.heure||(a.createdAt?hmLocal(a.createdAt):""));
-    var kb=(b.date||"")+" "+(b.heure||(b.createdAt?hmLocal(b.createdAt):""));
-    return String(kb).localeCompare(String(ka));
-  }).forEach(function(f){var _isAv=(f.type==="avoir");(f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(ref){var a=DB.articles.find(function(x){return x.ref===ref;})||{};var _cost=lineCost(l,a);var sp=saleSplit(l.puTTC,_cost,l.tva||f.tvaHeader);var _sgn=_isAv?-1:1;var _pv=(+l.puTTC||0)*_sgn;
-      // Coût affiché : figé sur la ligne au moment de la vente (coût cédé si cession Wathe->SBT).
-      var _mg=(sp.ca-_cost)*_sgn;
-      rows.push('<tr'+(_isAv?' style="background:#fef2f2"':'')+'><td class="muted">'+esc(f.date)+(function(){var hh=f.heure||(f.createdAt?hmLocal(f.createdAt):"");return hh?(" · "+esc(hh)):"";})()+(_isAv?' <span class="badge" style="background:#fee2e2;color:#991b1b">Retour</span>':'')+'</td><td>'+esc(l.title||"")+'</td><td class="muted">'+esc(ref)+'</td><td class="price">'+eur(_pv)+'</td><td class="muted">'+eur(_isAv?-_cost:_cost)+'</td><td class="price"><b>'+eur(_mg)+'</b></td><td>'+esc(l.tva||f.tvaHeader||"")+'</td><td class="muted" style="white-space:nowrap">'+(vbRegTxt(a)||'—')+'</td><td><a href="#" onclick="openFactureD('+f.id+');return false">'+esc(f.num)+'</a></td><td style="text-align:center">'+(_isAv?'—':('<button type="button" class="btn" title="Corriger le prix ou le moyen de paiement" style="padding:3px 10px" onclick="vbEditLine(\''+esc(ref)+'\','+f.id+')">✎</button> <button type="button" class="btn" title="Retourner cette paire (crée un avoir, garde la vente)" style="padding:3px 10px;color:#dc2626" onclick="vbReturnSale(\''+esc(ref)+'\','+f.id+')">↩</button>'))+'</td></tr>');});});});var tb=document.getElementById("vbRows");if(tb)tb.innerHTML=rows.join("")||'<tr><td colspan="10" class="muted" style="text-align:center;padding:20px">Aucune vente boutique pour l\'instant.</td></tr>';}
+  /* La ligne de retour est COLLÉE à sa vente, et non posée en haut de la liste
+     à sa propre date. Un avoir émis aujourd'hui sur une vente de juillet
+     partait tout en haut, à trois semaines de la ligne qu'il annule : on ne
+     pouvait pas voir d'un coup d'œil si une paire avait été rendue.
+
+     Conséquence assumée : l'ordre de la liste est celui des VENTES. Un retour
+     fait ce matin sur une vente ancienne n'est donc plus en tête — c'est le
+     prix à payer pour qu'il soit lisible à côté de ce qu'il corrige. */
+  var bout=(DB.factures||[]).filter(function(f){return f.source==="boutique";});
+
+  /* Les ventes réellement présentes à l'écran. Indispensable avant de rattacher
+     quoi que ce soit : un avoir dont la vente d'origine n'est pas dans cette
+     liste (facture d'une autre origine, ou disparue) serait rattaché à une
+     ligne qui n'existe pas, donc effacé de l'écran EN SILENCE. Celui-là reste
+     à sa place chronologique. */
+  var venteCle={};
+  bout.forEach(function(f){
+    if(f.type==="avoir")return;
+    (f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(ref){
+      venteCle[f.id+"|"+ref]=1;
+    });});
+  });
+
+  var retours={},colles={};
+  bout.forEach(function(f){
+    if(f.type!=="avoir"||f.avoirOf==null)return;
+    (f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(ref){
+      var cle=f.avoirOf+"|"+ref;
+      if(!venteCle[cle])return;                  // orphelin : on n'y touche pas
+      (retours[cle]||(retours[cle]=[])).push({f:f,l:l,ref:ref});
+      colles[f.id+"|"+ref]=1;
+    });});
+  });
+
+  var quand=function(f){return (f.date||"")+" "+(f.heure||(f.createdAt?hmLocal(f.createdAt):""));};
+
+  function vbLigne(f,l,ref,estRetour,colle){
+    var a=DB.articles.find(function(x){return x.ref===ref;})||{};
+    var _cost=lineCost(l,a);
+    var sp=saleSplit(l.puTTC,_cost,l.tva||f.tvaHeader);
+    var _sgn=estRetour?-1:1;
+    var _pv=(+l.puTTC||0)*_sgn;
+    // Coût affiché : figé sur la ligne au moment de la vente (coût cédé si cession Wathe->SBT).
+    var _mg=(sp.ca-_cost)*_sgn;
+    var hh=f.heure||(f.createdAt?hmLocal(f.createdAt):"");
+    var rendu=(!estRetour&&!!retours[f.id+"|"+ref]);
+    var style=(estRetour?("background:"+(colle?"#fff5f5":"#fef2f2")+";"):"")
+             +(colle?"box-shadow:inset 3px 0 0 #dc2626;":"");
+    return '<tr'+(style?(' style="'+style+'"'):'')+'>'
+      +'<td class="muted">'+(colle?'<span style="opacity:.5;font-weight:700">↳ </span>':'')
+        +esc(f.date)+(hh?(" · "+esc(hh)):"")
+        +(estRetour?' <span class="badge" style="background:#fee2e2;color:#991b1b">Retour</span>':'')
+        +(rendu?' <span class="badge" style="background:#fee2e2;color:#991b1b" title="Cette paire a été retournée">rendue</span>':'')
+      +'</td>'
+      +'<td>'+esc(l.title||"")+'</td>'
+      +'<td class="muted">'+esc(ref)+'</td>'
+      +'<td class="price">'+eur(_pv)+'</td>'
+      +'<td class="muted">'+eur(estRetour?-_cost:_cost)+'</td>'
+      +'<td class="price"><b>'+eur(_mg)+'</b></td>'
+      +'<td>'+esc(l.tva||f.tvaHeader||"")+'</td>'
+      +'<td class="muted" style="white-space:nowrap">'+(vbRegTxt(a)||'—')+'</td>'
+      +'<td><a href="#" onclick="openFactureD('+f.id+');return false">'+esc(f.num)+'</a></td>'
+      +'<td style="text-align:center">'+((estRetour||rendu)?'—':
+          ('<button type="button" class="btn" title="Corriger le prix ou le moyen de paiement" style="padding:3px 10px" onclick="vbEditLine(\''+esc(ref)+'\','+f.id+')">✎</button> '
+          +'<button type="button" class="btn" title="Retourner cette paire (crée un avoir, garde la vente)" style="padding:3px 10px;color:#dc2626" onclick="vbReturnSale(\''+esc(ref)+'\','+f.id+')">↩</button>'))
+      +'</td></tr>';
+  }
+
+  var rows=[];
+  bout.slice().sort(function(a,b){return String(quand(b)).localeCompare(String(quand(a)));})
+    .forEach(function(f){
+      var av=(f.type==="avoir");
+      (f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(ref){
+        if(av&&colles[f.id+"|"+ref])return;      // déjà rendu sous sa vente
+        rows.push(vbLigne(f,l,ref,av,false));
+        if(!av)(retours[f.id+"|"+ref]||[]).forEach(function(r){
+          rows.push(vbLigne(r.f,r.l,r.ref,true,true));
+        });
+      });});
+    });
+
+  var tb=document.getElementById("vbRows");
+  if(tb)tb.innerHTML=rows.join("")||'<tr><td colspan="10" class="muted" style="text-align:center;padding:20px">Aucune vente boutique pour l\'instant.</td></tr>';
+}
 var _navHist=[],_navBack=false;
 function goBack(fallback){var v=null;while(_navHist.length){var c=_navHist.pop();if(c&&document.getElementById("view-"+c)){v=c;break;}}if(!v)v=fallback||"dash";_navBack=true;try{show(v,document.querySelector('.item[data-view="'+v+'"]')||undefined);}finally{_navBack=false;}}
 function show(view,item){
