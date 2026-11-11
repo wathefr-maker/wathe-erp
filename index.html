@@ -12977,7 +12977,9 @@ function shopVisibles(){
    Joom entrent par Shopify. Rien dans la commande ne dit d'où elle vient : ni
    l'application, ni la publication, ni sourceName. L'information est dans les
    ATTRIBUTS de commande, que shopify-orders lit désormais et nous rend sous
-   `marketplace`, `mpRef` et `commission`.
+   `marketplace`, `mpRef` et `commission`. Ce dernier est conservé à titre de
+   témoin mais n'est PLUS affiché : la commission est recalculée ici, voir
+   MP_TAUX plus bas.
 
    Une commande sans marketplace est une vente de la boutique en ligne. */
 var MP_COULEURS={
@@ -12992,18 +12994,49 @@ function mpBadge(o){
   var c=MP_COULEURS[m]||["#e5e7eb","#374151"];
   return shopPill(m,c[0],c[1]);
 }
-/* La commission telle que le marketplace l'annonce. Zéro ne veut PAS dire
-   gratuit : Temu, TikTok, Spartoo et Joom ne la transmettent simplement pas.
-   On écrit donc « non transmise » plutôt que « 0 € », qui serait un mensonge
-   dans un tableau de marges. */
+/* ── LA COMMISSION EST CALCULÉE, PLUS RECOPIÉE ─────────────────────────────
+   On n'affiche plus le chiffre que le marketplace transmet : on l'applique
+   nous-mêmes, taux contractuel × prix de vente.
+
+   POURQUOI. Le chiffre transmis est figé à la prise de commande et ne suit
+   pas la vie de la vente. La #8213 Decathlon le montre : deux paires
+   commandées, une annulée, total ramené de 292,57 € à 148,28 € — la
+   commission transmise est restée à 46,81 €, soit 31,6 % de ce qui a
+   réellement été vendu. Calculée, elle vaut 23,72 €. Sur 41 commandes
+   Decathlon, c'est la seule qui s'écarte : le chiffre transmis est juste
+   tant que rien ne bouge, et faux dès que quelque chose bouge.
+
+   LA BASE EST LE TOTAL TTC, PORT INCLUS. Ce n'est pas un choix de confort,
+   c'est ce que font les marketplaces — vérifié au centime sur la donnée
+   réelle : 74 commandes Shein à 10,00 %, 40 Decathlon à 16,00 %, 18
+   Cdiscount à 18,00 %. Calculer hors port sous-estimerait la commission de
+   16 % (Decathlon) à 21 % (Cdiscount).
+
+   UN MARKETPLACE ABSENT DE CETTE TABLE N'A PAS DE TAUX CONNU, et on le DIT.
+   Mettre 0 par défaut ferait apparaître ses ventes comme sans frais dans un
+   tableau de marges : c'est exactement le zéro qui coûte cher. */
+var MP_TAUX={"Shein":0.10,"Decathlon":0.16,"Spartoo":0.16};
+/* Le montant en euros, ou null si le taux n'est pas renseigné. C'est CETTE
+   fonction que doit appeler tout calcul de marge — jamais o.commission. */
+function mpCommissionEur(o){
+  var m=String((o&&o.marketplace)||"").trim();
+  if(!m)return null;
+  var t=MP_TAUX[m];
+  if(!(t>0))return null;
+  var base=+((o&&o.totalTTC)||0);
+  if(!(base>0))return null;
+  return Math.round(base*t*100)/100;
+}
 function mpCommission(o){
   var m=String((o&&o.marketplace)||"").trim();
   if(!m)return "";
-  var c=+((o&&o.commission)||0);
-  if(c>0)return '<div class="muted" style="font-size:11.5px;margin-top:3px">'
+  var c=mpCommissionEur(o);
+  if(c==null)return '<div class="muted" style="font-size:11.5px;margin-top:3px;opacity:.75" '
+    +'title="Aucun taux de commission renseigné pour '+esc(m)+' : rien n\'est calculé tant qu\'il manque.">'
+    +'taux non renseigné</div>';
+  return '<div class="muted" style="font-size:11.5px;margin-top:3px" '
+    +'title="'+(Math.round(MP_TAUX[m]*1000)/10)+' % du total TTC, port inclus">'
     +'commission '+eur(c)+'</div>';
-  return '<div class="muted" style="font-size:11.5px;margin-top:3px;opacity:.75" '
-    +'title="Ce marketplace ne transmet pas sa commission à Shopify">commission non transmise</div>';
 }
 function shopFilteredOrders(){
   const q=(document.getElementById("shopF_q")?document.getElementById("shopF_q").value:"").trim().toLowerCase();
