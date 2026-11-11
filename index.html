@@ -396,6 +396,7 @@
       <div class="dashtabs" id="dashTabs">
         <button class="dashtab active" id="dtabSales" onclick="dashTab('sales')">Ventes &amp; marges</button>
         <button class="dashtab" id="dtabVat" onclick="dashTab('vat')">TVA</button>
+        <button class="dashtab" id="dtabMp" onclick="dashTab('mp')">Marketplaces</button>
       </div>
       <div id="dashPaneSales">
         <div class="kpis" id="kpis"></div>
@@ -405,6 +406,11 @@
       <div id="dashPaneVat" class="hide">
         <div class="kpis" id="vatKpis"></div>
         <div id="vatCharts" class="dashcharts"></div>
+      </div>
+      <div id="dashPaneMp" class="hide">
+        <div id="mpCouverture"></div>
+        <div class="kpis" id="mpKpis"></div>
+        <div id="mpCharts" class="dashcharts"></div>
       </div>
     </div>
 
@@ -2110,14 +2116,159 @@ function camembert(segs){const total=segs.reduce((s,x)=>s+x.value,0)||0;const cx
   const legend=segs.map(function(s){const pct=total?Math.round(s.value/total*100):0;return `<div style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:12px;height:12px;border-radius:3px;background:${s.color};flex:none"></span>${s.label}<b style="margin-left:auto">${eur(s.value)} · ${pct} %</b></div>`;}).join("");
   return `<div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap"><svg viewBox="0 0 180 180" style="width:172px;height:172px;flex:none">${paths}</svg><div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:11px">${legend}</div></div>`;}
 function dashTab(name){
-  const sales=name!=="vat";
-  document.getElementById("dtabSales").classList.toggle("active",sales);
-  document.getElementById("dtabVat").classList.toggle("active",!sales);
-  document.getElementById("dashPaneSales").classList.toggle("hide",!sales);
-  document.getElementById("dashPaneVat").classList.toggle("hide",sales);
+  /* Trois onglets désormais : le booléen d'avant ne suffisait plus. */
+  var vus=["sales","vat","mp"];
+  if(vus.indexOf(name)<0)name="sales";
+  var btn={sales:"dtabSales",vat:"dtabVat",mp:"dtabMp"};
+  var pan={sales:"dashPaneSales",vat:"dashPaneVat",mp:"dashPaneMp"};
+  vus.forEach(function(v){
+    var b=document.getElementById(btn[v]);if(b)b.classList.toggle("active",v===name);
+    var p=document.getElementById(pan[v]);if(p)p.classList.toggle("hide",v!==name);
+  });
+}
+/* ════════════ RÉPARTITION PAR MARKETPLACE ═════════════════════════════════
+   Ce que ce tableau additionne, c'est la marge calculée vente par vente :
+   TTC − TVA du pays de livraison − commission − prix d'achat.
+
+   LA RÈGLE QUI TIENT TOUT : une commande dont la marge n'est pas calculable
+   n'entre PAS dans les totaux. Elle reste comptée en chiffre d'affaires et
+   en nombre de commandes, mais sa marge, sa TVA et sa commission ne sont pas
+   devinées. Mélanger les deux produirait un taux de marge calculé sur un CA
+   partiel et un total de commissions amputé — un chiffre faux qui a l'air
+   juste, ce qui est le pire des deux mondes.
+
+   C'est pourquoi chaque ligne affiche sa COUVERTURE : la part des commandes
+   réellement calculées. Un canal couvert à 3/75 ne se compare pas à un canal
+   couvert à 74/77, et le tableau doit le dire au lieu de le cacher. */
+function mpStats(from,to){
+  var res={lignes:{},tot:{nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0},
+           attente:{nb:0,ttc:0,raisons:{}}};
+  (typeof _shopOrders!=="undefined"?(_shopOrders||[]):[]).forEach(function(o){
+    if(!o||o.cancelled)return;
+    var d=String(o.date||"").slice(0,10);
+    if(from&&d<from)return;
+    if(to&&d>to)return;
+    var canal=String(o.marketplace||"").trim()||"Boutique en ligne";
+    var L=res.lignes[canal]||(res.lignes[canal]=
+      {nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0});
+    var r=shopMarge(o);
+    L.nb++;L.ttc+=r.ttc;res.tot.nb++;res.tot.ttc+=r.ttc;
+    if(r.marge==null){
+      res.attente.nb++;res.attente.ttc+=r.ttc;
+      r.manque.forEach(function(m){res.attente.raisons[m]=(res.attente.raisons[m]||0)+1;});
+      return;
+    }
+    L.nbC++;L.ttcC+=r.ttc;L.tva+=r.tva;L.com+=r.commission;L.cout+=r.cout;L.marge+=r.marge;
+    res.tot.nbC++;res.tot.ttcC+=r.ttc;res.tot.tva+=r.tva;
+    res.tot.com+=r.commission;res.tot.cout+=r.cout;res.tot.marge+=r.marge;
+  });
+  return res;
+}
+function renderDashMp(from,to){
+  var boxC=document.getElementById("mpCouverture");
+  var boxK=document.getElementById("mpKpis");
+  var boxG=document.getElementById("mpCharts");
+  if(!boxK||!boxG)return;
+  var s=mpStats(from,to);
+  var P=function(v){return v.toFixed(1).replace(".",",")+" %";};
+  var t=s.tot;
+
+  /* L'avertissement de couverture passe AVANT les chiffres. Il dit combien de
+     commandes manquent et pourquoi : sans lui, un total partiel se lirait
+     comme un total. */
+  if(boxC){
+    if(!s.attente.nb)boxC.innerHTML="";
+    else{
+      var r=s.attente.raisons;
+      var det=Object.keys(r).sort(function(a,b){return r[b]-r[a];})
+        .map(function(k){return esc(k)+" ("+r[k]+")";}).join(" · ");
+      boxC.innerHTML='<div class="card" style="border-left:4px solid #d97706;margin-bottom:14px">'
+        +'<h3 style="margin-top:0">'+s.attente.nb+' commande(s) hors calcul, soit '+eur(s.attente.ttc)+' de CA</h3>'
+        +'<div class="muted" style="font-size:13px">Leur marge n\'est pas devinée : elles comptent dans le CA '
+        +'et le nombre de commandes, jamais dans la marge, la TVA ni les commissions.<br>'
+        +'Raisons : '+det+'</div></div>';
+    }
+  }
+
+  var k=[
+    ["CA TTC encaissé",eur(t.ttc),"var(--violet)"],
+    ["Marge nette",eur(t.marge),t.marge>=0?"#16a34a":"#dc2626"],
+    ["Taux de marge",t.ttcC>0?P(t.marge/t.ttcC*100):"—","#16a34a"],
+    ["Commissions",eur(t.com),"#dc2626"],
+    ["Taux de commission",t.ttcC>0?P(t.com/t.ttcC*100):"—","#dc2626"],
+    ["TVA due",eur(t.tva),"#b45309"],
+    ["Coût d'achat",eur(t.cout),"#475569"],
+    ["Commandes",t.nb,"var(--violet)"],
+    ["Panier moyen TTC",t.nb?eur(t.ttc/t.nb):"—","#0f172a"],
+    ["Marge moy./commande",t.nbC?eur(t.marge/t.nbC):"—","#16a34a"],
+    ["Marge calculée sur",t.nb?(t.nbC+" / "+t.nb+" cmd"):"—",
+      (t.nb&&t.nbC===t.nb)?"#16a34a":"#d97706"],
+  ];
+  boxK.innerHTML=k.map(function(x){
+    return '<div class="kpi"><div class="v" style="color:'+x[2]+'">'+x[1]+'</div>'
+      +'<div class="l">'+x[0]+'</div></div>';}).join("");
+
+  /* Classement par marge : c'est la question à laquelle ce tableau répond,
+     pas « qui vend le plus ». Un canal qui fait du volume à perte doit
+     tomber en bas, pas remonter en haut. */
+  var noms=Object.keys(s.lignes).sort(function(a,b){return s.lignes[b].marge-s.lignes[a].marge;});
+  var rows=noms.map(function(n){
+    var L=s.lignes[n];
+    var couvert=(L.nbC===L.nb);
+    var tm=L.ttcC>0?(L.marge/L.ttcC*100):0;
+    var tc=L.ttcC>0?(L.com/L.ttcC*100):0;
+    var part=t.ttc>0?(L.ttc/t.ttc*100):0;
+    var vide='<span class="muted">—</span>';
+    return '<tr>'
+      +'<td><b>'+esc(n)+'</b></td>'
+      +'<td style="text-align:right;white-space:nowrap">'+L.nb+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+eur(L.ttc)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+P(part)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;color:'+(couvert?"#16a34a":"#d97706")+'">'+L.nbC+'/'+L.nb+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?eur(L.cout):vide)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;color:#dc2626">'+(L.nbC?eur(L.com):vide)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?P(tc):vide)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;color:#b45309">'+(L.nbC?eur(L.tva):vide)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;font-weight:700;color:'+(L.marge>=0?"#16a34a":"#dc2626")+'">'
+        +(L.nbC?eur(L.marge):vide)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?P(tm):vide)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?eur(L.marge/L.nbC):vide)+'</td>'
+      +'</tr>';}).join("");
+  var tableau='<div class="card" style="grid-column:1/-1"><h3>Répartition par marketplace</h3>'
+    +(noms.length
+      ?'<div style="overflow-x:auto"><table><thead><tr>'
+        +'<th>Canal</th><th style="text-align:right;white-space:nowrap">Cmd</th><th style="text-align:right;white-space:nowrap">CA TTC</th>'
+        +'<th style="text-align:right;white-space:nowrap">Part du CA</th><th style="text-align:right;white-space:nowrap" '
+        +'title="Commandes dont la marge a pu être calculée">Couverture</th>'
+        +'<th style="text-align:right;white-space:nowrap">Coût d\'achat</th><th style="text-align:right;white-space:nowrap">Commissions</th>'
+        +'<th style="text-align:right;white-space:nowrap">Taux com.</th><th style="text-align:right;white-space:nowrap">TVA</th>'
+        +'<th style="text-align:right;white-space:nowrap">Marge</th><th style="text-align:right;white-space:nowrap">Taux de marge</th>'
+        +'<th style="text-align:right;white-space:nowrap">Marge/cmd</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+      :'<div class="muted" style="font-size:13px;padding:6px 0">Aucune commande sur la période.</div>')
+    +'</div>';
+
+  /* Le donut ne montre que les canaux dont la marge est connue ET positive :
+     une part négative n'a pas de sens dans un camembert. */
+  var segs=noms.filter(function(n){return s.lignes[n].nbC&&s.lignes[n].marge>0;})
+    .map(function(n,i){
+      var c=(MP_COULEURS[n]||["#e5e7eb","#475569"])[1];
+      return {label:n,value:s.lignes[n].marge,color:c};});
+  var donutCard='<div class="card"><h3>D\'où vient la marge</h3>'
+    +(segs.length?donut(segs)
+      :'<div class="muted" style="font-size:13px">Aucune marge positive calculée sur la période.</div>')
+    +'</div>';
+  var caCard='<div class="card"><h3>CA TTC par canal</h3>'
+    +(noms.length?barChart(noms.map(function(n){return {label:n,value:s.lignes[n].ttc};}),"var(--violet)")
+      :'<div class="muted" style="font-size:13px">Rien à afficher.</div>')
+    +'</div>';
+  boxG.innerHTML=caCard+donutCard+tableau;
 }
 function renderDash(){
   const {from,to}=dashRange();const sd=salesData(from,to);
+  /* L'onglet Marketplaces suit la même période que les deux autres. Isolé
+     dans un try : une broutille d'affichage ici ne doit pas emporter tout le
+     tableau de bord. */
+  try{renderDashMp(from,to);}catch(e){console.error("[Marketplaces]",e);}
   const tMarque=sd.caHT>0?(sd.marge/sd.caHT*100):0;
   const tMarge=sd.cout>0?(sd.marge/sd.cout*100):0;
   const coef=sd.cout>0?(sd.caHT/sd.cout):0;
@@ -13015,7 +13166,13 @@ function mpBadge(o){
    UN MARKETPLACE ABSENT DE CETTE TABLE N'A PAS DE TAUX CONNU, et on le DIT.
    Mettre 0 par défaut ferait apparaître ses ventes comme sans frais dans un
    tableau de marges : c'est exactement le zéro qui coûte cher. */
-var MP_TAUX={"Shein":0.10,"Decathlon":0.16,"Spartoo":0.16};
+/* ATTENTION, CDISCOUNT : 15 % est le taux contractuel donné. Mais ce que
+   Cdiscount prélève réellement, mesuré sur 18 commandes sur 18, c'est
+   18,00 % du TTC — et 15 × 1,2 = 18 exactement. Tout indique que le taux
+   contractuel est HT et que le prélèvement se fait TVA comprise. Retenir 15 %
+   sous-estime donc la ponction de 3 points, sauf si cette TVA est récupérée.
+   À trancher ; en attendant, c'est le taux demandé qui s'applique. */
+var MP_TAUX={"Shein":0.10,"Decathlon":0.16,"Spartoo":0.16,"Cdiscount":0.15};
 /* Le montant en euros, ou null si le taux n'est pas renseigné. C'est CETTE
    fonction que doit appeler tout calcul de marge — jamais o.commission. */
 function mpCommissionEur(o){
