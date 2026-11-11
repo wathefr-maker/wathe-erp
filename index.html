@@ -13038,6 +13038,63 @@ function mpCommission(o){
     +'title="'+(Math.round(MP_TAUX[m]*1000)/10)+' % du total TTC, port inclus">'
     +'commission '+eur(c)+'</div>';
 }
+/* ── LA MARGE D'UNE VENTE ──────────────────────────────────────────────────
+   Marge = prix de vente − TVA − commission − prix d'achat des paires.
+
+   LA TVA EST CELLE DU PAYS DE LIVRAISON, et pas le régime écrit sur la fiche
+   pièce. Une paire expédiée en Italie supporte 22 %, en Belgique 21 %, en
+   Allemagne 19 % : c'est le taux du pays de destination qui s'applique aux
+   ventes à distance. Lire la fiche pièce donnerait un tout autre résultat —
+   1 714 des 1 752 paires parties sur Shopify y portent « Exonéré », ce qui
+   est une valeur par défaut et non un régime choisi ; s'y fier mettrait la
+   TVA à zéro sur 98 % des ventes.
+
+   Le port facturé au client est DANS le total, donc dans la base TVA : c'est
+   bien ce que font les marketplaces (voir MP_TAUX). Le coût d'expédition
+   réel, lui, n'entre pas ici.
+
+   TROIS CHOSES PEUVENT MANQUER, ET AUCUNE NE VAUT ZÉRO :
+     - le taux de commission du marketplace (Temu, Bol, Cdiscount, TikTok…)
+     - la paire, si la commande n'a pas encore été rapprochée
+     - le prix d'achat, si la paire n'en porte pas
+   Dans ces cas la marge n'est PAS calculée, et on dit ce qui manque. Dans un
+   tableau qui sert à décider quoi racheter, une marge fausse coûte plus cher
+   qu'une marge absente. */
+function shopMarge(o){
+  var out={ttc:0,taux:0,tva:0,commission:null,cout:null,marge:null,manque:[]};
+  if(!o)return out;
+  out.ttc=+(o.totalTTC||0);
+  out.taux=countryStdRate(orderCountryName(o));
+  out.tva=Math.round(out.ttc*out.taux/(100+out.taux)*100)/100;
+  var m=String(o.marketplace||"").trim();
+  if(!m)out.commission=0;                       // boutique en ligne : rien à prélever
+  else{
+    out.commission=mpCommissionEur(o);
+    if(out.commission==null)out.manque.push("taux "+m+" inconnu");
+  }
+  var lot=(typeof shopOrderPieces==="function")?shopOrderPieces(o):[];
+  if(!lot.length)out.manque.push("paire non rapprochée");
+  else{
+    var c=0,sans=0;
+    lot.forEach(function(a){var p=+((a&&a.prix)||0);if(p>0)c+=p;else sans++;});
+    if(sans)out.manque.push(sans+" prix d'achat manquant"+(sans>1?"s":""));
+    else out.cout=Math.round(c*100)/100;
+  }
+  if(out.commission!=null&&out.cout!=null)
+    out.marge=Math.round((out.ttc-out.tva-out.commission-out.cout)*100)/100;
+  return out;
+}
+/* Sous le total TTC : la marge, ou la raison de son absence. */
+function shopMargeCell(o){
+  var r=shopMarge(o);
+  if(r.marge==null)return '<div class="muted" style="font-size:11px;margin-top:3px;opacity:.75" '
+    +'title="'+esc(r.manque.join(" · "))+'">marge indisponible</div>';
+  var vert=r.marge>=0;
+  return '<div style="font-size:11.5px;margin-top:3px;font-weight:600;color:'
+    +(vert?"#16a34a":"#dc2626")+'" title="'+eur(r.ttc)+' − '+eur(r.tva)+' de TVA ('
+    +fmtRate(r.taux)+' % '+esc(orderCountryName(o)||"France")+') − '+eur(r.commission)
+    +' de commission − '+eur(r.cout)+" d'achat\">marge "+eur(r.marge)+'</div>';
+}
 function shopFilteredOrders(){
   const q=(document.getElementById("shopF_q")?document.getElementById("shopF_q").value:"").trim().toLowerCase();
   const st=document.getElementById("shopF_stage")?document.getElementById("shopF_stage").value:"";
@@ -13110,7 +13167,7 @@ function renderShopRows(){
       +'<td style="white-space:nowrap">'+mpBadge(o)
         +(o.mpRef?('<div class="muted" style="font-size:11px;margin-top:3px">'+esc(o.mpRef)+'</div>'):"")
         +mpCommission(o)+'</td>'
-      +'<td>'+cliCell+'</td><td>'+shopStepperMini(o)+retBadge+partBadge+'</td><td style="max-width:300px">'+prod+'</td><td>'+pieces+'</td><td><b>'+money(o.totalTTC,o.currency)+'</b></td><td style="white-space:nowrap">'+actions+'</td></tr>';
+      +'<td>'+cliCell+'</td><td>'+shopStepperMini(o)+retBadge+partBadge+'</td><td style="max-width:300px">'+prod+'</td><td>'+pieces+'</td><td style="white-space:nowrap"><b>'+money(o.totalTTC,o.currency)+'</b>'+shopMargeCell(o)+'</td><td style="white-space:nowrap">'+actions+'</td></tr>';
   }).join("");
   shopRenderPager(totalPages);
 }
