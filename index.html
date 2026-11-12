@@ -2248,49 +2248,102 @@ function mpCanal(o){
   if(!o||!("marketplace" in o))return null;        // origine inconnue
   return String(o.marketplace||"").trim()||"Boutique en ligne";
 }
+/* Le canal de chaque commande Shopify, indexé une fois. */
+function mpCanalParCommande(){
+  var m={};
+  (typeof _shopOrders!=="undefined"?(_shopOrders||[]):[]).forEach(function(o){
+    if(o&&o.id)m[o.id]=mpCanal(o);
+  });
+  return m;
+}
+/* ════════════ LA RÉPARTITION PAR MARKETPLACE ══════════════════════════════
+   CE TABLEAU EST PILOTÉ PAR LES FACTURES, comme « Ventes & marges ».
+
+   Il partait des commandes Shopify et les datait à leur date de COMMANDE.
+   L'autre onglet part des factures et les date à leur date de FACTURE. Les
+   deux ne pouvaient donc jamais se recouper : 106 des 238 factures
+   marketplace sont émises un autre jour que la vente, soit 45 %.
+
+   En partant des factures, trois écarts disparaissent d'un coup :
+     - la DATE devient celle de la facture, identique à l'autre onglet ;
+     - les AVOIRS entrent en négatif, avec leur signe, au lieu d'être
+       invisibles. Un retour se voit désormais dans le total ;
+     - le FILTRE SOCIÉTÉ s'applique enfin — mpStats l'ignorait complètement.
+
+   Ce qui reste volontairement différent : cet onglet ne montre que les ventes
+   passées par une commande Shopify. La boutique et les expéditions ne s'y
+   trouvent pas, et c'est leur absence qui explique le reste de l'écart avec
+   « Ventes & marges ». */
 function mpStats(from,to){
   var res={lignes:{},tot:{nb:0,ttc:0,tva:0,com:0,cout:0,marge:0},
            attente:{nb:0,ttc:0,raisons:{}},devises:{},
-           inconnues:0,ignorees:0};
-  (typeof _shopOrders!=="undefined"?(_shopOrders||[]):[]).forEach(function(o){
-    if(!o||o.cancelled)return;
-    var d=String(o.date||"").slice(0,10);
-    if(from&&d<from)return;
-    if(to&&d>to)return;
-    var canal=mpCanal(o);
-    if(canal===null){res.inconnues++;return;}
-    if(!shopVenteAboutie(o)){res.ignorees++;return;}
-    var r=shopMarge(o);
-    if(r.devise!=="EUR"){
-      var D=res.devises[r.devise]||(res.devises[r.devise]={nb:0,montant:0,convertis:0});
-      D.nb++;D.montant+=(r.ttcDevise!=null?r.ttcDevise:r.ttc);
-      if(r.fx>0)D.convertis++;
-    }
-    /* UNE SEULE POPULATION DANS TOUTES LES COLONNES.
+           inconnues:0,ignorees:0,avoirs:{nb:0,ttc:0}};
+  var canaux=mpCanalParCommande();
+  var fixeDejaCompte={};   // la part fixe d'un marketplace se prend UNE fois par commande
+  (DB.factures||[]).forEach(function(f){
+    if(!f||!f.lines)return;
+    var dt=f.date;
+    if(from&&dt<from)return;
+    if(to&&dt>to)return;
+    if(socFilter&&f.societeId!=socFilter)return;
+    var oid=f.orderId;
+    if(!oid)return;                       // vente boutique ou expédition : pas ici
+    var canal=canaux[oid];
+    if(canal===undefined||canal===null){res.inconnues++;return;}
 
-       Une commande dont la marge n'est pas calculable sort du tableau
-       ENTIÈREMENT, chiffre d'affaires compris. Avant, elle comptait dans le
-       CA mais pas dans la marge : les colonnes affichaient côte à côte deux
-       populations différentes, et l'addition d'une ligne ne tombait pas
-       juste — sur quatre commandes Shein dont une sans paire rattachée, le
-       CA en montrait quatre et la marge n'en couvrait que trois.
+    var sign=(f.type==="avoir")?-1:1;
+    var ttcBrut=+(f.totalTTC||0);
+    var htBrut=+(f.totalHT||0);
+    if(!(ttcBrut>0)){res.attente.nb++;
+      res.attente.raisons["facture à 0 €"]=(res.attente.raisons["facture à 0 €"]||0)+1;return;}
 
-       Depuis que seules les ventes expédiées ET facturées entrent ici, le
-       cas est devenu rare — 196 commandes marketplace sur 197 sont
-       calculables. Autant le traiter proprement : ce qui est affiché est
-       entièrement calculé, et ce qui ne l'est pas est dit en note. */
-    if(r.marge==null){
-      res.attente.nb++;res.attente.ttc+=r.ttc;
-      r.manque.forEach(function(m){res.attente.raisons[m]=(res.attente.raisons[m]||0)+1;});
-      return;
+    /* Le coût d'achat vient de la LIGNE de facture, où il a été figé à
+       l'émission — le même chiffre que celui de « Ventes & marges ». */
+    var cout=0,sansPrix=0;
+    (f.lines||[]).forEach(function(l){
+      (l&&l.refs||[]).forEach(function(ref){
+        var a=(DB.articles||[]).find(function(x){return x&&x.ref===ref;});
+        var c=(typeof lineCost==="function")?lineCost(l,a):(+((a&&a.prix)||0));
+        if(c>0)cout+=c;else sansPrix++;
+      });
+    });
+    if(sansPrix){res.attente.nb++;res.attente.ttc+=ttcBrut;
+      res.attente.raisons[sansPrix+" prix d'achat manquant"]=
+        (res.attente.raisons[sansPrix+" prix d'achat manquant"]||0)+1;return;}
+
+    /* La commission porte sur le TTC facturé. La part fixe, elle, est due une
+       seule fois par commande : une commande scindée en deux factures par
+       régime de TVA la paierait deux fois. */
+    var t=MP_TAUX[canal];
+    var com=null;
+    if(canal==="Boutique en ligne")com=0;
+    else if(t&&t.pc>0){
+      com=Math.round(ttcBrut*t.pc*100)/100;
+      if(t.fixe>0&&!fixeDejaCompte[oid]){com=Math.round((com+t.fixe)*100)/100;fixeDejaCompte[oid]=1;}
     }
-    /* La ligne du canal n'est créée que pour une commande retenue : sinon un
-       canal entièrement non calculable laisserait une ligne vide au tableau. */
+    if(com==null){res.attente.nb++;res.attente.ttc+=ttcBrut;
+      res.attente.raisons["taux "+canal+" inconnu"]=
+        (res.attente.raisons["taux "+canal+" inconnu"]||0)+1;return;}
+
+    var ttc=Math.round(ttcBrut*sign*100)/100;
+    var ht=Math.round(htBrut*sign*100)/100;
+    var tva=Math.round((ttc-ht)*100)/100;
+    var c=Math.round(cout*sign*100)/100;
+    var cm=Math.round(com*sign*100)/100;
+    var marge=Math.round((ht-cm-c)*100)/100;
+
+    if(sign<0){res.avoirs.nb++;res.avoirs.ttc+=ttcBrut;}
+
     var L=res.lignes[canal]||(res.lignes[canal]={nb:0,ttc:0,tva:0,com:0,cout:0,marge:0});
-    L.nb++;L.ttc+=r.ttc;L.tva+=r.tva;L.com+=r.commission;L.cout+=r.cout;L.marge+=r.marge;
-    res.tot.nb++;res.tot.ttc+=r.ttc;res.tot.tva+=r.tva;
-    res.tot.com+=r.commission;res.tot.cout+=r.cout;res.tot.marge+=r.marge;
+    L.nb+=sign;L.ttc+=ttc;L.tva+=tva;L.com+=cm;L.cout+=c;L.marge+=marge;
+    res.tot.nb+=sign;res.tot.ttc+=ttc;res.tot.tva+=tva;
+    res.tot.com+=cm;res.tot.cout+=c;res.tot.marge+=marge;
   });
+  /* Les arrondis cumulés : on remet chaque total au centime. */
+  var r2c=function(x){return Math.round(x*100)/100;};
+  [res.tot].concat(Object.keys(res.lignes).map(function(k){return res.lignes[k];}))
+    .forEach(function(L){["ttc","tva","com","cout","marge"].forEach(function(k){L[k]=r2c(L[k]);});});
+  res.avoirs.ttc=r2c(res.avoirs.ttc);
   return res;
 }
 function renderDashMp(from,to){
@@ -2393,24 +2446,17 @@ function renderDashMp(from,to){
      sans rapport avec la lecture courante. Elles passent donc EN DESSOUS,
      en petit, plutôt qu'en bandeau au-dessus des chiffres. */
   var notes=[];
-  if(s.ignorees)notes.push(s.ignorees+" commande(s) de la période ne sont pas encore "
-    +"expédiées et facturées : elles n'entrent pas dans ce tableau.");
+  notes.push("Ventes passées par une commande Shopify, datées à la FACTURE comme "
+    +"l'onglet Ventes & marges. La boutique et les expéditions n'y figurent pas : "
+    +"c'est ce qui explique l'écart entre les deux onglets.");
+  if(s.avoirs.nb)notes.push(s.avoirs.nb+" avoir(s) déduit(s) du total, soit "
+    +eur(s.avoirs.ttc)+" TTC de retours.");
   /* Les commandes d'origine inconnue : plus de bandeau, mais pas de silence
      non plus. Les faire disparaître sans trace, ce serait laisser croire que
      le tableau couvre tout. */
-  if(s.inconnues)notes.push(s.inconnues+" commande(s) téléchargée(s) avant que l'ERP "
-    +"ne sache lire le marketplace : canal inconnu, donc hors tableau. "
+  if(s.inconnues)notes.push(s.inconnues+" facture(s) sur des commandes téléchargées avant "
+    +"que l'ERP ne sache lire le marketplace : canal inconnu, donc hors tableau. "
     +"shopRechargerHistorique() dans la console les récupère.");
-  var dv=Object.keys(s.devises);
-  if(dv.length){
-    var nbNon=0;
-    var ligne=dv.sort().map(function(k){
-      var D=s.devises[k];nbNon+=(D.nb-D.convertis);
-      return D.nb+" en "+esc(k)+" ("+(Math.round(D.montant*100)/100).toFixed(2).replace(".",",")
-        +" "+esc(k)+")"+(D.convertis<D.nb?", dont "+(D.nb-D.convertis)+" sans taux":"");}).join(" · ");
-    notes.push("Devises : "+ligne+". Converties au taux du jour de la commande, le même "
-      +"que celui des factures."+(nbNon?" Celles sans taux figé sont hors chiffre d'affaires.":""));
-  }
   var pied=notes.length
     ?'<div class="muted" style="grid-column:1/-1;font-size:11.5px;line-height:1.6;'
       +'padding:2px 4px 0;opacity:.7">'+notes.map(esc).join("<br>")+'</div>'
