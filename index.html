@@ -2263,17 +2263,6 @@ function renderDashMp(from,to){
         +'et le nombre de commandes, jamais dans la marge, la TVA ni les commissions.<br>'
         +'Raisons : '+det+'</div></div>';
     }
-    /* Les commandes d'origine inconnue : le seul message qui appelle une
-       action, donc le seul qui reste en haut. */
-    if(s.inconnues){
-      h+='<div class="card" style="border-left:4px solid #d97706;margin-bottom:14px">'
-        +'<h3 style="margin-top:0">'+s.inconnues+' commande(s) sans canal connu, exclue(s) du tableau</h3>'
-        +'<div class="muted" style="font-size:13px">Elles ont été téléchargées avant que '
-        +'l\'ERP ne sache lire le marketplace : leur origine n\'est pas « boutique en ligne », '
-        +'elle est inconnue, et les compter comme des ventes directes en ferait la plus '
-        +'grosse ligne du tableau.<br>Pour les récupérer, lance '
-        +'<code>shopRechargerHistorique()</code> dans la console.</div></div>';
-    }
     boxC.innerHTML=h;
   }
 
@@ -2356,6 +2345,12 @@ function renderDashMp(from,to){
   var notes=[];
   if(s.ignorees)notes.push(s.ignorees+" commande(s) de la période ne sont pas encore "
     +"expédiées et facturées : elles n'entrent pas dans ce tableau.");
+  /* Les commandes d'origine inconnue : plus de bandeau, mais pas de silence
+     non plus. Les faire disparaître sans trace, ce serait laisser croire que
+     le tableau couvre tout. */
+  if(s.inconnues)notes.push(s.inconnues+" commande(s) téléchargée(s) avant que l'ERP "
+    +"ne sache lire le marketplace : canal inconnu, donc hors tableau. "
+    +"shopRechargerHistorique() dans la console les récupère.");
   var dv=Object.keys(s.devises);
   if(dv.length){
     var nbNon=0;
@@ -13367,6 +13362,7 @@ var MP_TAUX={
   "Decathlon":{pc:0.16},
   "Spartoo":  {pc:0.16},
   "Cdiscount":{pc:0.15},
+  "Joom":     {pc:0.125},
   "Bol":      {pc:0.13, fixe:0.95}
 };
 /* Le montant en euros, ou null si le taux n'est pas renseigné. C'est CETTE
