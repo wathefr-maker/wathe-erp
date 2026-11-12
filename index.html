@@ -5752,6 +5752,29 @@ function _vpExpeditions(){
       if(l&&l.articleId!=null&&m[l.articleId]==null)m[l.articleId]=p;});});
   _VP_EXP=m;_VP_EXP_N=n;return m;
 }
+/* ── LE RÉGIME RÉELLEMENT APPLIQUÉ À UNE VENTE ─────────────────────────────
+   C'est la règle de la facture, et elle n'est pas celle de saleSplit.
+
+   La facture fait : lineTva = (regime==="TVASM") ? "TVASM" : (tauxDuPays ||
+   regime). Autrement dit le pays de destination ÉCRASE le régime inscrit sur
+   la pièce, sauf la TVA sur la marge qui l'emporte toujours.
+
+   saleSplit, lui, ne remplace que « Exonéré ». Une pièce « TVA 20% » partie
+   en Allemagne était donc facturée à 19 % et comptée à 20 % partout
+   ailleurs — 17 des 24 pièces « TVA 20% » vendues sur Shopify sont dans ce
+   cas (8 Allemagne, 5 Pays-Bas, 3 Italie, 1 Irlande).
+
+   On traduit donc le régime AVANT d'appeler saleSplit, en rendant
+   « Exonéré » — que saleSplit sait lire comme « taux du pays ». Sans pays
+   connu, on garde le régime tel quel : forcer « Exonéré » ferait silencieu-
+   sement passer un taux réduit à 20 %. */
+function regimeVente(tvaPiece,paysNom){
+  var t=String(tvaPiece||"");
+  if(t==="TVASM")return "TVASM";
+  var p=paysNom?paysByName(paysNom):null;
+  if(p&&p.taux!=null)return "Exonéré";
+  return t||"Exonéré";
+}
 function pieceVentePays(a){
   if(!a)return "";
   var f=a.ref?_vpFactures()[a.ref]:null;
@@ -5771,8 +5794,9 @@ function pieceVentePays(a){
    endroit où la règle est écrite — « Exonéré » y signifiant « taux du pays
    de destination ». */
 function pvHTof(a){
+  var pays=pieceVentePays(a);
   return saleSplit(+((a&&a.venteTTC)||0),+((a&&a.prix)||0),
-                   String((a&&a.tva)||""),countryStdRate(pieceVentePays(a))).ca;
+                   regimeVente((a&&a.tva),pays),countryStdRate(pays)).ca;
 }
 function expedInfoFor(a){if(!a)return "";var e=(DB.expeditions||[]).find(function(x){return (x.lignes||[]).some(function(l){return l.articleId===a.id;});});if(e)return String(e.nom||e.id||"");if(a.shopifyOrderName)return a.shopifyOrderName;return "";}
 function stockXlsxRows(list){return list.map(a=>{const v=varById(a.varianteId),m=modeleById(v.modeleId);return {
@@ -13390,9 +13414,15 @@ function shopMarge(o){
   /* Défaut « Exonéré », qui vaut « taux du pays » chez saleSplit. Un régime
      vide ou inconnu y donnerait taxRate=0, donc AUCUNE TVA : le zéro qui
      gonfle une marge sans rien dire. Mieux vaut le taux du pays. */
+  var paysNom=orderCountryName(o);
   var regime="Exonéré";
   if(lot.length){
-    var regs={};lot.forEach(function(a){regs[String((a&&a.tva)||"")]=1;});
+    /* On traduit CHAQUE régime par celui que la facture appliquerait, puis
+       on regarde s'ils s'accordent. Sans cette traduction, « Exonéré » et
+       « TVA 20% » sur une même commande passeraient pour deux régimes
+       différents alors que la facture les sort tous deux au taux du pays. */
+    var regs={};
+    lot.forEach(function(a){regs[regimeVente((a&&a.tva),paysNom)]=1;});
     var noms=Object.keys(regs).filter(function(x){return x!=="";});
     if(noms.length===1)regime=noms[0];
     else if(noms.length>1)out.manque.push("régimes de TVA mêlés");
