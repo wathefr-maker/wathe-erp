@@ -408,7 +408,7 @@
         <div id="vatCharts" class="dashcharts"></div>
       </div>
       <div id="dashPaneMp" class="hide">
-        <div id="mpCouverture"></div>
+        <div id="mpAlertes"></div>
         <div class="kpis" id="mpKpis"></div>
         <div id="mpCharts" class="dashcharts"></div>
       </div>
@@ -2202,7 +2202,7 @@ function mpCanal(o){
   return String(o.marketplace||"").trim()||"Boutique en ligne";
 }
 function mpStats(from,to){
-  var res={lignes:{},tot:{nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0},
+  var res={lignes:{},tot:{nb:0,ttc:0,tva:0,com:0,cout:0,marge:0},
            attente:{nb:0,ttc:0,raisons:{}},devises:{},
            inconnues:0,ignorees:0};
   (typeof _shopOrders!=="undefined"?(_shopOrders||[]):[]).forEach(function(o){
@@ -2213,34 +2213,41 @@ function mpStats(from,to){
     var canal=mpCanal(o);
     if(canal===null){res.inconnues++;return;}
     if(!shopVenteAboutie(o)){res.ignorees++;return;}
-    var L=res.lignes[canal]||(res.lignes[canal]=
-      {nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0,horsDevise:0});
     var r=shopMarge(o);
-    /* Une commande en devise étrangère entre dans le CA UNE FOIS CONVERTIE,
-       au taux du jour de la commande. Sans taux figé, elle n'entre nulle
-       part : 1 481 couronnes compteraient pour 1 481 €. */
     if(r.devise!=="EUR"){
       var D=res.devises[r.devise]||(res.devises[r.devise]={nb:0,montant:0,convertis:0});
       D.nb++;D.montant+=(r.ttcDevise!=null?r.ttcDevise:r.ttc);
-      L.horsDevise++;
-      if(!(r.fx>0)){L.nb++;res.tot.nb++;}        // non convertie : hors CA
-      else D.convertis++;
+      if(r.fx>0)D.convertis++;
     }
-    if(r.devise!=="EUR"&&!(r.fx>0))return;
-    L.nb++;L.ttc+=r.ttc;res.tot.nb++;res.tot.ttc+=r.ttc;
+    /* UNE SEULE POPULATION DANS TOUTES LES COLONNES.
+
+       Une commande dont la marge n'est pas calculable sort du tableau
+       ENTIÈREMENT, chiffre d'affaires compris. Avant, elle comptait dans le
+       CA mais pas dans la marge : les colonnes affichaient côte à côte deux
+       populations différentes, et l'addition d'une ligne ne tombait pas
+       juste — sur quatre commandes Shein dont une sans paire rattachée, le
+       CA en montrait quatre et la marge n'en couvrait que trois.
+
+       Depuis que seules les ventes expédiées ET facturées entrent ici, le
+       cas est devenu rare — 196 commandes marketplace sur 197 sont
+       calculables. Autant le traiter proprement : ce qui est affiché est
+       entièrement calculé, et ce qui ne l'est pas est dit en note. */
     if(r.marge==null){
       res.attente.nb++;res.attente.ttc+=r.ttc;
       r.manque.forEach(function(m){res.attente.raisons[m]=(res.attente.raisons[m]||0)+1;});
       return;
     }
-    L.nbC++;L.ttcC+=r.ttc;L.tva+=r.tva;L.com+=r.commission;L.cout+=r.cout;L.marge+=r.marge;
-    res.tot.nbC++;res.tot.ttcC+=r.ttc;res.tot.tva+=r.tva;
+    /* La ligne du canal n'est créée que pour une commande retenue : sinon un
+       canal entièrement non calculable laisserait une ligne vide au tableau. */
+    var L=res.lignes[canal]||(res.lignes[canal]={nb:0,ttc:0,tva:0,com:0,cout:0,marge:0});
+    L.nb++;L.ttc+=r.ttc;L.tva+=r.tva;L.com+=r.commission;L.cout+=r.cout;L.marge+=r.marge;
+    res.tot.nb++;res.tot.ttc+=r.ttc;res.tot.tva+=r.tva;
     res.tot.com+=r.commission;res.tot.cout+=r.cout;res.tot.marge+=r.marge;
   });
   return res;
 }
 function renderDashMp(from,to){
-  var boxC=document.getElementById("mpCouverture");
+  var boxC=document.getElementById("mpAlertes");
   var boxK=document.getElementById("mpKpis");
   var boxG=document.getElementById("mpCharts");
   if(!boxK||!boxG)return;
@@ -2258,9 +2265,10 @@ function renderDashMp(from,to){
       var det=Object.keys(r).sort(function(a,b){return r[b]-r[a];})
         .map(function(k){return esc(k)+" ("+r[k]+")";}).join(" · ");
       h+='<div class="card" style="border-left:4px solid #d97706;margin-bottom:14px">'
-        +'<h3 style="margin-top:0">'+s.attente.nb+' commande(s) hors calcul, soit '+eur(s.attente.ttc)+' de CA</h3>'
-        +'<div class="muted" style="font-size:13px">Leur marge n\'est pas devinée : elles comptent dans le CA '
-        +'et le nombre de commandes, jamais dans la marge, la TVA ni les commissions.<br>'
+        +'<h3 style="margin-top:0">'+s.attente.nb+' commande(s) hors tableau, soit '+eur(s.attente.ttc)+' de CA</h3>'
+        +'<div class="muted" style="font-size:13px">Leur marge n\'est pas devinée, et leur chiffre '
+        +'d\'affaires n\'est pas compté non plus : toutes les colonnes portent ainsi sur les mêmes '
+        +'commandes, et l\'addition d\'une ligne tombe juste.<br>'
         +'Raisons : '+det+'</div></div>';
     }
     boxC.innerHTML=h;
@@ -2269,16 +2277,14 @@ function renderDashMp(from,to){
   var k=[
     ["CA TTC encaissé",eur(t.ttc),"var(--violet)"],
     ["Marge nette",eur(t.marge),t.marge>=0?"#16a34a":"#dc2626"],
-    ["Taux de marge",t.ttcC>0?P(t.marge/t.ttcC*100):"—","#16a34a"],
+    ["Taux de marge",t.ttc>0?P(t.marge/t.ttc*100):"—","#16a34a"],
     ["Commissions",eur(t.com),"#dc2626"],
-    ["Taux de commission",t.ttcC>0?P(t.com/t.ttcC*100):"—","#dc2626"],
+    ["Taux de commission",t.ttc>0?P(t.com/t.ttc*100):"—","#dc2626"],
     ["TVA due",eur(t.tva),"#b45309"],
     ["Coût d'achat",eur(t.cout),"#475569"],
     ["Commandes",t.nb,"var(--violet)"],
     ["Panier moyen TTC",t.nb?eur(t.ttc/t.nb):"—","#0f172a"],
-    ["Marge moy./commande",t.nbC?eur(t.marge/t.nbC):"—","#16a34a"],
-    ["Marge calculée sur",t.nb?(t.nbC+"/"+t.nb+" cmd"):"—",
-      (t.nb&&t.nbC===t.nb)?"#16a34a":"#d97706"],
+    ["Marge moy./commande",t.nb?eur(t.marge/t.nb):"—","#16a34a"],
   ];
   boxK.innerHTML=k.map(function(x){
     return '<div class="kpi"><div class="v" style="color:'+x[2]+'">'+x[1]+'</div>'
@@ -2290,34 +2296,31 @@ function renderDashMp(from,to){
   var noms=Object.keys(s.lignes).sort(function(a,b){return s.lignes[b].marge-s.lignes[a].marge;});
   var rows=noms.map(function(n){
     var L=s.lignes[n];
-    var couvert=(L.nbC===L.nb);
-    var tm=L.ttcC>0?(L.marge/L.ttcC*100):0;
-    var tc=L.ttcC>0?(L.com/L.ttcC*100):0;
+    /* Toutes les colonnes portent sur les mêmes commandes : CA − TVA −
+       commissions − coût d'achat = marge, sur chaque ligne, toujours. */
+    var tm=L.ttc>0?(L.marge/L.ttc*100):0;
+    var tc=L.ttc>0?(L.com/L.ttc*100):0;
     var part=t.ttc>0?(L.ttc/t.ttc*100):0;
-    var vide='<span class="muted">—</span>';
+    var R='style="text-align:right;white-space:nowrap"';
     return '<tr>'
-      +'<td><b>'+esc(n)+'</b>'
-        +(L.horsDevise?'<div class="muted" style="font-size:11px" title="Commandes dans une'
-          +' autre devise, exclues du CA en euros">'+L.horsDevise+' hors devise</div>':"")+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+L.nb+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+eur(L.ttc)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+P(part)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap;color:'+(couvert?"#16a34a":"#d97706")+'">'+L.nbC+'/'+L.nb+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?eur(L.cout):vide)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap;color:#dc2626">'+(L.nbC?eur(L.com):vide)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?P(tc):vide)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap;color:#b45309">'+(L.nbC?eur(L.tva):vide)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap;font-weight:700;color:'+(L.marge>=0?"#16a34a":"#dc2626")+'">'
-        +(L.nbC?eur(L.marge):vide)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?P(tm):vide)+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+(L.nbC?eur(L.marge/L.nbC):vide)+'</td>'
+      +'<td><b>'+esc(n)+'</b></td>'
+      +'<td '+R+'>'+L.nb+'</td>'
+      +'<td '+R+'>'+eur(L.ttc)+'</td>'
+      +'<td '+R+'>'+P(part)+'</td>'
+      +'<td '+R+'>'+eur(L.cout)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;color:#dc2626">'+eur(L.com)+'</td>'
+      +'<td '+R+'>'+P(tc)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;color:#b45309">'+eur(L.tva)+'</td>'
+      +'<td style="text-align:right;white-space:nowrap;font-weight:700;color:'
+        +(L.marge>=0?"#16a34a":"#dc2626")+'">'+eur(L.marge)+'</td>'
+      +'<td '+R+'>'+P(tm)+'</td>'
+      +'<td '+R+'>'+eur(L.marge/L.nb)+'</td>'
       +'</tr>';}).join("");
   var tableau='<div class="card" style="grid-column:1/-1"><h3>Répartition par marketplace</h3>'
     +(noms.length
       ?'<div style="overflow-x:auto"><table><thead><tr>'
         +'<th>Canal</th><th style="text-align:right;white-space:nowrap">Cmd</th><th style="text-align:right;white-space:nowrap">CA TTC</th>'
-        +'<th style="text-align:right;white-space:nowrap">Part du CA</th><th style="text-align:right;white-space:nowrap" '
-        +'title="Commandes dont la marge a pu être calculée">Couverture</th>'
+        +'<th style="text-align:right;white-space:nowrap">Part du CA</th>'
         +'<th style="text-align:right;white-space:nowrap">Coût d\'achat</th><th style="text-align:right;white-space:nowrap">Commissions</th>'
         +'<th style="text-align:right;white-space:nowrap">Taux com.</th><th style="text-align:right;white-space:nowrap">TVA</th>'
         +'<th style="text-align:right;white-space:nowrap">Marge</th><th style="text-align:right;white-space:nowrap">Taux de marge</th>'
@@ -2327,7 +2330,7 @@ function renderDashMp(from,to){
 
   /* Le donut ne montre que les canaux dont la marge est connue ET positive :
      une part négative n'a pas de sens dans un camembert. */
-  var segs=noms.filter(function(n){return s.lignes[n].nbC&&s.lignes[n].marge>0;})
+  var segs=noms.filter(function(n){return s.lignes[n].nb&&s.lignes[n].marge>0;})
     .map(function(n,i){
       var c=(MP_COULEURS[n]||["#e5e7eb","#475569"])[1];
       return {label:n,value:s.lignes[n].marge,color:c};});
