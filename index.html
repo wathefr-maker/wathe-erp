@@ -1984,9 +1984,24 @@ async function fxSyncOrders(){
   try{
     var need={};
     (_shopOrders||[]).forEach(function(o){
-      if(!o||!o.custCurrency||o.custCurrency==="EUR")return;
-      var k=_fxKey(o.custCurrency,o.date);
-      if(_FX[k]==null)need[k]={cur:o.custCurrency,date:o.date};
+      if(!o)return;
+      /* DEUX CAS, ET LE SECOND MANQUAIT.
+
+         custCurrency : le client a payé dans sa devise alors que la boutique
+         encaisse en euros. C'est le cas prévu depuis le début.
+
+         currency : la BOUTIQUE elle-même n'est pas en euros sur ce marché.
+         Shopify rend alors shopMoney ET presentmentMoney en SEK, DKK, RON ou
+         CZK, et custCurrency reste vide — ces commandes échappaient donc à la
+         récupération du taux. Sept d'entre elles pesaient 6 662 € de chiffre
+         d'affaires pour environ 820 € réels. La facturation, elle, traitait
+         déjà ce cas ; seule la récupération du taux l'ignorait, si bien que
+         chaque facture devait aller le chercher elle-même. */
+      var cur=(o.custCurrency&&o.custCurrency!=="EUR")?o.custCurrency
+             :((o.currency&&o.currency!=="EUR")?o.currency:"");
+      if(!cur)return;
+      var k=_fxKey(cur,o.date);
+      if(_FX[k]==null)need[k]={cur:cur,date:o.date};
     });
     var keys=Object.keys(need);
     if(!keys.length)return false;
@@ -2152,15 +2167,17 @@ function mpStats(from,to){
     var L=res.lignes[canal]||(res.lignes[canal]=
       {nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0,horsDevise:0});
     var r=shopMarge(o);
-    /* Une commande en SEK ou en DKK ne rejoint PAS le chiffre d'affaires en
-       euros : 1 481 couronnes y entreraient comme 1 481 €. Elle est comptée
-       à part, et son canal le signale. */
+    /* Une commande en devise étrangère entre dans le CA UNE FOIS CONVERTIE,
+       au taux du jour de la commande. Sans taux figé, elle n'entre nulle
+       part : 1 481 couronnes compteraient pour 1 481 €. */
     if(r.devise!=="EUR"){
-      L.nb++;L.horsDevise++;res.tot.nb++;
-      var D=res.devises[r.devise]||(res.devises[r.devise]={nb:0,montant:0});
-      D.nb++;D.montant+=r.ttc;
-      return;
+      var D=res.devises[r.devise]||(res.devises[r.devise]={nb:0,montant:0,convertis:0});
+      D.nb++;D.montant+=(r.ttcDevise!=null?r.ttcDevise:r.ttc);
+      L.horsDevise++;
+      if(!(r.fx>0)){L.nb++;res.tot.nb++;}        // non convertie : hors CA
+      else D.convertis++;
     }
+    if(r.devise!=="EUR"&&!(r.fx>0))return;
     L.nb++;L.ttc+=r.ttc;res.tot.nb++;res.tot.ttc+=r.ttc;
     if(r.marge==null){
       res.attente.nb++;res.attente.ttc+=r.ttc;
@@ -2202,17 +2219,20 @@ function renderDashMp(from,to){
        mélanger au CA en euros l'aurait gonflé sans que rien ne le dise. */
     var dv=Object.keys(s.devises);
     if(dv.length){
+      var nbd=0,nbNon=0;
       var ligne=dv.sort().map(function(k){
-        return s.devises[k].nb+' en '+esc(k)+' ('
-          +(Math.round(s.devises[k].montant*100)/100).toFixed(2).replace(".",",")
-          +' '+esc(k)+')';}).join(" · ");
-      var nbd=dv.reduce(function(n,k){return n+s.devises[k].nb;},0);
-      h+='<div class="card" style="border-left:4px solid #dc2626;margin-bottom:14px">'
-        +'<h3 style="margin-top:0">'+nbd+' commande(s) dans une autre devise, exclue(s) du chiffre d\'affaires</h3>'
+        var D=s.devises[k];nbd+=D.nb;nbNon+=(D.nb-D.convertis);
+        return D.nb+' en '+esc(k)+' ('
+          +(Math.round(D.montant*100)/100).toFixed(2).replace(".",",")+' '+esc(k)+')'
+          +(D.convertis<D.nb?' — '+(D.nb-D.convertis)+' sans taux':'');}).join(" · ");
+      h+='<div class="card" style="border-left:4px solid '+(nbNon?"#dc2626":"#0891b2")+';margin-bottom:14px">'
+        +'<h3 style="margin-top:0">'+nbd+' commande(s) dans une autre devise'
+        +(nbNon?', dont '+nbNon+' hors chiffre d\'affaires':', converties en euros')+'</h3>'
         +'<div class="muted" style="font-size:13px">'+ligne+'.<br>'
-        +'Shopify ne fournit aucun montant en euros pour ces marchés : les additionner '
-        +'reviendrait à compter des couronnes comme des euros. Aucun taux de change '
-        +'n\'est inventé ici.</div></div>';
+        +'Shopify ne fournit aucun montant en euros pour ces marchés. Le taux retenu est '
+        +'celui du jour de la commande, le même que celui des factures — aucun taux n\'est '
+        +'inventé ici.'+(nbNon?' Les commandes sans taux figé sont écartées du CA plutôt '
+        +'que comptées à leur montant brut.':'')+'</div></div>';
     }
     boxC.innerHTML=h;
   }
@@ -13220,9 +13240,12 @@ function mpCommission(o){
   if(c==null)return '<div class="muted" style="font-size:11.5px;margin-top:3px;opacity:.75" '
     +'title="Aucun taux de commission renseigné pour '+esc(m)+' : rien n\'est calculé tant qu\'il manque.">'
     +'taux non renseigné</div>';
+  /* Le montant est dans la devise de la COMMANDE : sur une vente suédoise,
+     16 % de 1 481 SEK font 236,96 SEK, pas 236,96 €. Le symbole doit suivre,
+     sinon la ligne ment sur son unité. */
   return '<div class="muted" style="font-size:11.5px;margin-top:3px" '
     +'title="'+(Math.round(MP_TAUX[m]*1000)/10)+' % du total TTC, port inclus">'
-    +'commission '+eur(c)+'</div>';
+    +'commission '+money(c,(o&&o.currency)||"EUR")+'</div>';
 }
 /* ── LA MARGE D'UNE VENTE ──────────────────────────────────────────────────
    Marge = prix de vente − TVA − commission − prix d'achat des paires.
@@ -13250,25 +13273,39 @@ function shopMarge(o){
   var out={ttc:0,taux:0,tva:0,commission:null,cout:null,marge:null,devise:"EUR",manque:[]};
   if(!o)return out;
   out.ttc=+(o.totalTTC||0);
-  /* UNE COMMANDE QUI N'EST PAS EN EUROS NE SE CALCULE PAS.
+  /* UNE COMMANDE QUI N'EST PAS EN EUROS SE CONVERTIT, ELLE NE SE DEVINE PAS.
 
      Sept commandes du cache sont en SEK, DKK, RON ou CZK : la boutique a des
      marchés dont la devise n'est pas l'euro, et Shopify ne fournit alors
      AUCUN montant en euros — shopMoney et presentmentMoney sont tous deux
-     dans la devise locale. Vérifié à la source sur la #8142 : 1 481, et la
-     devise dit SEK, soit environ 131 €.
+     dans la devise locale. Vérifié à la source sur la #8142 : total 1 481,
+     currencyCode SEK, soit environ 131 €. Additionnées telles quelles, ces
+     sept commandes pèsent 6 662 € pour environ 820 € réels.
 
-     Additionnées telles quelles, ces sept commandes pèsent 6 662 € dans le
-     chiffre d'affaires pour environ 820 € réels. On ne devine pas de taux de
-     change ici : le montant est juste, c'est son unité qui manque. */
+     L'ERP sait déjà faire : fxRate() rend le taux historique au jour de la
+     commande, figé une fois pour toutes, et la facturation s'en sert depuis
+     longtemps pour exactement ces commandes marketplace en DKK et SEK. On
+     réutilise ce taux — en inventer un autre ici ferait diverger la marge de
+     la facture pour une même vente.
+
+     Tant que le taux n'est pas figé, on ne calcule pas : fxSyncOrders() le
+     récupérera au prochain chargement. */
   out.devise=String(o.currency||"EUR").toUpperCase()||"EUR";
-  if(out.devise!=="EUR"){out.manque.push("montant en "+out.devise);return out;}
+  if(out.devise!=="EUR"){
+    var fx=(typeof fxRate==="function")?fxRate(out.devise,o.date):null;
+    if(!(fx>0)){out.manque.push("taux "+out.devise+" pas encore connu");return out;}
+    out.fx=fx;out.ttcDevise=out.ttc;
+    out.ttc=Math.round(out.ttc*fx*100)/100;      // en euros à partir d'ici
+  }
   out.taux=countryStdRate(orderCountryName(o));
   out.tva=Math.round(out.ttc*out.taux/(100+out.taux)*100)/100;
   var m=String(o.marketplace||"").trim();
   if(!m)out.commission=0;                       // boutique en ligne : rien à prélever
   else{
-    out.commission=mpCommissionEur(o);
+    /* La commission se calcule sur le total CONVERTI. Appeler mpCommissionEur
+       avec la commande telle quelle prendrait o.totalTTC brut : 16 % de 1 481
+       couronnes donnaient 236,96 € au lieu de 20,97 €. */
+    out.commission=mpCommissionEur({marketplace:m,totalTTC:out.ttc});
     if(out.commission==null)out.manque.push("taux "+m+" inconnu");
   }
   var lot=(typeof shopOrderPieces==="function")?shopOrderPieces(o):[];
