@@ -1369,7 +1369,32 @@ function seedClients(){return [
   {id:3,type:"Professionnel",email:"contact@sbtstore.com",societe:"SBT Store",siret:"",tvaIntra:"",civilite:"M.",nom:"Mathé",prenom:"Thibaud",pays:"France"}];
 }
 async function _fetchTable(t){let all=[],from=0;const size=1000;while(true){const {data,error}=await sb.from(t).select('id,data').order('id',{ascending:true}).range(from,from+size-1);if(error)throw error;const b=data||[];for(const r of b)all.push({...(r.data||{}),id:r.id});if(b.length<size)break;from+=size;}return all;}
-async function fetchAll(){const res={};for(const t of ARR_TABLES){res[t]=await _fetchTable(t);}const {data:gd,error:ge}=await sb.from('grilles').select('id,data');if(ge)throw ge;res.grilles=(gd&&gd[0]&&gd[0].data)?gd[0].data:{};try{res.factures=await _fetchTable('factures');}catch(e){res.factures=[];}return res;}
+async function fetchAll(){const res={};for(const t of ARR_TABLES){res[t]=await _fetchTable(t);}const {data:gd,error:ge}=await sb.from('grilles').select('id,data');if(ge)throw ge;res.grilles=(gd&&gd[0]&&gd[0].data)?gd[0].data:{};
+/* ── UNE LECTURE DE FACTURES QUI ÉCHOUE DOIT ARRÊTER LE CHARGEMENT ──────────
+   Ce catch rendait un tableau VIDE, sans alerte ni message. Or une liste de
+   factures vide est exactement la valeur qui désarme tous les garde-fous :
+   « cette commande est-elle déjà facturée ? » répond non pour TOUTES les
+   commandes, et la facturation automatique refacture l'intégralité du carnet.
+
+   C'est arrivé le 12/11/2026 : 57 factures en double, 9 071,73 € de chiffre
+   d'affaires fantôme. Au passage de 11h43, 30 des 34 commandes facturées à
+   10h40 ont été refaites — la signature d'un garde-fou qui ne voit rien, pas
+   d'une course entre deux onglets.
+
+   Et le pire a été évité de peu : l'écriture se fait en mode fusion. Sans
+   elle, _ecrireTable aurait supprimé du serveur les 2 700 factures absentes
+   du tableau vide.
+
+   Le seul cas tolérable reste la table absente (installation neuve) : on
+   repart alors à vide, comme avant. Toute autre erreur remonte, et load()
+   affiche « Impossible de charger les données ». */
+try{res.factures=await _fetchTable('factures');}
+catch(e){
+  var _m=String((e&&(e.message||e.code||e.details))||e);
+  if(/does not exist|42P01|PGRST20[0-9]|could not find the table/i.test(_m))res.factures=[];
+  else throw e;
+}
+return res;}
 async function load(){let fetched;try{fetched=await fetchAll();}catch(e){console.error("Chargement:",e);alert("Impossible de charger les données : "+(e.message||e));return;}const empty=ARR_TABLES.every(t=>!fetched[t].length)&&!(fetched.grilles&&Object.keys(fetched.grilles).length);if(empty){DB=seed();await save();}else{ARR_TABLES.forEach(t=>DB[t]=fetched[t]);DB.grilles=fetched.grilles;DB.factures=fetched.factures||[];_setSnap();}DB.fournisseurs.forEach(f=>{if(!f.type)f.type=f.societe?"Professionnel":"Particulier";});if(!Array.isArray(DB.clients))DB.clients=seedClients();
 DB.societes.forEach(s=>{["siret","tva","adr","cp","ville"].forEach(k=>{if(s[k]===undefined)s[k]="";});if(!s.pays)s.pays="France";});
 if(!DB.grilles||!Object.keys(DB.grilles).length)DB.grilles=JSON.parse(JSON.stringify(GRILLES));
@@ -1638,9 +1663,31 @@ async function save(){
       _snap[t]=await _ecrireTable(t,DB[t]||[],_snap[t]||new Map(),true);
     }
     await _ecrireGrilles();
+    /* ── UNE FACTURE QUI NE S'ENREGISTRE PAS DOIT SE VOIR ──────────────────
+       Un console.warn ne se lit jamais : la pièce est déjà marquée vendue et
+       le journal écrit, mais la facture n'existe nulle part.
+
+       Depuis que la base refuse deux factures sur une même commande et un
+       même régime de TVA, cet échec a de plus un sens précis — c'est le
+       verrou qui a parlé. Le taire reviendrait à masquer exactement ce qu'on
+       vient de mettre en place pour être prévenu. */
     try{
       _snapFactures=await _ecrireTable('factures',DB.factures||[],_snapFactures||new Map(),true);
-    }catch(e){console.warn("Factures non sauvegardées (table 'factures' manquante ?)",e);}
+    }catch(e){
+      console.error("Factures non sauvegardées",e);
+      var _m=String((e&&(e.message||e.code||e.details))||e);
+      if(/duplicate key|unique|23505|factures_une_par_commande/i.test(_m)){
+        alert("Facture refusée par la base : cette commande a déjà une facture "
+          +"pour ce régime de TVA.\n\nC'est le garde-fou anti-doublon. Recharge la page "
+          +"(Ctrl+Maj+R) pour récupérer la facture existante avant de continuer.");
+      }else if(/does not exist|42P01|PGRST20[0-9]|could not find the table/i.test(_m)){
+        console.warn("Table 'factures' absente : enregistrement ignoré.");
+      }else{
+        alert("ATTENTION : les factures n'ont PAS été enregistrées.\n\n"
+          +_m+"\n\nNe quitte pas la page : réessaie une sauvegarde. "
+          +"Les pièces peuvent être marquées vendues sans facture en face.");
+      }
+    }
     // Journal d'activité : non critique. Un échec (ex. RLS Supabase) ne doit JAMAIS
     // bloquer la sauvegarde ni afficher d'alerte. On l'écrit à part, en silencieux.
     try{
