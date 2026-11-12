@@ -13313,17 +13313,31 @@ function mpBadge(o){
    contractuel est HT et que le prélèvement se fait TVA comprise. Retenir 15 %
    sous-estime donc la ponction de 3 points, sauf si cette TVA est récupérée.
    À trancher ; en attendant, c'est le taux demandé qui s'applique. */
-var MP_TAUX={"Shein":0.10,"Decathlon":0.16,"Spartoo":0.16,"Cdiscount":0.15};
+/* Chaque marketplace a la même forme : un pourcentage du TTC, et pour
+   certains une part FIXE par commande. Bol prélève 13 % + 0,95 € — c'est
+   cette part fixe qui faisait paraître son taux variable (13,49 à 14,08 %
+   selon le panier) et interdisait de le lire comme un simple pourcentage.
+   Vérifié au centime sur 19 des 21 commandes Bol du cache. */
+var MP_TAUX={
+  "Shein":    {pc:0.10},
+  "Temu":     {pc:0.09},
+  "Decathlon":{pc:0.16},
+  "Spartoo":  {pc:0.16},
+  "Cdiscount":{pc:0.15},
+  "Bol":      {pc:0.13, fixe:0.95}
+};
 /* Le montant en euros, ou null si le taux n'est pas renseigné. C'est CETTE
    fonction que doit appeler tout calcul de marge — jamais o.commission. */
 function mpCommissionEur(o){
   var m=String((o&&o.marketplace)||"").trim();
   if(!m)return null;
   var t=MP_TAUX[m];
-  if(!(t>0))return null;
+  if(!t||!(t.pc>0))return null;
   var base=+((o&&o.totalTTC)||0);
+  /* Un total à zéro ne doit pas produire la seule part fixe : une commande à
+     0 € est une anomalie, pas une vente qui coûterait 0,95 €. */
   if(!(base>0))return null;
-  return Math.round(base*t*100)/100;
+  return Math.round((base*t.pc+(+t.fixe||0))*100)/100;
 }
 function mpCommission(o){
   var m=String((o&&o.marketplace)||"").trim();
@@ -13335,8 +13349,10 @@ function mpCommission(o){
   /* Le montant est dans la devise de la COMMANDE : sur une vente suédoise,
      16 % de 1 481 SEK font 236,96 SEK, pas 236,96 €. Le symbole doit suivre,
      sinon la ligne ment sur son unité. */
+  var t=MP_TAUX[m]||{};
   return '<div class="muted" style="font-size:11.5px;margin-top:3px" '
-    +'title="'+(Math.round(MP_TAUX[m]*1000)/10)+' % du total TTC, port inclus">'
+    +'title="'+(Math.round(t.pc*1000)/10)+' % du total TTC, port inclus'
+    +(t.fixe>0?(" + "+eur(t.fixe)+" fixes par commande"):"")+'">'
     +'commission '+money(c,(o&&o.currency)||"EUR")+'</div>';
 }
 /* ── LA MARGE D'UNE VENTE ──────────────────────────────────────────────────
