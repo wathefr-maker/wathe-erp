@@ -13354,7 +13354,6 @@ function shopMarge(o){
     out.ttc=Math.round(out.ttc*fx*100)/100;      // en euros à partir d'ici
   }
   out.taux=countryStdRate(orderCountryName(o));
-  out.tva=Math.round(out.ttc*out.taux/(100+out.taux)*100)/100;
   var m=String(o.marketplace||"").trim();
   if(!m)out.commission=0;                       // boutique en ligne : rien à prélever
   else{
@@ -13364,6 +13363,8 @@ function shopMarge(o){
     out.commission=mpCommissionEur({marketplace:m,totalTTC:out.ttc});
     if(out.commission==null)out.manque.push("taux "+m+" inconnu");
   }
+  /* LE COÛT D'ABORD, LA TVA ENSUITE. Sous le régime de la marge, la TVA se
+     calcule sur (vente − achat) : sans le coût, elle n'est pas calculable. */
   var lot=(typeof shopOrderPieces==="function")?shopOrderPieces(o):[];
   if(!lot.length)out.manque.push("paire non rapprochée");
   else{
@@ -13372,7 +13373,39 @@ function shopMarge(o){
     if(sans)out.manque.push(sans+" prix d'achat manquant"+(sans>1?"s":""));
     else out.cout=Math.round(c*100)/100;
   }
-  if(out.commission!=null&&out.cout!=null)
+  /* LE RÉGIME DES PAIRES PASSE AVANT LE TAUX DU PAYS — c'est ce que fait la
+     facture, et deux chiffres pour une même vente seraient pires qu'un seul
+     approximatif.
+
+     « Exonéré » ne veut pas dire « pas de TVA » : saleSplit le traduit par
+     « taux du pays de destination ». Mais TVASM, lui, est un vrai régime :
+     la TVA y vaut (vente − achat) × 20/120, pas un pourcentage du TTC. Sur
+     une paire achetée 71 € et vendue 150 €, la facture retient 13,13 € et le
+     taux du pays en aurait retenu 25 — 11,87 € de marge escamotés.
+
+     Régimes mêlés sur une même commande : on ne tranche pas, on retombe sur
+     le taux du pays et on le signale. La facturation, elle, émet une facture
+     par régime ; refaire ce découpage ici sans prix de vente par paire
+     reviendrait à inventer une répartition. */
+  /* Défaut « Exonéré », qui vaut « taux du pays » chez saleSplit. Un régime
+     vide ou inconnu y donnerait taxRate=0, donc AUCUNE TVA : le zéro qui
+     gonfle une marge sans rien dire. Mieux vaut le taux du pays. */
+  var regime="Exonéré";
+  if(lot.length){
+    var regs={};lot.forEach(function(a){regs[String((a&&a.tva)||"")]=1;});
+    var noms=Object.keys(regs).filter(function(x){return x!=="";});
+    if(noms.length===1)regime=noms[0];
+    else if(noms.length>1)out.manque.push("régimes de TVA mêlés");
+  }
+  if(regime==="TVASM"&&out.cout==null){
+    /* Rien à ajouter aux manques : l'absence de coût est déjà signalée, et
+       c'est elle qui empêche le calcul. */
+    out.tva=0;
+  }else{
+    var sp=saleSplit(out.ttc,(out.cout!=null?out.cout:0),regime,out.taux);
+    out.tva=sp.vat;out.regime=sp.regime;
+  }
+  if(out.commission!=null&&out.cout!=null&&out.manque.length===0)
     out.marge=Math.round((out.ttc-out.tva-out.commission-out.cout)*100)/100;
   return out;
 }
