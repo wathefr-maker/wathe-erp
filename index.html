@@ -2022,7 +2022,10 @@ function salesData(from,to){
     if((DB.factures||[]).some(f=>f.source==="expedition"&&f.expedId===e.id))return;
     const dt=e.factureDate||e.date;if(dt<from||dt>to)return;
     (e.lignes||[]).forEach(function(l){const a=pieceById(l.articleId);if(!a||!a.id)return;
-      const tc=e.factTTC?(+l.prix||0):ttc(l.prix,a.tva);const cost=(e.viInternal?(+a.prix||0):viSaleCost(a));const sp=saleSplit(tc,cost,a.tva);
+      /* Le pays était calculé deux lignes plus bas pour l'enregistrement, et
+         pas transmis au calcul : une expédition vers l'Italie portant une
+         pièce « Exonéré » sortait à 20 % au lieu de 22 %. */
+      const tc=e.factTTC?(+l.prix||0):ttc(l.prix,a.tva);const cost=(e.viInternal?(+a.prix||0):viSaleCost(a));const sp=saleSplit(tc,cost,a.tva,countryStdRate(orderCountryName(e)));
       recs.push({dt:dt,ht:sp.ca,ttc:tc,cost:cost,vat:sp.vat,unit:1,regime:sp.regime,societeId:e.societeId,canal:"Expédition",marque:pieceMarque(a),pays:(orderCountryName(e)||"France")});});});
   /* Les factures issues d'une expédition de VENTE INTERNE sont exclues des
      statistiques : la cession est déjà comptabilisée à l'encaissement, via la
@@ -2038,7 +2041,9 @@ function salesData(from,to){
     const canal=f.orderId?"Shopify":(f.source==="expedition"?"Expédition":(f.canal||"Boutique"));const sign=(f.type==="avoir")?-1:1;
     (f.lines||[]).forEach(function(l){(l.refs||[]).forEach(function(ref){
       const a=DB.articles.find(x=>x.ref===ref);if(!a)return;
-      const tc=(+l.puTTC||0);const cost=lineCost(l,a);const sp=saleSplit(tc,cost,l.tva||a.tva);
+      /* En pratique l.tva porte déjà le taux résolu à la facturation. Le pays
+         sert de filet pour les lignes restées en « Exonéré ». */
+      const tc=(+l.puTTC||0);const cost=lineCost(l,a);const sp=saleSplit(tc,cost,l.tva||a.tva,countryStdRate(f.country));
       if(!socFilter||f.societeId==socFilter){
         recs.push({dt:dt,ht:r2(sp.ca*sign),ttc:r2(tc*sign),cost:r2(cost*sign),vat:r2(sp.vat*sign),unit:sign,regime:sp.regime,societeId:f.societeId,canal:canal,marque:pieceMarque(a),pays:(f.country||"France")});
       }
@@ -4963,7 +4968,7 @@ function renderVBoutique(){var _wb=watheSocId();var _tb0=document.getElementById
   function vbLigne(f,l,ref,estRetour,colle){
     var a=DB.articles.find(function(x){return x.ref===ref;})||{};
     var _cost=lineCost(l,a);
-    var sp=saleSplit(l.puTTC,_cost,l.tva||f.tvaHeader);
+    var sp=saleSplit(l.puTTC,_cost,l.tva||f.tvaHeader,countryStdRate(f.country));
     var _sgn=estRetour?-1:1;
     var _pv=(+l.puTTC||0)*_sgn;
     // Coût affiché : figé sur la ligne au moment de la vente (coût cédé si cession Wathe->SBT).
@@ -5717,7 +5722,58 @@ bulkBar.onclick=async e=>{const b=e.target.closest("[data-bk]");if(!b)return;con
     if(confirm("Supprimer "+toDel.length+" pièce(s) ? Action définitive.")){const _mids=shopModelIdsOf(toDel);const ids=new Set(toDel.map(a=>a.id));DB.articles=DB.articles.filter(a=>!ids.has(a.id));logAct("Suppression","Stock",ids.size+" pièce(s)");selStock.clear();await save();renderAll();try{await shopResyncIds(_mids);}catch(_){}}return;}
   if(k==="excel"){exportStockXlsx(list,"stock_selection.xlsx");return;}
   if(k==="labels"){printLabels(list);return;}};
-function pvHTof(a){var pv=+(a&&a.venteTTC)||0;var tva=String(a&&a.tva||"");if(tva==="TVASM"){var marge=pv-(+(a&&a.prix)||0);var tm=marge>0?marge*20/120:0;return Math.round((pv-tm)*100)/100;}var r=parseFloat(tva);if(!(r>0))r=20;return Math.round(pv/(1+r/100)*100)/100;}
+/* ── LE PAYS QUI DÉCIDE DU TAUX D'UNE PIÈCE VENDUE ─────────────────────────
+   Il ne vit JAMAIS sur la fiche : il vit sur la VENTE. On le cherche donc là
+   où elle est passée, en commençant par la facture — c'est elle qui fait foi,
+   puisque c'est son taux qui a été déclaré.
+
+   Deux index, reconstruits seulement quand le nombre de factures ou
+   d'expéditions change. Sans eux, l'export du stock relirait les ~2 000
+   factures pour CHAQUE pièce : le genre de boucle qui rend un écran lent
+   sans qu'on voie pourquoi. */
+var _VP_FACT=null,_VP_FACT_N=-1,_VP_EXP=null,_VP_EXP_N=-1;
+function _vpFactures(){
+  var n=(DB.factures||[]).length;
+  if(_VP_FACT&&_VP_FACT_N===n)return _VP_FACT;
+  var m={};
+  (DB.factures||[]).forEach(function(f){
+    if(!f||!f.country)return;
+    (f.lines||[]).forEach(function(l){
+      (l&&l.refs||[]).forEach(function(r){if(r&&m[r]==null)m[r]=f.country;});});});
+  _VP_FACT=m;_VP_FACT_N=n;return m;
+}
+function _vpExpeditions(){
+  var n=(DB.expeditions||[]).length;
+  if(_VP_EXP&&_VP_EXP_N===n)return _VP_EXP;
+  var m={};
+  (DB.expeditions||[]).forEach(function(e){
+    if(!e)return;var p=orderCountryName(e);if(!p)return;
+    (e.lignes||[]).forEach(function(l){
+      if(l&&l.articleId!=null&&m[l.articleId]==null)m[l.articleId]=p;});});
+  _VP_EXP=m;_VP_EXP_N=n;return m;
+}
+function pieceVentePays(a){
+  if(!a)return "";
+  var f=a.ref?_vpFactures()[a.ref]:null;
+  if(f)return f;
+  if(a.shopifyOrderId&&typeof _shopOrders!=="undefined"){
+    var o=(_shopOrders||[]).find(function(x){return x&&x.id===a.shopifyOrderId;});
+    if(o){var p=orderCountryName(o);if(p)return p;}
+  }
+  return _vpExpeditions()[a.id]||"";
+}
+/* Le prix de vente HT d'une pièce, AU TAUX DE SON PAYS DE LIVRAISON.
+
+   Cette fonction dupliquait la formule de saleSplit et, n'ayant pas de pays,
+   retombait sur 20 % quelle que soit la destination : une paire partie en
+   Italie s'affichait en HT à 20 % alors que sa facture portait 22 %. Deux
+   chiffres pour une même vente. On passe donc par saleSplit, qui est le seul
+   endroit où la règle est écrite — « Exonéré » y signifiant « taux du pays
+   de destination ». */
+function pvHTof(a){
+  return saleSplit(+((a&&a.venteTTC)||0),+((a&&a.prix)||0),
+                   String((a&&a.tva)||""),countryStdRate(pieceVentePays(a))).ca;
+}
 function expedInfoFor(a){if(!a)return "";var e=(DB.expeditions||[]).find(function(x){return (x.lignes||[]).some(function(l){return l.articleId===a.id;});});if(e)return String(e.nom||e.id||"");if(a.shopifyOrderName)return a.shopifyOrderName;return "";}
 function stockXlsxRows(list){return list.map(a=>{const v=varById(a.varianteId),m=modeleById(v.modeleId);return {
   "IDENTIFIANT INTERNE":a.ref,"NOM DU PRODUIT":m.fr,"SKU":m.sku,"TAILLE":v.taille,"STATUT":a.statut,
