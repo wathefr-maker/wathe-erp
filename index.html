@@ -2142,7 +2142,7 @@ function dashTab(name){
    couvert à 74/77, et le tableau doit le dire au lieu de le cacher. */
 function mpStats(from,to){
   var res={lignes:{},tot:{nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0},
-           attente:{nb:0,ttc:0,raisons:{}}};
+           attente:{nb:0,ttc:0,raisons:{}},devises:{}};
   (typeof _shopOrders!=="undefined"?(_shopOrders||[]):[]).forEach(function(o){
     if(!o||o.cancelled)return;
     var d=String(o.date||"").slice(0,10);
@@ -2150,8 +2150,17 @@ function mpStats(from,to){
     if(to&&d>to)return;
     var canal=String(o.marketplace||"").trim()||"Boutique en ligne";
     var L=res.lignes[canal]||(res.lignes[canal]=
-      {nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0});
+      {nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0,horsDevise:0});
     var r=shopMarge(o);
+    /* Une commande en SEK ou en DKK ne rejoint PAS le chiffre d'affaires en
+       euros : 1 481 couronnes y entreraient comme 1 481 €. Elle est comptée
+       à part, et son canal le signale. */
+    if(r.devise!=="EUR"){
+      L.nb++;L.horsDevise++;res.tot.nb++;
+      var D=res.devises[r.devise]||(res.devises[r.devise]={nb:0,montant:0});
+      D.nb++;D.montant+=r.ttc;
+      return;
+    }
     L.nb++;L.ttc+=r.ttc;res.tot.nb++;res.tot.ttc+=r.ttc;
     if(r.marge==null){
       res.attente.nb++;res.attente.ttc+=r.ttc;
@@ -2177,17 +2186,35 @@ function renderDashMp(from,to){
      commandes manquent et pourquoi : sans lui, un total partiel se lirait
      comme un total. */
   if(boxC){
-    if(!s.attente.nb)boxC.innerHTML="";
-    else{
+    var h="";
+    if(s.attente.nb){
       var r=s.attente.raisons;
       var det=Object.keys(r).sort(function(a,b){return r[b]-r[a];})
         .map(function(k){return esc(k)+" ("+r[k]+")";}).join(" · ");
-      boxC.innerHTML='<div class="card" style="border-left:4px solid #d97706;margin-bottom:14px">'
+      h+='<div class="card" style="border-left:4px solid #d97706;margin-bottom:14px">'
         +'<h3 style="margin-top:0">'+s.attente.nb+' commande(s) hors calcul, soit '+eur(s.attente.ttc)+' de CA</h3>'
         +'<div class="muted" style="font-size:13px">Leur marge n\'est pas devinée : elles comptent dans le CA '
         +'et le nombre de commandes, jamais dans la marge, la TVA ni les commissions.<br>'
         +'Raisons : '+det+'</div></div>';
     }
+    /* Les devises étrangères sont une anomalie d'une autre nature : le
+       montant n'est pas incalculable, il est dans une autre unité. Les
+       mélanger au CA en euros l'aurait gonflé sans que rien ne le dise. */
+    var dv=Object.keys(s.devises);
+    if(dv.length){
+      var ligne=dv.sort().map(function(k){
+        return s.devises[k].nb+' en '+esc(k)+' ('
+          +(Math.round(s.devises[k].montant*100)/100).toFixed(2).replace(".",",")
+          +' '+esc(k)+')';}).join(" · ");
+      var nbd=dv.reduce(function(n,k){return n+s.devises[k].nb;},0);
+      h+='<div class="card" style="border-left:4px solid #dc2626;margin-bottom:14px">'
+        +'<h3 style="margin-top:0">'+nbd+' commande(s) dans une autre devise, exclue(s) du chiffre d\'affaires</h3>'
+        +'<div class="muted" style="font-size:13px">'+ligne+'.<br>'
+        +'Shopify ne fournit aucun montant en euros pour ces marchés : les additionner '
+        +'reviendrait à compter des couronnes comme des euros. Aucun taux de change '
+        +'n\'est inventé ici.</div></div>';
+    }
+    boxC.innerHTML=h;
   }
 
   var k=[
@@ -2220,7 +2247,9 @@ function renderDashMp(from,to){
     var part=t.ttc>0?(L.ttc/t.ttc*100):0;
     var vide='<span class="muted">—</span>';
     return '<tr>'
-      +'<td><b>'+esc(n)+'</b></td>'
+      +'<td><b>'+esc(n)+'</b>'
+        +(L.horsDevise?'<div class="muted" style="font-size:11px" title="Commandes dans une'
+          +' autre devise, exclues du CA en euros">'+L.horsDevise+' hors devise</div>':"")+'</td>'
       +'<td style="text-align:right;white-space:nowrap">'+L.nb+'</td>'
       +'<td style="text-align:right;white-space:nowrap">'+eur(L.ttc)+'</td>'
       +'<td style="text-align:right;white-space:nowrap">'+P(part)+'</td>'
@@ -13218,9 +13247,22 @@ function mpCommission(o){
    tableau qui sert à décider quoi racheter, une marge fausse coûte plus cher
    qu'une marge absente. */
 function shopMarge(o){
-  var out={ttc:0,taux:0,tva:0,commission:null,cout:null,marge:null,manque:[]};
+  var out={ttc:0,taux:0,tva:0,commission:null,cout:null,marge:null,devise:"EUR",manque:[]};
   if(!o)return out;
   out.ttc=+(o.totalTTC||0);
+  /* UNE COMMANDE QUI N'EST PAS EN EUROS NE SE CALCULE PAS.
+
+     Sept commandes du cache sont en SEK, DKK, RON ou CZK : la boutique a des
+     marchés dont la devise n'est pas l'euro, et Shopify ne fournit alors
+     AUCUN montant en euros — shopMoney et presentmentMoney sont tous deux
+     dans la devise locale. Vérifié à la source sur la #8142 : 1 481, et la
+     devise dit SEK, soit environ 131 €.
+
+     Additionnées telles quelles, ces sept commandes pèsent 6 662 € dans le
+     chiffre d'affaires pour environ 820 € réels. On ne devine pas de taux de
+     change ici : le montant est juste, c'est son unité qui manque. */
+  out.devise=String(o.currency||"EUR").toUpperCase()||"EUR";
+  if(out.devise!=="EUR"){out.manque.push("montant en "+out.devise);return out;}
   out.taux=countryStdRate(orderCountryName(o));
   out.tva=Math.round(out.ttc*out.taux/(100+out.taux)*100)/100;
   var m=String(o.marketplace||"").trim();
