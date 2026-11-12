@@ -2131,9 +2131,13 @@ function barChart(data,color){const W=640,H=240,padL=46,padB=26,padT=12,n=data.l
     bars+=`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0,haut).toFixed(1)}" rx="3" fill="${v<0?'var(--red)':color}"><title>${d.label} : ${eur(v)}</title></rect>`;
     if(i%lblEvery===0)labels+=`<text x="${(x+w/2).toFixed(1)}" y="${H-8}" font-size="10" fill="var(--muted)" text-anchor="middle">${d.label}</text>`;});
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${grid}${bars}${labels}</svg>`;}
-function donut(segs){const total=segs.reduce((s,x)=>s+x.value,0)||0;const r=60,c=2*Math.PI*r,cx=80,cy=80;let off=0,arcs="";
+/* avecPct : ajoute la part de chaque segment après son montant. Un camembert
+   sans pourcentages oblige à faire la division de tête pour comparer deux
+   canaux ; c'est précisément ce qu'on vient y chercher. */
+function donut(segs,avecPct){const total=segs.reduce((s,x)=>s+x.value,0)||0;const r=60,c=2*Math.PI*r,cx=80,cy=80;let off=0,arcs="";
   const tt=total||1;segs.forEach(s=>{const len=(s.value/tt)*c;arcs+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="24" stroke-dasharray="${len.toFixed(2)} ${(c-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;off+=len;});
-  const legend=segs.map(s=>`<div style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:12px;height:12px;border-radius:3px;background:${s.color};flex:none"></span>${s.label}<b style="margin-left:auto">${eur(s.value)}</b></div>`).join("");
+  const pct=(v)=>(v/tt*100).toFixed(1).replace(".",",")+" %";
+  const legend=segs.map(s=>`<div style="display:flex;align-items:center;gap:9px;font-size:13.5px"><span style="width:12px;height:12px;border-radius:3px;background:${s.color};flex:none"></span>${s.label}<b style="margin-left:auto">${eur(s.value)}</b>${avecPct?`<span class="muted" style="min-width:52px;text-align:right">${pct(s.value)}</span>`:""}</div>`).join("");
   return `<div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap"><svg viewBox="0 0 160 160" style="width:150px;height:150px;flex:none">${arcs}<text x="80" y="76" text-anchor="middle" font-size="11" fill="var(--muted)">Total</text><text x="80" y="94" text-anchor="middle" font-size="14" font-weight="700">${eur(total)}</text></svg><div style="flex:1;min-width:170px;display:flex;flex-direction:column;gap:11px">${legend}</div></div>`;}
 function camembert(segs){const total=segs.reduce((s,x)=>s+x.value,0)||0;const cx=90,cy=90,r=84;let a0=-Math.PI/2,paths="";const tt=total||1;
   if(total>0){
@@ -2172,15 +2176,43 @@ function dashTab(name){
    C'est pourquoi chaque ligne affiche sa COUVERTURE : la part des commandes
    réellement calculées. Un canal couvert à 3/75 ne se compare pas à un canal
    couvert à 74/77, et le tableau doit le dire au lieu de le cacher. */
+/* UNE VENTE ABOUTIE : expédiée ET facturée.
+
+   Tant qu'une commande n'est pas partie et pas facturée, sa marge est une
+   intention, pas un résultat : elle peut encore être annulée, remboursée ou
+   repartir en stock. Ce tableau ne compte donc que ce qui est consommé. */
+function shopVenteAboutie(o){
+  if(!o||o.cancelled)return false;
+  var expedie=(String(o.fulfillment||"").toUpperCase()==="FULFILLED")
+            ||(typeof shopTrackingComplete==="function"&&shopTrackingComplete(o));
+  if(!expedie)return false;
+  return ((DB.factures||[]).some(function(f){
+            return f&&f.type!=="avoir"&&f.orderId===o.id;}))
+      ||(typeof shopOrderInvoiced==="function"&&shopOrderInvoiced(o));
+}
+/* LA CLÉ ABSENTE N'EST PAS UNE VENTE DIRECTE.
+
+   Une commande téléchargée avant la mise à jour de shopify-orders n'a pas de
+   champ `marketplace` du tout. Une vente de la boutique en ligne, elle, a le
+   champ, vide. Confondre les deux ferait passer 1 498 commandes d'origine
+   inconnue pour des ventes directes — la plus grosse ligne du tableau, et
+   entièrement fausse. On les sépare donc, et on dit comment les réparer. */
+function mpCanal(o){
+  if(!o||!("marketplace" in o))return null;        // origine inconnue
+  return String(o.marketplace||"").trim()||"Boutique en ligne";
+}
 function mpStats(from,to){
   var res={lignes:{},tot:{nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0},
-           attente:{nb:0,ttc:0,raisons:{}},devises:{}};
+           attente:{nb:0,ttc:0,raisons:{}},devises:{},
+           inconnues:0,ignorees:0};
   (typeof _shopOrders!=="undefined"?(_shopOrders||[]):[]).forEach(function(o){
     if(!o||o.cancelled)return;
     var d=String(o.date||"").slice(0,10);
     if(from&&d<from)return;
     if(to&&d>to)return;
-    var canal=String(o.marketplace||"").trim()||"Boutique en ligne";
+    var canal=mpCanal(o);
+    if(canal===null){res.inconnues++;return;}
+    if(!shopVenteAboutie(o)){res.ignorees++;return;}
     var L=res.lignes[canal]||(res.lignes[canal]=
       {nb:0,ttc:0,nbC:0,ttcC:0,tva:0,com:0,cout:0,marge:0,horsDevise:0});
     var r=shopMarge(o);
@@ -2231,25 +2263,16 @@ function renderDashMp(from,to){
         +'et le nombre de commandes, jamais dans la marge, la TVA ni les commissions.<br>'
         +'Raisons : '+det+'</div></div>';
     }
-    /* Les devises étrangères sont une anomalie d'une autre nature : le
-       montant n'est pas incalculable, il est dans une autre unité. Les
-       mélanger au CA en euros l'aurait gonflé sans que rien ne le dise. */
-    var dv=Object.keys(s.devises);
-    if(dv.length){
-      var nbd=0,nbNon=0;
-      var ligne=dv.sort().map(function(k){
-        var D=s.devises[k];nbd+=D.nb;nbNon+=(D.nb-D.convertis);
-        return D.nb+' en '+esc(k)+' ('
-          +(Math.round(D.montant*100)/100).toFixed(2).replace(".",",")+' '+esc(k)+')'
-          +(D.convertis<D.nb?' — '+(D.nb-D.convertis)+' sans taux':'');}).join(" · ");
-      h+='<div class="card" style="border-left:4px solid '+(nbNon?"#dc2626":"#0891b2")+';margin-bottom:14px">'
-        +'<h3 style="margin-top:0">'+nbd+' commande(s) dans une autre devise'
-        +(nbNon?', dont '+nbNon+' hors chiffre d\'affaires':', converties en euros')+'</h3>'
-        +'<div class="muted" style="font-size:13px">'+ligne+'.<br>'
-        +'Shopify ne fournit aucun montant en euros pour ces marchés. Le taux retenu est '
-        +'celui du jour de la commande, le même que celui des factures — aucun taux n\'est '
-        +'inventé ici.'+(nbNon?' Les commandes sans taux figé sont écartées du CA plutôt '
-        +'que comptées à leur montant brut.':'')+'</div></div>';
+    /* Les commandes d'origine inconnue : le seul message qui appelle une
+       action, donc le seul qui reste en haut. */
+    if(s.inconnues){
+      h+='<div class="card" style="border-left:4px solid #d97706;margin-bottom:14px">'
+        +'<h3 style="margin-top:0">'+s.inconnues+' commande(s) sans canal connu, exclue(s) du tableau</h3>'
+        +'<div class="muted" style="font-size:13px">Elles ont été téléchargées avant que '
+        +'l\'ERP ne sache lire le marketplace : leur origine n\'est pas « boutique en ligne », '
+        +'elle est inconnue, et les compter comme des ventes directes en ferait la plus '
+        +'grosse ligne du tableau.<br>Pour les récupérer, lance '
+        +'<code>shopRechargerHistorique()</code> dans la console.</div></div>';
     }
     boxC.innerHTML=h;
   }
@@ -2265,7 +2288,7 @@ function renderDashMp(from,to){
     ["Commandes",t.nb,"var(--violet)"],
     ["Panier moyen TTC",t.nb?eur(t.ttc/t.nb):"—","#0f172a"],
     ["Marge moy./commande",t.nbC?eur(t.marge/t.nbC):"—","#16a34a"],
-    ["Marge calculée sur",t.nb?(t.nbC+" / "+t.nb+" cmd"):"—",
+    ["Marge calculée sur",t.nb?(t.nbC+"/"+t.nb+" cmd"):"—",
       (t.nb&&t.nbC===t.nb)?"#16a34a":"#d97706"],
   ];
   boxK.innerHTML=k.map(function(x){
@@ -2320,14 +2343,34 @@ function renderDashMp(from,to){
       var c=(MP_COULEURS[n]||["#e5e7eb","#475569"])[1];
       return {label:n,value:s.lignes[n].marge,color:c};});
   var donutCard='<div class="card"><h3>D\'où vient la marge</h3>'
-    +(segs.length?donut(segs)
+    +(segs.length?donut(segs,true)
       :'<div class="muted" style="font-size:13px">Aucune marge positive calculée sur la période.</div>')
     +'</div>';
   var caCard='<div class="card"><h3>CA TTC par canal</h3>'
     +(noms.length?barChart(noms.map(function(n){return {label:n,value:s.lignes[n].ttc};}),"var(--violet)")
       :'<div class="muted" style="font-size:13px">Rien à afficher.</div>')
     +'</div>';
-  boxG.innerHTML=caCard+donutCard+tableau;
+  /* Les notes de bas de tableau : vraies, utiles à qui les cherche, mais
+     sans rapport avec la lecture courante. Elles passent donc EN DESSOUS,
+     en petit, plutôt qu'en bandeau au-dessus des chiffres. */
+  var notes=[];
+  if(s.ignorees)notes.push(s.ignorees+" commande(s) de la période ne sont pas encore "
+    +"expédiées et facturées : elles n'entrent pas dans ce tableau.");
+  var dv=Object.keys(s.devises);
+  if(dv.length){
+    var nbNon=0;
+    var ligne=dv.sort().map(function(k){
+      var D=s.devises[k];nbNon+=(D.nb-D.convertis);
+      return D.nb+" en "+esc(k)+" ("+(Math.round(D.montant*100)/100).toFixed(2).replace(".",",")
+        +" "+esc(k)+")"+(D.convertis<D.nb?", dont "+(D.nb-D.convertis)+" sans taux":"");}).join(" · ");
+    notes.push("Devises : "+ligne+". Converties au taux du jour de la commande, le même "
+      +"que celui des factures."+(nbNon?" Celles sans taux figé sont hors chiffre d'affaires.":""));
+  }
+  var pied=notes.length
+    ?'<div class="muted" style="grid-column:1/-1;font-size:11.5px;line-height:1.6;'
+      +'padding:2px 4px 0;opacity:.7">'+notes.map(esc).join("<br>")+'</div>'
+    :"";
+  boxG.innerHTML=caCard+donutCard+tableau+pied;
 }
 function renderDash(){
   const {from,to}=dashRange();const sd=salesData(from,to);
