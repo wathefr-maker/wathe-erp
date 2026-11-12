@@ -13420,10 +13420,38 @@ function mpCommission(o){
    Dans ces cas la marge n'est PAS calculée, et on dit ce qui manque. Dans un
    tableau qui sert à décider quoi racheter, une marge fausse coûte plus cher
    qu'une marge absente. */
+/* ── LES COMMANDES REMBOURSÉES ─────────────────────────────────────────────
+   Un avoir annule la vente : la paire revient en stock et sera revendue.
+   La compter ici la ferait exister deux fois.
+
+   En pratique deux garde-fous jouaient déjà, et c'est pour ça que le tableau
+   n'était pas faux : Shopify ramène le total courant à 0 après remboursement
+   (l'ERP lit currentTotalPriceSet, pas le total d'origine), et la paire est
+   détachée de la commande quand elle revient en stock.
+
+   Mais tous deux sont indirects. La #8095 Decathlon le montre : article
+   remboursé, 3,99 € de port restés sur la commande. Si sa paire n'avait pas
+   été détachée, elle aurait produit une vente à 3,99 € avec un coût d'achat
+   complet en face — une marge très négative et parfaitement fausse. Et sous
+   « paire non rapprochée », un retour se lit comme un oubli de saisie.
+
+   L'index est reconstruit quand le nombre de factures change : sans lui, on
+   relirait les ~2 700 factures pour chacune des ~2 000 commandes. */
+var _AV_CMD=null,_AV_CMD_N=-1;
+function _avoirsParCommande(){
+  var n=(DB.factures||[]).length;
+  if(_AV_CMD&&_AV_CMD_N===n)return _AV_CMD;
+  var m={};
+  (DB.factures||[]).forEach(function(f){
+    if(f&&f.type==="avoir"&&f.orderId&&f.statut!=="Annulée")m[f.orderId]=true;});
+  _AV_CMD=m;_AV_CMD_N=n;return m;
+}
+function shopOrderAvoir(o){return !!(o&&o.id&&_avoirsParCommande()[o.id]);}
 function shopMarge(o){
   var out={ttc:0,taux:0,tva:0,commission:null,cout:null,marge:null,devise:"EUR",manque:[]};
   if(!o)return out;
   out.ttc=+(o.totalTTC||0);
+  if(shopOrderAvoir(o)){out.rembourse=true;out.manque.push("remboursée / retournée");return out;}
   /* UNE COMMANDE QUI N'EST PAS EN EUROS SE CONVERTIT, ELLE NE SE DEVINE PAS.
 
      Sept commandes du cache sont en SEK, DKK, RON ou CZK : la boutique a des
