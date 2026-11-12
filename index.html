@@ -1921,7 +1921,19 @@ function dashRange(){const p=(typeof dashPeriod!=="undefined"&&dashPeriod)?dashP
 function pieceMarque(a){const v=varById(a.varianteId)||{};const m=modeleById(v.modeleId)||{};return (m.marque&&String(m.marque).trim())?m.marque:"Sans marque";}
 function saleSplit(pv,pa,tvaName,destRate){
   pv=+pv||0;pa=+pa||0;
-  const t20=(DB.taxes||[]).find(x=>(+x.taux||0)>0);const R=t20?+t20.taux:20;
+  /* LE TAUX DE RÉFÉRENCE EST CELUI DE LA FRANCE, NOMMÉMENT.
+
+     Il servait à deux choses : la TVA sur la marge, et le repli quand aucun
+     pays n'est fourni. Il était lu comme « le premier taux positif de la
+     table des taxes » — ce qui donne bien 20 aujourd'hui, mais par l'ORDRE
+     de la table et non par construction. Or cette table s'allonge toute
+     seule : ensureTaxName() y ajoute un taux par pays rencontré (19, 21, 22,
+     24, 23, 17, 25 à ce jour). Le jour où cet ordre changerait — un tri, une
+     fusion, une relecture — la TVA sur la marge basculerait en silence sur
+     le taux d'un autre pays.
+
+     La TVA sur la marge est un régime FRANÇAIS. On nomme donc la France. */
+  const R=countryStdRate("France");
   if(tvaName==="TVASM"){const m=Math.max(0,pv-pa);const vat=r2(m*R/(100+R));return {ca:r2(pv-vat),vat:vat,regime:"TVA sur marge"};}
   let r=taxRate(tvaName);
   if(tvaName==="Exonéré")r=(destRate!=null?+destRate:R);
