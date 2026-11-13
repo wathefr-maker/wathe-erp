@@ -691,7 +691,7 @@
         </div>
       </div>
       <div class="tablecard" style="padding:14px;margin:12px 0 14px"><div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
-        <div class="fld" style="margin:0;flex:1;min-width:220px"><label>Recherche (n° de commande ou client)</label><input id="shopF_q" placeholder="Ex. 5869, Dupont…"></div>
+        <div class="fld" style="margin:0;flex:1;min-width:220px"><label>Recherche (n° de commande, n° marketplace ou client)</label><input id="shopF_q" placeholder="Ex. 5869, PO-076-1424…, GSO19D25Y…, Dupont…"></div>
         <div class="fld" style="margin:0"><label>État d'avancement</label><select id="shopF_stage"><option value="">Tous</option><option value="1">À assigner</option><option value="2">À expédier</option><option value="3">À facturer</option><option value="4">Facturé</option></select></div>
         <div class="fld" style="margin:0"><label>Canal</label><select id="shopF_mp"><option value="">Tous</option><option value="__boutique">Boutique en ligne</option><option>Shein</option><option>Temu</option><option>Decathlon</option><option>Cdiscount</option><option>Bol</option><option>Spartoo</option><option>TikTok Shop</option><option>Joom</option></select></div>
         <div class="fld" style="margin:0"><label>Du</label><input type="date" id="shopF_from"></div>
@@ -13642,6 +13642,12 @@ function shopMargeCell(o){
     +fmtRate(r.taux)+' % '+esc(orderCountryName(o)||"France")+') − '+eur(r.commission)
     +' de commission − '+eur(r.cout)+" d'achat\">marge "+eur(r.marge)+'</div>';
 }
+/* Normalise une référence marketplace pour la comparaison : minuscules, sans
+   espace, tiret, point ni slash. Les marketplaces ponctuent la MÊME référence
+   différemment selon qu'on la lit dans leur back-office, dans un mail ou sur
+   une étiquette — « PO-076-1424… », « PO 076 1424… », « po0761424… ». Sans
+   cette normalisation, un copier-coller sur deux rate la commande. */
+function shopNorm(v){return String(v||"").toLowerCase().replace(/[\s\-._/]/g,"");}
 function shopFilteredOrders(){
   const q=(document.getElementById("shopF_q")?document.getElementById("shopF_q").value:"").trim().toLowerCase();
   const st=document.getElementById("shopF_stage")?document.getElementById("shopF_stage").value:"";
@@ -13650,7 +13656,18 @@ function shopFilteredOrders(){
   const to=document.getElementById("shopF_to")?document.getElementById("shopF_to").value:"";
   /* Toutes les commandes connues, sans découpage : la pagination suffit. */
   return shopVisibles().filter(function(o){
-    if(q){const name=(o.name||"").toLowerCase(),cli=shopOrderClient(o).toLowerCase();if(name.indexOf(q)<0&&cli.indexOf(q)<0)return false;}
+    /* La recherche couvre aussi le numéro de commande de la marketplace.
+       Quand Temu, Cdiscount ou un client écrit au sujet de « PO-076-1424… »,
+       c'est la seule référence qu'on ait en commun : notre #8342 ne lui dit
+       rien. La chercher à la main dans 1 700 lignes était la vraie corvée.
+       Le numéro normalisé n'est testé que s'il reste quelque chose après
+       normalisation : sinon un « - » tapé seul ferait tout correspondre. */
+    if(q){
+      const name=(o.name||"").toLowerCase(),cli=shopOrderClient(o).toLowerCase();
+      const qn=shopNorm(q),ref=shopNorm(o.mpRef);
+      const surRef=qn&&ref&&ref.indexOf(qn)>=0;
+      if(name.indexOf(q)<0&&cli.indexOf(q)<0&&!surRef)return false;
+    }
     if(st&&String(shopOrderStage(o))!==st)return false;
     if(mp){
       // « __boutique » = les ventes sans marketplace, celles du site lui-même.
