@@ -14318,21 +14318,38 @@ async function shopInvoiceOrder(autoOrderId){
   var _remise=0;
   if(o.totalTTC!=null){
     var _sumL=saleLines.reduce(function(t,l){return t+((+l.puTTC||0)*(l.qty||1));},0);
-    var _ship0=(+o.shipping||0);
-    var _ecart=Math.round(((_sumL+_ship0)-(+o.totalTTC||0))*100)/100;
-    // On ne corrige QUE les écarts à la baisse, et seulement si toutes les paires
-    // de la commande sont facturées — sinon l'écart vient des lignes manquantes.
+    var _ship0=(+o.shipping||0)*(_foreign&&_fx>0?_fx:1);
+    /* LE TOTAL DE LA COMMANDE DOIT ÊTRE DANS LA MÊME MONNAIE QUE LES LIGNES.
+       _sumL est en euros convertis ; o.totalTTC, lui, est brut — 1 481 pour
+       la #8142, qui sont des couronnes. Comparer les deux donnait un écart
+       de plus de 1 300, sans objet. */
+    var _totEur=(+o.totalTTC||0)*(_foreign&&_fx>0?_fx:1);
+    var _ecart=Math.round(((_sumL+_ship0)-_totEur)*100)/100;
+    // Seulement si toutes les paires de la commande sont facturées — sinon
+    // l'écart vient des lignes manquantes, pas du prix.
     var _toutesLignes=(o.lines||[]).reduce(function(t,l){return t+(l.qty||1);},0)===saleLines.length;
-    if(_ecart>0.005&&_toutesLignes)_remise=_ecart;
+    /* L'ÉCART SE CORRIGE DANS LES DEUX SENS.
+       Positif : les lignes dépassent le payé, c'est une remise (code promo).
+       Négatif : les lignes valent MOINS que ce que le client a payé, et la
+       facture sous-déclarerait. La #8324 Temu : lignes à 92,41 pour 109,97
+       encaissés, soit la TVA allemande que Shopify porte à part. Facturée
+       92,41, elle déclarait 14,75 € de TVA au lieu de 17,56.
+
+       Ce second sens était ignoré en silence : seul `_ecart>0.005` était
+       traité. Un manque à facturer est pourtant plus grave qu'un trop-perçu. */
+    if(_toutesLignes&&Math.abs(_ecart)>0.005)_remise=_ecart;
   }
-  if(_remise>0){
-    // Répartie au prorata pour que chaque ligne reste cohérente avec le prix payé.
+  if(_remise!==0){
+    // Réparti au prorata pour que chaque ligne reste cohérente avec le prix payé.
     var _base=saleLines.reduce(function(t,l){return t+((+l.puTTC||0)*(l.qty||1));},0);
     if(_base>0)saleLines.forEach(function(l){
       var part=((+l.puTTC||0)*(l.qty||1))/_base;
       l.puTTC=Math.round(((+l.puTTC||0)-(_remise*part)/(l.qty||1))*100)/100;
     });
-    try{logAct("Facturation",o.name,"remise Shopify répercutée : -"+eur(_remise));}catch(_){}
+    try{logAct("Facturation",o.name,_remise>0
+      ?("remise Shopify répercutée : -"+eur(_remise))
+      :("complément répercuté sur la facture : +"+eur(-_remise)
+        +" (les lignes Shopify ne couvraient pas le total payé)"));}catch(_){}
   }
   const facts=buildSaleFactures({source:"shopify",orderId:o.id,orderName:o.name,date:today(),
     societeId:soc?soc.id:DB.societes[0].id,buyer:shopOrderClient(o)||o.name,buyerAddr:o.billing||null,shipAddr:o.shipTo||null,
