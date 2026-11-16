@@ -11990,7 +11990,10 @@ function shopSaveTrackingCore(){
      prime, accusait l'action « fulfill » de ne pas être déployée. Elle l'est.
      Le mode plusieurs colis faisait ce filtrage depuis toujours ; le mode
      simple, non. */
-  const dejaEnvoye=pieces.every(function(a){return !!a.shopifyTrackingSent;})||!!o.fulfilledShopify;
+  /* « Déjà envoyé » = Shopify tient la commande pour expédiée. La marque locale ne suffit
+     pas : elle était posée avant l'envoi, et un envoi raté (#8396) passait alors pour fait —
+     ressaisir le suivi ne faisait qu'une « mise à jour locale », Shopify restait sans suivi. */
+  const dejaEnvoye=!!o.fulfilledShopify||o.fulfillment==="FULFILLED";
   pieces.forEach(function(a){a.shopifyTracking={company:carrier,number:number,url:url};a.shopifyTrackingSent=1;a.maj=today();});
   logAct("Tracking Shopify",o.name,carrier+" "+number+(dejaEnvoye?" (mise à jour locale)":""));save();
   if(dejaEnvoye){
@@ -15328,7 +15331,6 @@ function shAutoCatchup(){
   var ids={};
   (DB.articles||[]).forEach(function(a){
     if(a.archived||!a.shopifyOrderId||!a.shopifyTrackingSent||!a.flowstockId||String(a.flowstockId).indexOf("sh-")!==0)return;
-    if(a.shopifyInvoiced)return;
     ids[a.shopifyOrderId]=ids[a.shopifyOrderId]||{auto:false};
     if(a.shAutoTrk)ids[a.shopifyOrderId].auto=true;
   });
@@ -15337,7 +15339,9 @@ function shAutoCatchup(){
     var o=(_shopOrders||[]).find(function(x){return x&&x.id===id;});if(!o||o.duplicated)return;
     // suivi posé avant ce rattrapage (sans marque) : seulement les commandes récentes
     if(!ids[id].auto&&String(o.date||"")<"2026-11-01")return;
-    if((DB.factures||[]).some(function(f){return f.orderId===o.id;}))return;
+    var fulfilled=o.fulfilledShopify||o.fulfillment==="FULFILLED";
+    var invoiced=(DB.factures||[]).some(function(f){return f.orderId===o.id;});
+    if(fulfilled&&invoiced)return;   // parcours terminé
     var ac=shopOrderAssignCount(o);if(!(ac.need>0&&ac.have>=ac.need&&shopTrackingComplete(o)))return;
     todo.push(o);
   });
