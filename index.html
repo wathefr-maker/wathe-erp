@@ -13077,10 +13077,27 @@ var ALERTE_PALIERS=[{max:40,coef:2}];
 var COEF_MINI=1.9;   // seuil au-delà du dernier palier d'alerte
 function coefMiniPour(pa){ pa=+pa||0; var t=ALERTE_PALIERS.slice().sort(function(a,b){return a.max-b.max;}).find(function(x){return pa<x.max;}); return t?t.coef:COEF_MINI; }
 
+/* PRIX RÉELLEMENT PAYÉ PAR LE CLIENT pour une ligne de commande.
+   Certaines marketplaces (Temu…) envoient des lignes HORS TAXES, la TVA étant
+   ajoutée à part sur la commande : #8368 ligne 171,03 € + 32,50 € de TVA
+   allemande = 203,53 € payés. Le coef calculé sur 171,03 donnait × 1,71 au
+   lieu de × 2,04. On ramène donc chaque ligne au total encaissé (hors port),
+   au prorata — ce qui couvre aussi les remises (codes promo). Même règle que
+   la facturation. Écart > 50 % : donnée douteuse, on garde le prix de la ligne. */
+function shopLinePaid(o,l){
+  var p=+l.puTTC||+l.price||0;
+  if(!o||o.totalTTC==null||p<=0)return p;
+  var sum=(o.lines||[]).reduce(function(t,x){return t+((+x.puTTC||+x.price||0)*(x.qty||1));},0);
+  var paid=(+o.totalTTC||0)-(+o.shipping||0);
+  if(sum<=0||paid<=0)return p;
+  var f=paid/sum;
+  if(f<0.5||f>1.5)return p;
+  return Math.round(p*f*100)/100;
+}
 function shopCoefOf(o,l,i,a){
   var pa=+a.prix||0;
   if(pa<=0)return null;                      // pas de prix d'achat : coefficient indéfini
-  var pv=+l.puTTC||+l.price||0;
+  var pv=shopLinePaid(o,l);
   if(!pv&&a.pv)pv=+a.pv||0;                  // repli sur le prix cible de la pièce
   if(pv<=0)return null;
   return Math.round((pv/pa)*100)/100;
@@ -13094,7 +13111,7 @@ function shopLowMargin(o){
       var c=shopCoefOf(o,l,i,a);
       if(c==null||c>=coefMiniPour(+a.prix||0))return;
       var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
-      out.push({piece:a,coef:c,pa:(+a.prix||0),pv:(+l.puTTC||+l.price||+a.pv||0),
+      out.push({piece:a,coef:c,pa:(+a.prix||0),pv:(shopLinePaid(o,l)||+a.pv||0),
         titre:(m.fr||m.sku||a.ref||""),taille:vSizeTxt(v),
         flowstock:(a.source==="flowstock"||!!a.flowstockId)});
     });
@@ -15225,7 +15242,7 @@ function shCoefLow(ach){
     var pa=+a.prix||0;if(pa<=0)return;                       // prix d'achat inconnu : pas de calcul possible
     // prix payé par le client sur le canal (marketplace / site) ; devise étrangère → euros au taux du jour de la commande
     var cur=(o.custCurrency&&o.custCurrency!=="EUR")?o.custCurrency:((o.currency&&o.currency!=="EUR")?o.currency:"EUR");
-    var pvRaw=(cur!=="EUR")?(l.custPrice!=null?+l.custPrice:(+l.price||0)):(+l.puTTC||+l.price||0);
+    var pvRaw=(cur!=="EUR")?(l.custPrice!=null?+l.custPrice:(+l.price||0)):shopLinePaid(o,l);   // ligne HT (Temu…) : ramenée au total payé
     var fx=(cur!=="EUR")?(fxRate(cur,o.date)||0):1;
     var pv=(cur!=="EUR")?(fx>0?pvRaw*fx:0):pvRaw;
     var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
