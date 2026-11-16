@@ -12018,7 +12018,8 @@ function shopGroupLineItems(o,pieces){
 
 /* Un envoi Shopify par colis, en série : deux fulfillments simultanés sur la même
    commande se marchent dessus (le second ne voit pas encore les lignes consommées). */
-async function shopPushFulfillmentGroups(o,groups){
+async function shopPushFulfillmentGroups(o,groups,opts){
+  var auto=!!(opts&&opts.auto);   // envoi automatique (Sourcing Hub) : pas de fenêtre d'alerte, l'échec va au journal
   var ok=0,errs=[];
   for(var i=0;i<groups.length;i++){
     var g=groups[i];
@@ -12038,9 +12039,13 @@ async function shopPushFulfillmentGroups(o,groups){
   if(ok===groups.length&&!errs.length&&!reste){o.fulfilledShopify=1;o.fulfillment="FULFILLED";}
   else if(ok>0){o.fulfillment="PARTIALLY_FULFILLED";}
   try{shopCacheSave();}catch(e){}
-  if(errs.length)alert("⚠️ "+ok+"/"+groups.length+" colis envoyé(s) à Shopify.\n\n"+errs.join("\n")
+  if(errs.length){
+    if(auto){try{logAct("Tracking Shopify",o.name,"échec envoi à Shopify (nouvel essai dans 1 h) : "+errs.join(" · "));}catch(e){}}
+    else alert("⚠️ "+ok+"/"+groups.length+" colis envoyé(s) à Shopify.\n\n"+errs.join("\n")
     +"\n\nLes suivis sont bien enregistrés dans l'ERP : tu peux compléter côté Shopify.");
+  }
   if(_shopCurOrderId===o.id){try{shopRefresh();}catch(e){}}
+  return {ok:ok,errs:errs};
 }
 async function shopPushFulfillment(o,carrier,number,url){
   try{
@@ -15308,7 +15313,49 @@ function shCoefPopup(){
   };
 }
 var _shCoefTimer=null;
-function shCoefWatch(){if(_shCoefTimer)return;setTimeout(shCoefPopup,4000);_shCoefTimer=setInterval(shCoefPopup,60000);}
+function shCoefWatch(){if(_shCoefTimer)return;setTimeout(shCoefPopup,4000);_shCoefTimer=setInterval(function(){shCoefPopup();try{shAutoCatchup();}catch(e){}},60000);}
+
+/* RATTRAPAGE des commandes Sourcing Hub dont le suivi est posé dans l'ERP mais qui
+   n'ont pas fini leur parcours : envoi à Shopify refusé ou interrompu (onglet fermé,
+   réseau, Shopify indisponible…), ou facturation jamais faite. Avant, une fois le suivi
+   posé, plus rien ne se relançait : la #8396 (Bol) restait « Tracking envoyé » sans
+   être expédiée sur Shopify ni facturée. Toutes les minutes : nouvel essai d'envoi à
+   Shopify au plus une fois par heure, puis facturation dès que la commande est complète.
+   Jamais sur une commande déjà expédiée sur Shopify avant le suivi automatique. */
+var _shCatchupBusy=false;
+function shAutoCatchup(){
+  if(_shCatchupBusy||!(_shopOrders||[]).length)return;
+  var ids={};
+  (DB.articles||[]).forEach(function(a){
+    if(a.archived||!a.shopifyOrderId||!a.shopifyTrackingSent||!a.flowstockId||String(a.flowstockId).indexOf("sh-")!==0)return;
+    if(a.shopifyInvoiced)return;
+    ids[a.shopifyOrderId]=ids[a.shopifyOrderId]||{auto:false};
+    if(a.shAutoTrk)ids[a.shopifyOrderId].auto=true;
+  });
+  var todo=[];
+  Object.keys(ids).forEach(function(id){
+    var o=(_shopOrders||[]).find(function(x){return x&&x.id===id;});if(!o||o.duplicated)return;
+    // suivi posé avant ce rattrapage (sans marque) : seulement les commandes récentes
+    if(!ids[id].auto&&String(o.date||"")<"2026-11-01")return;
+    if((DB.factures||[]).some(function(f){return f.orderId===o.id;}))return;
+    var ac=shopOrderAssignCount(o);if(!(ac.need>0&&ac.have>=ac.need&&shopTrackingComplete(o)))return;
+    todo.push(o);
+  });
+  if(!todo.length)return;
+  _shCatchupBusy=true;
+  (async function(){
+    for(var i=0;i<todo.length;i++){
+      var o=todo[i];
+      var fulfilled=o.fulfilledShopify||o.fulfillment==="FULFILLED";
+      if(!fulfilled&&(!o._autoPushAt||Date.now()-o._autoPushAt>3600000)){
+        o._autoPushAt=Date.now();
+        try{await shopPushFulfillmentGroups(o,shopTrackingGroups(o),{auto:true});}catch(e){}
+      }
+      try{if(!(DB.factures||[]).some(function(f){return f.orderId===o.id;})){await shopInvoiceOrder(o.id);}}
+      catch(e){try{logAct("Facturation auto",o.name,"échec : "+((e&&e.message)||e));}catch(_){}}
+    }
+  })().finally(function(){_shCatchupBusy=false;});
+}
 function shAutoTracking(){
   var n=0,byOrder={};
   (DB.achats||[]).forEach(function(ach){
@@ -15330,7 +15377,7 @@ function shAutoTracking(){
   Object.keys(byOrder).forEach(function(k){
     var g=byOrder[k],o=(_shopOrders||[]).find(function(x){return x&&x.id===g.orderId;});
     var deja=o&&(o.fulfilledShopify||o.fulfillment==="FULFILLED");
-    g.pieces.forEach(function(a){a.shopifyTrackingSent=1;});
+    g.pieces.forEach(function(a){a.shopifyTrackingSent=1;if(!deja)a.shAutoTrk=1;});
     try{logAct("Tracking Shopify",(o&&o.name)||g.orderId,"Auto Sourcing Hub · "+g.company+" "+g.number+(deja?" (déjà expédiée sur Shopify)":""));}catch(e){}
     if(o&&!o.duplicated&&!deja)todo.push({o:o,g:g});
   });
@@ -15343,7 +15390,8 @@ function shAutoTracking(){
   (async function(){
     for(var i=0;i<todo.length;i++){
       var o=todo[i].o,g=todo[i].g;
-      try{await shopPushFulfillmentGroups(o,[{company:g.company,number:g.number,url:g.url,pieces:g.pieces}]);}catch(e){}
+      o._autoPushAt=Date.now();
+      try{await shopPushFulfillmentGroups(o,[{company:g.company,number:g.number,url:g.url,pieces:g.pieces}],{auto:true});}catch(e){}
       try{
         var ac=shopOrderAssignCount(o);
         if(ac.need>0&&ac.have>=ac.need&&shopTrackingComplete(o)&&!(DB.factures||[]).some(function(f){return f.orderId===o.id;}))await shopInvoiceOrder(o.id);
