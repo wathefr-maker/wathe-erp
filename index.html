@@ -9596,46 +9596,268 @@ function restoreExpedPieces(e){(e.lignes||[]).forEach(l=>{const a=pieceById(l.ar
   }
 }});}
 
-function openRetour(e){const ov=document.createElement("div");
-  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px";
+/* ============================================================================
+   LE RETOUR D'UNE EXPÉDITION, COMME CELUI D'UNE COMMANDE SHOPIFY
+
+   Le même geste se faisait de deux façons. Côté Shopify : les paires à
+   gauche avec leur prix, le décompte à droite, le colis perdu, la pénalité,
+   le montant écrit sur le bouton. Côté Expédition : une liste de cases, un
+   bouton « Valider le retour », et le montant de l'avoir qu'on découvrait
+   après coup — toujours au prix plein, sans moyen de retenir quoi que ce
+   soit. Passer d'un écran à l'autre demandait de réapprendre où regarder,
+   et surtout l'un des deux ne savait pas faire ce que l'autre faisait.
+
+   On reprend donc la fenêtre de Shopify telle quelle — mêmes classes, même
+   décompte, mêmes boutons de pénalité rapide — et on garde ce qui n'a de
+   sens qu'ici : la ville et l'emplacement de retour.
+
+   Ce qui ne suit pas, faute d'objet : il n'y a ni commande Shopify ni client
+   Shopify derrière une expédition. Rien ne part donc vers Shopify, et
+   personne n'est notifié par mail. C'est l'AVOIR qui porte le montant, et le
+   bouton le dit avec ses mots : « Avoir de 172,29 € » et non « Rembourser ».
+
+   Le prix retenu par paire est celui de la FACTURE quand elle existe, et
+   celui de la ligne d'expédition sinon. Avoirer une paire à un prix que le
+   client n'a jamais vu sur sa facture serait un écart impossible à
+   rapprocher pour le comptable.
+   ========================================================================== */
+function expRetPrix(fact,ref,ligne){
+  if(fact){for(var i=0;i<(fact.lines||[]).length;i++){var l=fact.lines[i];
+    if((l.refs||[]).indexOf(ref)>=0)return +l.puTTC||0;}}
+  return +((ligne&&ligne.prix)||0);
+}
+function openRetour(e){
+  const ov=document.createElement("div");
+  ov.id="expRetOv";   // repère du décompte : voir shopRetRoot()
+  ov.style.cssText="position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;z-index:9999;padding:20px;overflow-y:auto";
   const villes=attrLabels("Ville"),emps=attrLabels("Emplacement");
-  ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-    <h2 style="margin:0 0 4px;font-size:20px">Retour — ${esc(e.nom)}</h2>
-    <div class="muted" style="margin-bottom:14px">Choisis l'emplacement de retour et les pièces concernées (retour partiel possible).</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="fld" style="margin:0"><label>Ville</label><select id="ret_ville">${villes.map(v=>`<option ${v===e.ville?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
-      <div class="fld" style="margin:0"><label>Emplacement</label><select id="ret_emp">${emps.map(v=>`<option ${v===e.emplacement?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
-    </div>
-    <div style="margin:16px 0 6px;font-weight:700;display:flex;justify-content:space-between;align-items:center">Pièces à retourner <label style="font-weight:400;font-size:13px;cursor:pointer"><input type="checkbox" id="ret_all" checked> Tout sélectionner</label></div>
-    <div style="border:1px solid var(--line);border-radius:10px;max-height:280px;overflow:auto">
-      ${e.lignes.map(l=>{const a=pieceById(l.articleId),v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};return `<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer"><input type="checkbox" class="ret_p" value="${l.articleId}" checked><span><b>${esc(a.ref||"")}</b> · ${esc(m.fr||"")} · ${szcellV(v)} <span class="muted">(${eur(l.prix)})</span></span></label>`;}).join("")||'<div class="muted" style="padding:12px">Aucune pièce.</div>'}
-    </div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">
-      <button class="btn" id="ret_cancel">Annuler</button><button class="btn g" id="ret_ok">Valider le retour</button>
-    </div></div>`;
-  document.body.appendChild(ov);const close=()=>ov.remove();
+  const fact=(DB.factures||[]).find(f=>f.type!=="avoir"&&f.expedId===e.id);
+  const ship=(fact&&+fact.shipping>0)?+fact.shipping:0;
+  const lignes=e.lignes||[];
+
+  let h='<div class="dcard" style="background:#fff;border-radius:16px;max-width:980px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3);margin:auto">'
+    +'<h3 style="margin:0 0 2px">Retour — '+esc(e.nom||"")+'</h3>';
+
+  if(!lignes.length){
+    h+='<div class="muted" style="font-size:12.5px;padding:6px 0">Aucune pièce à retourner sur cette expédition.</div>';
+  }else{
+    h+='<div class="shopRetLay">';
+
+    /* ---------------- Colonne de gauche : ce qui revient --------------- */
+    h+='<div class="shopRetMain">';
+    h+='<div class="shopRetBloc">'
+      +'<div class="shopRetTit">État du retour</div>'
+      +'<label class="shopRetOpt"><input type="radio" name="shopRetState" value="recu" checked '
+        +'onchange="expRetEtat()"><span><b>Réceptionné</b>'
+        +'<i>La pièce revient en stock, à l\'emplacement choisi ci-dessous.</i></span></label>'
+      +'<label class="shopRetOpt"><input type="radio" name="shopRetState" value="perdu" '
+        +'onchange="expRetEtat()"><span><b>Colis perdu</b>'
+        +'<i>La pièce ne revient pas : elle sort du stock, et c\'est au transporteur '
+        +'qu\'on la réclame.</i></span></label>'
+      +'</div>';
+
+    h+='<div class="shopRetBloc" id="expRetLieu"><div class="shopRetTit">Emplacement de retour</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
+      +'<div class="fld" style="margin:0"><label>Ville</label><select id="ret_ville">'
+        +villes.map(v=>'<option '+(v===e.ville?"selected":"")+'>'+esc(v)+'</option>').join("")+'</select></div>'
+      +'<div class="fld" style="margin:0"><label>Emplacement</label><select id="ret_emp">'
+        +emps.map(v=>'<option '+(v===e.emplacement?"selected":"")+'>'+esc(v)+'</option>').join("")+'</select></div>'
+      +'</div></div>';
+
+    h+='<div class="shopRetBloc"><div class="shopRetTit">Pièces concernées</div>'
+      +lignes.map(function(l){
+        const a=pieceById(l.articleId)||{},v=varById(a.varianteId)||{},m=modeleById(v.modeleId)||{};
+        const pu=expRetPrix(fact,a.ref,l);
+        return '<label class="shopRetLigne">'
+          +'<input type="checkbox" class="shopRetChk" value="'+l.articleId+'" data-pu="'+pu+'" checked '
+            +'onchange="shopRetRecalc()">'
+          +'<span class="shopRetNom"><b>'+esc(m.fr||m.sku||"?")+'</b>'
+            +'<i>'+esc(vSizeTxt(v)||v.taille||"")+' · '+esc(a.ref||"")+'</i></span>'
+          +'<span class="shopRetPu">'+eur(pu)+'</span>'
+          +(a.id?('<button type="button" class="btn shopRetEtq" title="Réimprimer l\'étiquette" '
+            +'onclick="event.preventDefault();event.stopPropagation();printLabelOne(\''+a.id+'\')">🏷️</button>'):"")
+          +'</label>';
+      }).join("")
+      +'</div>';
+
+    h+='<div class="shopRetApres" id="expRetApres">Après validation, une fenêtre te demandera le '
+      +'<b>prix de remise en vente</b> de chaque pièce réceptionnée.</div>';
+    h+='</div>';
+
+    /* ---------------- Colonne de droite : le décompte ------------------ */
+    h+='<aside class="shopRetSide"><div class="shopRetCarte">'
+      +'<div class="shopRetTit">Résumé</div>'
+      +'<div class="shopRetL"><span>Sous-total des pièces <b id="shopRetNb">0</b></span>'
+        +'<span id="shopRetSub">—</span></div>'
+      +'<label class="shopRetCase"><input type="checkbox" id="shopRetProd" checked '
+        +'onchange="shopRetRecalc()"> Créditer la ou les pièces</label>';
+    if(ship>0){
+      h+='<label class="shopRetCase"><input type="checkbox" id="shopRetShipChk" '
+        +'onchange="shopRetRecalc()"> Créditer les frais de port ('+eur(ship)+')</label>'
+        +'<div id="shopRetShipRow" style="display:none;margin:2px 0 8px 24px">'
+        +'<input id="shopRetShipAmt" type="number" step="0.01" min="0" max="'+ship+'" value="'+ship+'" '
+        +'style="max-width:120px" oninput="shopRetRecalc()"></div>';
+    }
+    h+='<div class="shopRetL shopRetPenL"><span>Pénalité retenue</span>'
+        +'<span id="shopRetPenaltyLbl">—</span></div>'
+      +'<div class="shopRetSep"></div>'
+      +'<div class="shopRetTot"><span>Montant de l\'avoir</span>'
+        +'<input id="shopRetTotal" type="number" step="0.01" min="0" value="0" '
+        +'oninput="shopRetPenalty()"></div>'
+      +'<div class="shopRetMax muted" id="shopRetMax"></div>'
+      +'<div class="shopRetRap"><span class="muted">Pénalité rapide</span>'
+        +'<button type="button" onclick="shopRetSetPen(\'eur\',10)">−10 €</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'eur\',20)">−20 €</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'pct\',10)">−10 %</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'pct\',20)">−20 %</button>'
+        +'<button type="button" onclick="shopRetSetPen(\'eur\',0)">Aucune</button></div>'
+      +'<button class="shopRetGo" id="shopRetBtn">Valider le retour</button>'
+      +'<button type="button" class="btn" id="ret_cancel" style="width:100%;margin-top:8px">Annuler</button>'
+      +'<div class="shopRetPied muted">'
+        +(e.facturee
+          ? 'Un avoir de ce montant est créé sur la facture de l\'expédition. Rien n\'est envoyé à Shopify.'
+          : '⚠️ Cette expédition n\'est pas facturée : <b>aucun avoir ne sera créé</b>. Les pièces reviennent en stock, c\'est tout.')
+      +'</div>'
+    +'</div></aside>';
+
+    h+='</div>';
+  }
+  h+='</div>';
+  ov.innerHTML=h;
+
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
   ov.addEventListener("click",ev=>{if(ev.target===ov)close();});
-  ov.querySelector("#ret_cancel").onclick=close;
-  ov.querySelector("#ret_all").onchange=function(){ov.querySelectorAll(".ret_p").forEach(c=>c.checked=this.checked);};
-  ov.querySelector("#ret_ok").onclick=()=>{const ids=[...ov.querySelectorAll(".ret_p:checked")].map(c=>+c.value);
-    if(!ids.length)return alert("Sélectionne au moins une pièce.");
-    const ville=ov.querySelector("#ret_ville").value,emp=ov.querySelector("#ret_emp").value;
-    const refs=ids.map(id=>(pieceById(id)||{}).ref).filter(Boolean);
-    ids.forEach(id=>{const a=pieceById(id);if(a&&a.id){a.statut="En Stock";a.dispo=1;a.expId=null;a.ville=ville;a.emplacement=emp;a.maj=today();}});
-    e.retours=(e.retours||[]).concat(ids.map(id=>({articleId:id,date:today(),ville,emplacement:emp})));
-    e.lignes=e.lignes.filter(l=>!ids.includes(l.articleId));
-    e.retour=e.lignes.length?2:1;
-    const finalize=async(shipRefund)=>{
-      let avNums=[];
-      if(e.facturee){avNums=avoirForReturnedRefs(refs,shipRefund).map(a=>a.num);}
-      logAct("Modification","Expédition",e.nom+" · retour "+ids.length+" pièce(s) → "+ville+" / "+emp+(avNums.length?(" · avoir "+avNums.join(", ")):""));
-      await save();renderAll();renderExpeds();close();
-      try{await shopResyncIds(shopModelIdsOf(ids.map(id=>pieceById(id))));}catch(_){}
-      if(avNums.length)alert("Retour validé. Avoir(s) créé(s) : "+avNums.join(", "));
-    };
-    const shipFac=(DB.factures||[]).find(f=>f.type!=="avoir"&&f.expedId===e.id&&+f.shipping>0);
-    if(e.facturee&&shipFac)askShippingRefund(+shipFac.shipping,finalize);else finalize(0);
-  };}
+  const btnX=ov.querySelector("#ret_cancel");if(btnX)btnX.onclick=close;
+  const btnOk=ov.querySelector("#shopRetBtn");if(btnOk)btnOk.onclick=()=>expProcessReturn(e,ov,close);
+  setTimeout(function(){try{shopRetRecalc();}catch(_){}},0);
+}
+/* Colis perdu : la pièce ne revient nulle part, donc ni emplacement à choisir
+   ni remise en vente à préparer. On masque les deux plutôt que de laisser
+   l'utilisateur renseigner une destination qui ne servira pas. */
+function expRetEtat(){
+  const ov=document.getElementById("expRetOv");if(!ov)return;
+  const perdu=((ov.querySelector('input[name="shopRetState"]:checked')||{}).value==="perdu");
+  const lieu=ov.querySelector("#expRetLieu"),apres=ov.querySelector("#expRetApres");
+  if(lieu)lieu.style.display=perdu?"none":"";
+  if(apres)apres.style.display=perdu?"none":"";
+}
+async function expProcessReturn(e,ov,close){
+  const ids=[].slice.call(ov.querySelectorAll(".shopRetChk:checked")).map(c=>+c.value);
+  if(!ids.length)return alert("Coche au moins une pièce à retourner.");
+  const perdu=((ov.querySelector('input[name="shopRetState"]:checked')||{}).value==="perdu");
+  const prodOn=!!(ov.querySelector("#shopRetProd")||{}).checked;
+  const g=shopRetGross();
+  const total=Math.round((parseFloat((ov.querySelector("#shopRetTotal")||{}).value)||0)*100)/100;
+  const ville=(ov.querySelector("#ret_ville")||{}).value||e.ville||"";
+  const emp=(ov.querySelector("#ret_emp")||{}).value||e.emplacement||"";
+
+  if(!confirm("Valider le retour de "+ids.length+" pièce(s) ?"
+    +(perdu?"\n\n⚠️ Colis perdu : les pièces ne reviennent PAS en stock."
+           :"\n\nRéceptionné : les pièces reviennent en stock ("+ville+" / "+emp+").")
+    +(e.facturee
+      ?(total>0.005?("\n\n💶 Avoir de "+eur(total)+" sur la facture de l'expédition.")
+                   :"\n\nAucun avoir ne sera créé (montant à 0).")
+      :"\n\nExpédition non facturée : aucun avoir.")))return;
+
+  const refs=ids.map(id=>(pieceById(id)||{}).ref).filter(Boolean);
+  const repris=[];
+  ids.forEach(function(id){const a=pieceById(id);if(!a||!a.id)return;
+    /* L'état d'avant, gardé sur la pièce : c'est lui qui permet d'annuler le
+       retour sans deviner d'où elle venait. */
+    a.expReturnSnapshot={statut:a.statut,dispo:a.dispo,expId:a.expId,ville:a.ville,
+      emplacement:a.emplacement,archived:a.archived};
+    a.expReturnedFrom=e.nom||("exp "+e.id);a.expReturnedAt=today();
+    a.expId=null;
+    if(perdu){a.expLost=1;a.statut="Perdu";a.dispo=0;a.archived=1;}
+    else{a.expLost=0;a.statut="En Stock";a.dispo=1;a.ville=ville;a.emplacement=emp;repris.push(a);}
+    a.maj=today();});
+
+  const prixDe={};(e.lignes||[]).forEach(l=>{prixDe[l.articleId]=+l.prix||0;});
+  e.retours=(e.retours||[]).concat(ids.map(id=>({articleId:id,date:today(),ville:ville,
+    emplacement:emp,prix:prixDe[id]||0,perdu:perdu?1:0})));
+  e.lignes=(e.lignes||[]).filter(l=>ids.indexOf(l.articleId)<0);
+  e.retour=e.lignes.length?2:1;
+
+  let avNums=[],avSkip="";
+  if(!e.facturee)avSkip="Aucun avoir : cette expédition n'est pas facturée.";
+  else if(!(total>0.005))avSkip="Aucun avoir : le montant est à 0.";
+  else{
+    const avs=avoirForReturnedRefs(prodOn?refs:[],g.ship);
+    if(!avs.length)avSkip="Aucun avoir : les pièces retournées ne correspondent à aucune ligne de facture.";
+    else{
+      /* La pénalité se répartit entre les avoirs au prorata de leur montant.
+         En pratique il n'y en a qu'un, mais une expédition facturée en
+         plusieurs fois ne doit pas voir toute la retenue tomber sur l'un. */
+      const pen=Math.round((g.gross-total)*100)/100;
+      if(pen>0.005){
+        const somme=avs.reduce((s,a)=>s+(+a.totalTTC||0),0)||1;
+        let reste=pen;
+        avs.forEach(function(av,i){
+          const part=(i===avs.length-1)?reste:Math.round(pen*(+av.totalTTC||0)/somme*100)/100;
+          reste=Math.round((reste-part)*100)/100;
+          avoirAjouterPenalite(av,part,av.tvaHeader,av.country);
+        });
+      }
+      avs.forEach(function(av){av.fromReturn=1;});
+      avNums=avs.map(a=>a.num);
+    }
+  }
+
+  logAct("Retour","Expédition",(e.nom||"")+" · "+ids.length+" pièce(s)"
+    +(perdu?" (perdu)":(" → "+ville+" / "+emp))
+    +(avNums.length?(" · avoir "+avNums.join(", ")+" "+eur(total)):""));
+  await save();
+
+  if(repris.length){
+    try{const n=await shopReturnReprice(repris);if(n)await save();}catch(_){}
+  }
+  renderAll();renderExpeds();close();
+  try{await shopResyncIds(shopModelIdsOf(ids.map(id=>pieceById(id))));}catch(_){}
+  alert("Retour validé."+(avNums.length?("\n\nAvoir(s) : "+avNums.join(", ")):(avSkip?("\n\n"+avSkip):"")));
+}
+/* Annuler le retour : les pièces retrouvent l'expédition et leur état d'avant,
+   et l'avoir qui en est né disparaît. Ce que l'ERP ne peut pas défaire, il le
+   dit — un virement déjà parti ne revient pas tout seul. */
+async function expUndoReturn(expedId){
+  const e=DB.expeditions.find(x=>x.id==expedId);if(!e)return;
+  const rets=(e.retours||[]).slice();
+  if(!rets.length)return alert("Aucun retour à annuler sur cette expédition.");
+  const avs=(DB.factures||[]).filter(f=>f.type==="avoir"&&f.fromReturn&&f.expedId===e.id);
+  if(!confirm("Annuler le retour de "+rets.length+" pièce(s) sur « "+(e.nom||"")+" » ?\n\n"
+    +"Les pièces reviennent sur l'expédition."
+    +(avs.length?("\n\nL'avoir "+avs.map(a=>a.num).join(", ")+" ("+eur(avs.reduce((s,a)=>s+(+a.totalTTC||0),0))
+      +") sera SUPPRIMÉ. Si tu as déjà remboursé le client, cet argent ne revient pas tout seul.")
+      :"\n(Aucun avoir n'avait été créé.)")))return;
+
+  rets.forEach(function(r){const a=pieceById(r.articleId);if(!a||!a.id)return;
+    const s=a.expReturnSnapshot||{};
+    a.statut=(s.statut!=null?s.statut:expPieceStatut(e.statut));
+    a.dispo=(s.dispo!=null?s.dispo:0);
+    a.expId=(s.expId!=null?s.expId:e.id);
+    if(s.ville)a.ville=s.ville;
+    if(s.emplacement)a.emplacement=s.emplacement;
+    if(s.archived)a.archived=s.archived;else delete a.archived;
+    delete a.expReturnSnapshot;delete a.expReturnedFrom;delete a.expReturnedAt;delete a.expLost;
+    a.maj=today();});
+  e.lignes=(e.lignes||[]).concat(rets.map(r=>({articleId:r.articleId,prix:+r.prix||0})));
+  e.retours=[];e.retour=0;
+
+  const nums=avs.map(a=>a.num);
+  if(avs.length){
+    const ids=avs.map(a=>a.id);
+    DB.factures=(DB.factures||[]).filter(function(f){
+      if(ids.indexOf(f.id)<0)return true;
+      const p=(DB.factures||[]).find(x=>x.id===f.avoirOf);
+      if(p){delete p.avoirId;delete p.avoirNum;}
+      return false;});
+  }
+  logAct("Annulation retour","Expédition",(e.nom||"")+" · "+rets.length+" pièce(s) remise(s)"
+    +(nums.length?(" · avoir(s) supprimé(s) "+nums.join(", ")):""));
+  await save();renderAll();renderExpeds();
+  try{await shopResyncIds(shopModelIdsOf(rets.map(r=>pieceById(r.articleId))));}catch(_){}
+  alert("Retour annulé."+(nums.length?("\n\nAvoir(s) supprimé(s) : "+nums.join(", ")):""));
+}
 
 /* LISTE */
 const expFilt={q:"",type:"",statut:"",fact:"",ret:"",soc:""};
@@ -9661,8 +9883,8 @@ function renderExpeds(){DB.expeditions.forEach(normExped);let list=DB.expedition
     <td><div style="display:flex;align-items:center;gap:8px">${expBadge(e.statut)}${e.statut!=="Livré"&&(e.lignes&&e.lignes.length)?`<button class="iconbtn" data-eadv="${e.id}" title="Valider le transit → édite la facture & passe en Livré"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 5 7 7-7 7"/><path d="m13 5 7 7-7 7"/></svg></button>`:""}${e.factureNum?`<span class="muted" style="font-size:11px">${esc(e.factureNum)}</span>`:""}</div></td>
     <td>${e.facturee?'<span class="badge" style="background:var(--green-soft);color:#166534">Oui</span>':'<span class="badge" style="background:#fee2e2;color:#b91c1c">Non</span>'}</td>
     <td>${expPieces(e)}</td>
-    <td>${e.retour===2?'<span class="badge" style="background:#fde68a;color:#92400e">Retour partiel</span>':e.retour?'<span class="badge" style="background:#fef3c7;color:#92400e">Retour</span>':'<span class="badge" style="background:#e5e7eb;color:#374151">Non</span>'}</td>
-    <td><div class="act"><button data-ve="${e.id}" title="Voir / modifier"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button data-efact="${e.id}" title="Facturée ?"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2Z"/><path d="M8 8h8M8 12h8"/></svg></button>${(e.lignes&&e.lignes.length)?`<button data-eret="${e.id}" title="Retour (remet en stock)"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>`:""}<button data-ede="${e.id}" title="Supprimer"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button></div></td></tr>`).join(""):`<tr><td colspan="11" class="empty">Aucune expédition. Clique sur « Ajouter nouveau ».</td></tr>`;}
+    <td><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${e.retour===2?'<span class="badge" style="background:#fde68a;color:#92400e">Retour partiel</span>':e.retour?'<span class="badge" style="background:#fef3c7;color:#92400e">Retour</span>':'<span class="badge" style="background:#e5e7eb;color:#374151">Non</span>'}${(e.retours&&e.retours.length)?`<button class="btn" data-eundo="${e.id}" title="Annuler le retour : les pièces reviennent sur l'expédition et l'avoir est supprimé" style="padding:2px 8px;font-size:11px">↺</button>`:""}</div></td>
+    <td><div class="act"><button data-ve="${e.id}" title="Voir / modifier"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button data-efact="${e.id}" title="Facturée ?"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2Z"/><path d="M8 8h8M8 12h8"/></svg></button>${(e.lignes&&e.lignes.length)?`<button data-eret="${e.id}" title="Retour (remet en stock)"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>`:""}${e.clientId?`<button data-eglsret="${e.id}" title="Étiquette de retour GLS : le client renvoie le colis depuis un point relais">${SHOP_SVG_RETGLS}</button>`:""}<button data-ede="${e.id}" title="Supprimer"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button></div></td></tr>`).join(""):`<tr><td colspan="11" class="empty">Aucune expédition. Clique sur « Ajouter nouveau ».</td></tr>`;}
 expF_q.oninput=()=>{expFilt.q=expF_q.value;renderExpeds();};
 expF_type.onchange=()=>{expFilt.type=expF_type.value;renderExpeds();};
 expF_statut.onchange=()=>{expFilt.statut=expF_statut.value;renderExpeds();};
@@ -9671,7 +9893,9 @@ expF_ret.onchange=()=>{expFilt.ret=expF_ret.value;renderExpeds();};
 expF_soc.onchange=()=>{expFilt.soc=expF_soc.value;renderExpeds();};
 expClear.onclick=()=>{Object.keys(expFilt).forEach(k=>expFilt[k]="");expF_q.value="";expF_fact.value="";expF_ret.value="";renderExpeds();};
 addExped.onclick=()=>openExpedNew(null);
-expRows.onclick=async e=>{const ve=e.target.closest("[data-ve]"),adv=e.target.closest("[data-eadv]"),ef=e.target.closest("[data-efact]"),er=e.target.closest("[data-eret]"),ed=e.target.closest("[data-ede]");
+expRows.onclick=async e=>{const ve=e.target.closest("[data-ve]"),adv=e.target.closest("[data-eadv]"),ef=e.target.closest("[data-efact]"),er=e.target.closest("[data-eret]"),eu=e.target.closest("[data-eundo]"),eg=e.target.closest("[data-eglsret]"),ed=e.target.closest("[data-ede]");
+  if(eu){e.preventDefault();return expUndoReturn(+eu.dataset.eundo);}
+  if(eg){e.preventDefault();return glsRetourExped(+eg.dataset.eglsret);}
   if(ve){e.preventDefault();return openExpedNew(+ve.dataset.ve);}
   if(adv){const x=DB.expeditions.find(z=>z.id==+adv.dataset.eadv);if(x){if(!confirm(`Valider l'expédition « ${x.nom} » ?\n\nLes ${expPieces(x)} pièce(s) passent en « Livré » (sortie définitive du stock) et la facture sera éditée.`))return;const was=x.statut;x.statut=expNext(x.statut);if(was==="En transit"){x.facturee=1;x.factureDate=today();x.factureTotal=expTotal(x);x.factureMode=x.factTTC?"TTC":"HT";const _arr=createFactureFromExped(x);x.factureNum=_arr.map(f=>f.num).join(" + ");x.factureId=_arr[0]?_arr[0].id:null;x.factureIds=_arr.map(f=>f.id);}applyExpedStock(x);logAct("Modification","Expédition",x.nom+" → "+x.statut+(was==="En transit"?" · facture éditée "+x.factureNum:""));await save();renderAll();renderExpeds();try{await shopResyncIds(shopModelIdsOf((x.lignes||[]).map(l=>pieceById(l.articleId))));}catch(_){}}return;}
   if(ef){const x=DB.expeditions.find(z=>z.id==+ef.dataset.efact);if(x){x.facturee=x.facturee?0:1;logAct("Modification","Expédition",x.nom+" · facturée "+(x.facturee?"Oui":"Non"));await save();renderExpeds();}return;}
@@ -11529,44 +11753,83 @@ function shopRefPrice(fact,ref,o){
   if(a&&a.shopifyLineIdx!=null&&o&&o.lines&&o.lines[a.shopifyLineIdx])return +o.lines[a.shopifyLineIdx].price||0;
   return 0;
 }
+/* OÙ CHERCHER LES CHAMPS DU RÉSUMÉ.
+
+   Le même calcul sert maintenant à deux écrans : le retour d'une commande
+   Shopify, rendu dans la page de la commande, et le retour d'une expédition,
+   rendu dans une fenêtre par-dessus. Les deux portent les mêmes identifiants,
+   ce qui est voulu — c'est ce qui permet de n'avoir qu'une seule
+   implémentation du décompte, donc aucune dérive entre les deux.
+
+   Reste à dire LEQUEL on calcule. La règle est simple : si la fenêtre
+   d'expédition est ouverte, c'est elle qui compte ; elle n'existe dans le
+   document que le temps du retour. getElementById ne sait pas se limiter à
+   une partie du document, querySelector si — d'où ce détour. */
+function shopRetRoot(){return document.getElementById("expRetOv")||document;}
+function shopRetEl(id){var r=shopRetRoot();
+  return (r===document)?document.getElementById(id):r.querySelector("#"+id);}
 function shopRetGross(){
-  var prod=0;document.querySelectorAll(".shopRetChk:checked").forEach(function(c){if(c.offsetParent!==null)prod+=+c.dataset.pu||0;});
-  var prodOn=document.getElementById("shopRetProd");var prodR=(prodOn&&prodOn.checked)?prod:0;
-  var shipChk=document.getElementById("shopRetShipChk");var shipAmt=0;
-  if(shipChk&&shipChk.checked){var s=parseFloat((document.getElementById("shopRetShipAmt")||{}).value);shipAmt=isNaN(s)?0:s;}
+  var R=shopRetRoot();
+  var prod=0;R.querySelectorAll(".shopRetChk:checked").forEach(function(c){if(c.offsetParent!==null)prod+=+c.dataset.pu||0;});
+  var prodOn=shopRetEl("shopRetProd");var prodR=(prodOn&&prodOn.checked)?prod:0;
+  var shipChk=shopRetEl("shopRetShipChk");var shipAmt=0;
+  if(shipChk&&shipChk.checked){var s=parseFloat((shopRetEl("shopRetShipAmt")||{}).value);shipAmt=isNaN(s)?0:s;}
   return {prod:Math.round(prodR*100)/100,ship:Math.round(shipAmt*100)/100,gross:Math.round((prodR+shipAmt)*100)/100};
 }
 function shopRetRecalc(){
-  var shipChk=document.getElementById("shopRetShipChk"),shipRow=document.getElementById("shopRetShipRow");
+  var R=shopRetRoot();
+  var shipChk=shopRetEl("shopRetShipChk"),shipRow=shopRetEl("shopRetShipRow");
   if(shipChk&&shipRow)shipRow.style.display=shipChk.checked?"":"none";
-  var g=shopRetGross();var t=document.getElementById("shopRetTotal");if(t){t.value=g.gross.toFixed(2);t.max=g.gross;}
+  var g=shopRetGross();var t=shopRetEl("shopRetTotal");if(t){t.value=g.gross.toFixed(2);t.max=g.gross;}
   /* Le résumé, comme sur Shopify : combien de paires, leur sous-total, et le
      plafond. Sans le plafond écrit, le champ de montant n'a pas de repère. */
-  var n=0;document.querySelectorAll(".shopRetChk:checked").forEach(function(c){if(c.offsetParent!==null)n++;});
-  var nb=document.getElementById("shopRetNb");if(nb)nb.textContent="("+n+")";
-  var sub=document.getElementById("shopRetSub");if(sub)sub.textContent=eur(g.prod);
-  var mx=document.getElementById("shopRetMax");
-  if(mx)mx.textContent=g.gross>0.005?(eur(g.gross)+" remboursables au maximum"):"";
+  var n=0;R.querySelectorAll(".shopRetChk:checked").forEach(function(c){if(c.offsetParent!==null)n++;});
+  var nb=shopRetEl("shopRetNb");if(nb)nb.textContent="("+n+")";
+  var sub=shopRetEl("shopRetSub");if(sub)sub.textContent=eur(g.prod);
+  var mx=shopRetEl("shopRetMax");
+  if(mx)mx.textContent=g.gross>0.005
+    ?(eur(g.gross)+((shopRetRoot()!==document)?" d'avoir au maximum":" remboursables au maximum"))
+    :"";
   shopRetPenalty();
 }
 function shopRetPenalty(){
-  var t=document.getElementById("shopRetTotal");if(!t)return;var mx=parseFloat(t.max)||0;var v=parseFloat(t.value);if(isNaN(v))v=0;
+  var t=shopRetEl("shopRetTotal");if(!t)return;var mx=parseFloat(t.max)||0;var v=parseFloat(t.value);if(isNaN(v))v=0;
   if(v>mx){v=mx;t.value=mx.toFixed(2);}if(v<0){v=0;t.value="0.00";}
-  var pen=Math.round((mx-v)*100)/100;var lbl=document.getElementById("shopRetPenaltyLbl");
+  var pen=Math.round((mx-v)*100)/100;var lbl=shopRetEl("shopRetPenaltyLbl");
   /* Le libellé ne redit plus « Pénalité retenue » : c'est écrit en face, dans
      le résumé. Il ne porte que le chiffre. */
   if(lbl)lbl.textContent=pen>0.005?("− "+eur(pen)):"—";
   /* LE MONTANT SUR LE BOUTON. C'est ce qui rend le geste sans ambiguïté :
      on ne clique pas sur « valider », on clique sur « rembourser 172,29 € ».
-     À zéro, il n'y a pas de remboursement et le bouton le dit autrement. */
-  var b=document.getElementById("shopRetBtn");
-  if(b)b.textContent=(v>0.005)?("Rembourser "+eur(v)):"Valider le retour sans rembourser";
+     À zéro, il n'y a pas de remboursement et le bouton le dit autrement.
+     Sur une expédition rien ne part vers Shopify : c'est l'avoir qui porte
+     le montant, et le bouton le dit avec ses mots à lui. */
+  var b=shopRetEl("shopRetBtn");
+  var exp=(shopRetRoot()!==document);
+  if(b)b.textContent=(v>0.005)
+    ?((exp?"Avoir de ":"Rembourser ")+eur(v))
+    :("Valider le retour sans "+(exp?"avoir":"rembourser"));
 }
 function shopRetSetPen(type,val){
   var g=shopRetGross();var gross=g.gross;var pen=(type==="pct")?Math.round(gross*val/100*100)/100:(+val||0);
   if(pen>gross)pen=gross;if(pen<0)pen=0;
-  var t=document.getElementById("shopRetTotal");if(t){t.max=gross;t.value=(Math.round((gross-pen)*100)/100).toFixed(2);}
+  var t=shopRetEl("shopRetTotal");if(t){t.max=gross;t.value=(Math.round((gross-pen)*100)/100).toFixed(2);}
   shopRetPenalty();
+}
+/* La pénalité portée sur l'avoir, en clair : une ligne négative plutôt qu'un
+   rabais invisible réparti sur les paires. Le client voit ce qu'on lui rend
+   et ce qu'on retient, et le total de l'avoir vaut ce qui sort vraiment. */
+function avoirAjouterPenalite(av,pen,tvaName,country){
+  pen=Math.round((+pen||0)*100)/100;
+  if(!(pen>0.005))return av;
+  var rate=taxRate(tvaName)||countryStdRate(country)||20;
+  var penHT=Math.round((pen/(1+rate/100))*100)/100;
+  av.lines.push({title:"Pénalité de retour",sku:"",qty:1,puTTC:-pen,refs:[],tva:tvaName});
+  av.subtotal=Math.round(((+av.subtotal||0)-pen)*100)/100;
+  av.totalHT=Math.round(((+av.totalHT||0)-penHT)*100)/100;
+  av.totalTTC=Math.round(((+av.totalTTC||0)-pen)*100)/100;
+  av.penalty=pen;
+  return av;
 }
 /* Coefficients de remise en vente par fournisseur, appliqués au prix d'ACHAT.
    Fournisseur absent de la table = aucune préconisation, saisie manuelle. */
@@ -12284,7 +12547,7 @@ function glsNomPaire(a){
    LES PDF, CONSERVÉS
    Écrits après l'édition, lus à la demande. Jamais chargés au démarrage.
    --------------------------------------------------------------------------- */
-async function glsSauverEtiquettes(o,res,repartition){
+async function glsSauverEtiquettes(o,res,repartition,extra){
   /* UNE LIGNE PAR COLIS, PAS PAR FEUILLE.
 
      track_id est la clé primaire de la table. Or une étiquette de RETOUR rend
@@ -12308,6 +12571,10 @@ async function glsSauverEtiquettes(o,res,repartition){
         data:{pdf:e.pdf||"",service:res.service,poids:e.poids,colis:e.colis,
               parcelShopId:res.parcelShopId||null,env:res.env,orderId:o.id,
               pieces:((repartition[i]||{}).pieces)||[],feuilles:[]}};
+      /* « extra » dit d'où vient l'étiquette quand ce n'est pas une commande
+         Shopify : sans lui, l'id d'une expédition se lirait comme un orderId
+         et on irait chercher une commande qui n'existe pas. */
+      if(extra)Object.keys(extra).forEach(function(k){par[id].data[k]=extra[k];});
       ordre.push(id);
     }
     par[id].data.feuilles.push({role:e.role||"transport",pdf:e.pdf||""});
@@ -12830,7 +13097,7 @@ function glsRetourDialog(o,dest,poidsPropose){
       +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'
         +'<span style="background:#061ab1;color:#fff;font-weight:800;font-size:11px;letter-spacing:.6px;padding:4px 7px;border-radius:5px">GLS</span>'
         +'<b style="font-size:17px">Étiquette de retour</b></div>'
-      +'<div class="sub" style="margin-bottom:14px">Commande '+esc(o.name)+'</div>'
+      +'<div class="sub" style="margin-bottom:14px">'+esc(o.soustitre||("Commande "+o.name))+'</div>'
       +'<div style="background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.6;margin-bottom:14px">'
         +'<b>'+esc(dest.nom)+'</b><br>'+esc([dest.rue,dest.nom2].filter(Boolean).join(", "))
         +'<br>'+esc(dest.cp)+' '+esc(dest.ville)+', '+esc(dest.pays)+'</div>'
@@ -12841,7 +13108,8 @@ function glsRetourDialog(o,dest,poidsPropose){
         +'Le client devient l\'expéditeur sur l\'étiquette, et dépose son colis dans le point '
         +'relais de son choix. Tu recevras deux feuilles : l\'étiquette à coller, et les '
         +'instructions à lui transmettre.<br>'
-        +'<b style="color:var(--ink)">Ce geste ne modifie ni le suivi, ni le stock, ni Shopify.</b></p>'
+        +'<b style="color:var(--ink)">Ce geste ne modifie ni le suivi, ni le stock'
+        +(o.soustitre?", ni l'expédition.":", ni Shopify.")+'</b></p>'
       +'<div style="display:flex;gap:9px;justify-content:flex-end">'
         +'<button class="btn" id="_grNon">Annuler</button>'
         +'<button class="btn v" id="_grOui">Éditer l\'étiquette de retour</button></div></div>';
@@ -12855,27 +13123,80 @@ function glsRetourDialog(o,dest,poidsPropose){
   });
 }
 
+/* ============================================================================
+   L'ÉTIQUETTE DE RETOUR GLS, POUR UNE COMMANDE OU POUR UNE EXPÉDITION
+
+   Le geste est le même des deux côtés : on fabrique une étiquette où le
+   CLIENT est l'expéditeur, il dépose son colis en point relais, et nous le
+   recevons. Ce qui change, c'est seulement d'où vient l'adresse — du
+   destinataire d'une commande Shopify, ou de la fiche client d'une
+   expédition — et le libellé imprimé sur le bordereau.
+
+   Tout le reste (le poids, l'appel GLS, la conservation des deux feuilles,
+   la fenêtre de téléchargement) est identique, donc écrit une seule fois.
+   ========================================================================== */
 async function glsRetour(orderId){
   var o=_shopOrders.find(function(x){return x.id===orderId;});
   if(!o){alert("Commande introuvable.");return;}
   var d=glsDestinataire(o);
+  /* Deux paires reviennent presque toujours dans le même carton : on propose
+     le poids de l'ensemble, qu'il reste libre de corriger. */
+  return glsRetourLabel({name:o.name,id:o.id},d,shopOrderPieces(o).length,
+    "Complète-les depuis la fenêtre d'expédition.",null,shopRefresh);
+}
+/* GLS veut un code à deux lettres ; la fiche client porte « France ». La
+   table des pays de l'ERP ne stocke que le nom et le taux, pas le code : on
+   retourne donc la correspondance déjà écrite pour l'autre sens. Un code
+   déjà saisi en deux lettres passe tel quel. */
+function glsPaysIso(nom){
+  var s=String(nom||"").trim();
+  if(!s)return "FR";
+  if(/^[A-Za-z]{2}$/.test(s))return s.toUpperCase();
+  var bas=s.toLowerCase();
+  var hit=Object.keys(ISO2PAYS).find(function(k){return ISO2PAYS[k].toLowerCase()===bas;});
+  return hit||"";
+}
+/* L'adresse de retour d'une expédition : celle de son client. La fiche porte
+   une société OU un nom de personne — GLS veut une seule ligne « nom ». */
+function glsDestExped(e){
+  var c=clientById(e&&e.clientId)||{};
+  var nom=String(c.societe||"").trim()
+    ||((String(c.prenom||"").trim()+" "+String(c.nom||"").trim()).trim());
+  return {nom:nom,nom2:String(c.adr2||"").trim(),rue:String(c.adr||"").trim(),
+    cp:String(c.cp||"").trim(),ville:String(c.ville||"").trim(),
+    pays:glsPaysIso(c.pays),
+    email:String(c.email||"").trim(),tel:String(c.tel||"").trim()};
+}
+async function glsRetourExped(expedId){
+  var e=DB.expeditions.find(function(x){return x.id==expedId;});
+  if(!e){alert("Expédition introuvable.");return;}
+  if(!e.clientId){alert("Cette expédition n'a pas de client : impossible d'éditer une "
+    +"étiquette de retour.\n\nRenseigne le client sur la fiche de l'expédition.");return;}
+  var d=glsDestExped(e);
+  /* Les pièces déjà rendues ne reviendront pas une seconde fois : le poids
+     proposé suit ce qu'il RESTE chez le client. */
+  var n=(e.lignes||[]).length;
+  return glsRetourLabel({name:e.nom||("Expédition "+e.id),id:e.id,
+      soustitre:"Expédition "+(e.nom||e.id)},d,n,
+    "Complète-les sur la fiche du client.",{expedId:e.id},renderExpeds);
+}
+async function glsRetourLabel(cible,d,nbPieces,ouCorriger,extra,apres){
   var trous=glsManqueRetour(d);
   if(trous.length){
     alert("Impossible d'éditer l'étiquette de retour : il manque "+trous.join(", ")
-      +" sur l'adresse du client.\n\nComplète-les depuis la fenêtre d'expédition.");
+      +" sur l'adresse du client.\n\n"+(ouCorriger||""));
     return;
   }
-  /* Deux paires reviennent presque toujours dans le même carton : on propose
-     le poids de l'ensemble, qu'il reste libre de corriger. */
-  var _n=Math.max(1,shopOrderPieces(o).length);
-  var ch=await glsRetourDialog(o,d,GLS_POIDS_PAIRE*_n);
+  var _n=Math.max(1,+nbPieces||1);
+  var ch=await glsRetourDialog(cible,d,GLS_POIDS_PAIRE*_n);
   if(!ch)return;
 
+  var o=cible;
   var r=await glsAppel("label",{reference:o.name,service:"shopreturn",
     destinataire:d,colis:[{poids:ch.poids}]});
   if(!r.ok){alert("GLS a refusé l'étiquette de retour :\n\n"+(r.error||"raison inconnue"));return;}
 
-  var cons=await glsSauverEtiquettes(o,r,[{pieces:[]}]);
+  var cons=await glsSauverEtiquettes(o,r,[{pieces:[]}],extra);
   try{logAct("Étiquette retour GLS",o.name,(r.trackIds||[]).join(", ")
     +" · "+((r.etiquettes||[]).length)+" feuille(s)");}catch(_){}
 
@@ -12906,7 +13227,8 @@ async function glsRetour(orderId){
     +'Envoie-les au client par e-mail.</p>'
     +'<div style="margin-top:16px;text-align:right"><button class="btn v" id="_grFin">Terminé</button></div></div>';
   ov.innerHTML=h;document.body.appendChild(ov);
-  ov.querySelector("#_grFin").onclick=function(){ov.remove();shopRefresh();};
+  ov.querySelector("#_grFin").onclick=function(){ov.remove();
+    try{if(typeof apres==="function")apres();}catch(_){}};
 }
 
 /* Les étiquettes de RETOUR d'une commande, lues dans la table des étiquettes.
