@@ -13535,7 +13535,12 @@ var MP_TAUX={
   "Spartoo":  {pc:0.16},
   "Cdiscount":{pc:0.15},
   "Joom":     {pc:0.125},
-  "TikTok Shop":{pc:0.09},
+  /* TikTok Shop : 14 % depuis le 17/11/2026, taux donné par le contrat.
+     Contrairement à Bol et Cdiscount, il n'a PAS pu être recoupé sur la
+     donnée : TikTok ne transmet aucune commission dans ses commandes (0 sur
+     les 7 du cache). C'est donc le taux annoncé qui s'applique, sans
+     vérification possible — à recouper le jour où un relevé TikTok arrive. */
+  "TikTok Shop":{pc:0.14},
   "Bol":      {pc:0.13, fixe:0.95}
 };
 /* Le montant en euros, ou null si le taux n'est pas renseigné. C'est CETTE
