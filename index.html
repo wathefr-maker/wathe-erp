@@ -13201,7 +13201,13 @@ function shopAssignSection(o){
        qu'occuper la place sous le titre. */
     var _sk=shopSkuMarque(o,i,l);
     var _skHtml=_sk?('<br><span class="muted" style="font-size:12px">SKU '+esc(_sk.sku)+'</span>'):'';
-    return '<tr><td style="vertical-align:top"><b>'+esc(l.title)+'</b>'+(l.variantTitle?' <b style="color:var(--violet)">'+esc(l.variantTitle)+'</b>':'')+_skHtml+'</td><td style="vertical-align:top">'+money(l.price,o.currency)+'</td><td style="vertical-align:top">'+need+'</td><td style="vertical-align:top"><b>'+money((l.price||0)*need,o.currency)+'</b></td><td style="min-width:320px">'+chips+box+'</td></tr>';
+    return '<tr><td style="vertical-align:top"><b>'+esc(l.title)+'</b>'+(l.variantTitle?' <b style="color:var(--violet)">'+esc(l.variantTitle)+'</b>':'')+_skHtml+'</td><td style="vertical-align:top">'+(function(){
+      /* Prix PAYÉ par le client : sur Temu & co la ligne Shopify est hors taxes (TVA ajoutée
+         à part) — on affiche le prix réellement encaissé, avec le HT de la ligne en dessous. */
+      var _pp=(o.currency&&o.currency!=="EUR")?(+l.price||0):shopLinePaid(o,l);
+      var _dif=Math.abs(_pp-(+l.price||0))>0.009;
+      return money(_pp,o.currency)+(_dif?'<div class="muted" style="font-size:11.5px">ligne Shopify '+money(l.price,o.currency)+' (hors TVA du canal)</div>':'');
+    })()+'</td><td style="vertical-align:top">'+need+'</td><td style="vertical-align:top"><b>'+money(((o.currency&&o.currency!=="EUR")?(+l.price||0):shopLinePaid(o,l))*need,o.currency)+'</b></td><td style="min-width:320px">'+chips+box+'</td></tr>';
   }).join("");
   return '<div class="dcard" style="grid-column:1/-1;margin-top:16px"><h3>Produits de la vente — assignation des paires du stock</h3>'+
     shopReturnedBanner(o)+
