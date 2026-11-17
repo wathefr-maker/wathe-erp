@@ -12019,6 +12019,43 @@ function shopGroupLineItems(o,pieces){
   return Object.keys(q).map(function(k){return {sku:k,quantity:q[k]};});
 }
 
+/* LES DEUX TEMU.
+
+   Les commandes Temu arrivent par deux chemins qui ne transmettent PAS la même
+   chose :
+
+   · Shopping Feed (réf. « PO-069-… », « PO-186-… ») envoie le SKU de la
+     variante. La ligne est reliée au catalogue, on sait la désigner.
+   · L'appli Temu de Shopify (réf. « PO-076-… ») envoie des lignes LIBRES :
+     ni SKU, ni variante, ni produit. Temu pousse un titre et un prix, c'est
+     tout. Aucun SKU n'existe, donc aucun ne peut être retrouvé.
+
+   Or l'envoi du suivi désignait la ligne à expédier par son SKU. Sur les
+   commandes de l'appli Temu la liste sortait vide et l'envoi était refusé
+   avant même de partir — « aucune ligne Shopify identifiée », en accusant la
+   paire de ne pas être assignée alors qu'elle l'était.
+
+   Quand le colis emporte tout ce qui reste à expédier, on n'a pas besoin de
+   désigner quoi que ce soit : on expédie sans préciser les lignes et Shopify
+   consomme tout ce qui est encore ouvert. C'est ce que fait cette fonction.
+   Le ciblage par SKU reste la règle partout ailleurs, car lui seul sait gérer
+   plusieurs colis sur une même commande. */
+function shopGroupCouvreTout(o,pieces){
+  var dedans={};(pieces||[]).forEach(function(a){if(a&&a.id!=null)dedans[a.id]=1;});
+  var assignees=shopOrderPieces(o);
+  /* Reste-t-il, hors de ce colis, une paire assignée pas encore expédiée ?
+     Si oui, le colis est partiel : expédier « tout ce qui est ouvert »
+     emporterait des paires qui ne sont pas dans le carton. */
+  var dehors=assignees.filter(function(a){
+    return !dedans[a.id]&&!(a.shopifyTracking&&a.shopifyTracking.number);
+  });
+  if(dehors.length)return false;
+  /* Et toutes les lignes de la commande sont-elles servies ? Sinon on
+     expédierait une paire qu'on n'a pas encore. */
+  var attendu=(o.lines||[]).reduce(function(t,l){return t+(+l.qty||1);},0);
+  return assignees.length>=attendu;
+}
+
 /* Un envoi Shopify par colis, en série : deux fulfillments simultanés sur la même
    commande se marchent dessus (le second ne voit pas encore les lignes consommées). */
 async function shopPushFulfillmentGroups(o,groups,opts){
@@ -12027,10 +12064,19 @@ async function shopPushFulfillmentGroups(o,groups,opts){
   for(var i=0;i<groups.length;i++){
     var g=groups[i];
     var items=shopGroupLineItems(o,g.pieces);
-    if(!items.length){errs.push(g.number+" : aucune ligne Shopify identifiée (paire non assignée ?)");continue;}
+    /* Pas de SKU exploitable (appli Temu) : on n'abandonne plus. Si le colis
+       couvre tout le restant, on expédie sans désigner les lignes. Sinon on
+       le dit pour ce que c'est — la ligne n'a pas de SKU — au lieu de laisser
+       croire que la paire n'est pas assignée. */
+    var _tout=!items.length&&shopGroupCouvreTout(o,g.pieces);
+    if(!items.length&&!_tout){
+      errs.push(g.number+" : ligne Shopify sans SKU et colis partiel — impossible de désigner "
+        +"la ligne à expédier. Expédie ce colis depuis Shopify.");continue;}
     try{
-      var r=await sb.functions.invoke("shopify-write",{body:{action:"fulfill",orderId:o.id,orderName:o.name,
-        carrier:g.company,trackingNumber:g.number,trackingUrl:g.url,notify:true,lineItems:items}});
+      var _body={action:"fulfill",orderId:o.id,orderName:o.name,
+        carrier:g.company,trackingNumber:g.number,trackingUrl:g.url,notify:true};
+      if(items.length)_body.lineItems=items;   // sans lineItems : tout ce qui reste ouvert
+      var r=await sb.functions.invoke("shopify-write",{body:_body});
       if(r.error)throw new Error(r.error.message||"appel échoué");
       var d=r.data;
       if(!d||!d.ok)throw new Error((d&&(d.error||JSON.stringify(d.userErrors||d.errors)))||"échec fulfillment");
