@@ -12364,6 +12364,23 @@ function shopGroupLineItems(o,pieces){
   return Object.keys(q).map(function(k){return {sku:k,quantity:q[k]};});
 }
 
+/* Les identifiants Shopify des lignes d'un colis, pour les commandes dont les
+   lignes n'ont pas de SKU. Une entrée par paire : deux paires sur la même
+   ligne demandent bien deux unités.
+   Rend un tableau VIDE si une seule des lignes concernées n'a pas encore
+   d'identifiant en cache — on ne désigne pas la moitié d'un colis. */
+function shopGroupLineIds(o,pieces){
+  var q={},complet=true;
+  (pieces||[]).forEach(function(a){
+    var li=(o.lines||[])[a.shopifyLineIdx];
+    var id=String((li&&li.lineId)||"").trim();
+    if(!id){complet=false;return;}
+    q[id]=(q[id]||0)+1;
+  });
+  if(!complet)return [];
+  return Object.keys(q).map(function(k){return {id:k,quantity:q[k]};});
+}
+
 /* LES DEUX TEMU.
 
    Les commandes Temu arrivent par deux chemins qui ne transmettent PAS la même
@@ -12409,18 +12426,34 @@ async function shopPushFulfillmentGroups(o,groups,opts){
   for(var i=0;i<groups.length;i++){
     var g=groups[i];
     var items=shopGroupLineItems(o,g.pieces);
-    /* Pas de SKU exploitable (appli Temu) : on n'abandonne plus. Si le colis
-       couvre tout le restant, on expédie sans désigner les lignes. Sinon on
-       le dit pour ce que c'est — la ligne n'a pas de SKU — au lieu de laisser
-       croire que la paire n'est pas assignée. */
-    var _tout=!items.length&&shopGroupCouvreTout(o,g.pieces);
-    if(!items.length&&!_tout){
-      errs.push(g.number+" : ligne Shopify sans SKU et colis partiel — impossible de désigner "
-        +"la ligne à expédier. Expédie ce colis depuis Shopify.");continue;}
+    /* TROIS FAÇONS DE DÉSIGNER LA LIGNE À EXPÉDIER, DANS CET ORDRE.
+
+       1. PAR SON SKU — la règle, inchangée. Shopping Feed et tous les autres
+          canaux passent par là et rien n'a bougé pour eux.
+
+       2. PAR SON IDENTIFIANT SHOPIFY — uniquement quand la ligne n'a pas de
+          SKU, c'est-à-dire les commandes de l'appli Temu (réf. PO-076-), qui
+          arrivent sans sku, sans variante et sans produit. Shopify donne à
+          chaque ligne un identifiant propre, indépendant du catalogue : il
+          existe même sur une ligne libre. Ce chemin vise donc AUSSI
+          précisément que le SKU, et rend le multi-colis possible sur ces
+          commandes — ce que le repli ci-dessous ne sait pas faire.
+
+       3. SANS RIEN DÉSIGNER — repli : on demande à Shopify d'expédier tout ce
+          qui reste ouvert. Ne vaut que si le colis emporte toute la commande.
+          Sert aux commandes déjà en cache avant que l'identifiant de ligne ne
+          soit enregistré ; il disparaîtra de lui-même au fil du rechargement. */
+    var ids=items.length?[]:shopGroupLineIds(o,g.pieces);
+    var _tout=(!items.length&&!ids.length)&&shopGroupCouvreTout(o,g.pieces);
+    if(!items.length&&!ids.length&&!_tout){
+      errs.push(g.number+" : ligne Shopify sans SKU ni identifiant, et colis partiel — "
+        +"impossible de désigner la ligne à expédier. Expédie ce colis depuis Shopify.");continue;}
     try{
       var _body={action:"fulfill",orderId:o.id,orderName:o.name,
         carrier:g.company,trackingNumber:g.number,trackingUrl:g.url,notify:true};
-      if(items.length)_body.lineItems=items;   // sans lineItems : tout ce qui reste ouvert
+      if(items.length)_body.lineItems=items;        // la règle : par SKU
+      else if(ids.length)_body.lineItemIds=ids;     // sans SKU : par identifiant de ligne
+      // ni l'un ni l'autre : Shopify expédie tout ce qui reste ouvert
       var r=await sb.functions.invoke("shopify-write",{body:_body});
       if(r.error)throw new Error(r.error.message||"appel échoué");
       var d=r.data;
