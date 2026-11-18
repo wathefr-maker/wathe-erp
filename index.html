@@ -9811,6 +9811,10 @@ async function expProcessReturn(e,ov,close){
 
   if(repris.length){
     try{const n=await shopReturnReprice(repris);if(n)await save();}catch(_){}
+    /* La paire est de retour en rayon : elle doit redevenir scannable au
+       comptoir. Après la remise de prix, pour que la caisse reçoive le prix
+       définitif et non celui d'avant le retour. */
+    try{await rzRetourEnCaisse(repris);await save();}catch(_){}
   }
   renderAll();renderExpeds();close();
   try{await shopResyncIds(shopModelIdsOf(ids.map(id=>pieceById(id))));}catch(_){}
@@ -10679,6 +10683,80 @@ async function rzRemoveStock(pieces,opts){
   }
 }
 window.rzRemoveStock=rzRemoveStock;
+
+/* ============================================================================
+   UNE PAIRE QUI REVIENT EN STOCK REVIENT EN CAISSE
+
+   Le retrait était automatique, le retour ne l'était pas. Une paire vendue
+   sort du stock caisse — il le faut, sinon elle reste scannable au comptoir
+   et se vend une deuxième fois. Mais quand le client la renvoie, l'ERP la
+   repassait « En Stock » sans toucher au marqueur rzOutCaisse. Or toutes les
+   fonctions qui écrivent dans la caisse ignorent les pièces qui le portent :
+   la paire était en rayon, vendable sur la vitrine, et à 0 au comptoir.
+
+   Personne ne s'en apercevait avant d'essayer de la vendre. 16 paires étaient
+   dans cet état le 18/11/2026, pour 2 233 € de valeur vitrine, la plus
+   ancienne depuis le 7 septembre.
+
+   Le chemin « retour encaissé à la caisse » (celui que la caisse détecte
+   elle-même) remettait bien les marqueurs en place. Ce sont les deux retours
+   pilotés par l'ERP — internet et boutique/expédition — qui ne le faisaient
+   pas. C'est ce que cette fonction répare, pour les deux à la fois.
+
+   rzPush fait le travail : il met à jour la fiche (elle existe déjà), entre
+   une unité de stock par bon de commande, et repose rzInCaisse en effaçant
+   rzOutCaisse. C'est le même chemin que la première entrée, donc éprouvé.
+   ========================================================================== */
+async function rzRetourEnCaisse(pieces,opts){
+  opts=opts||{};
+  var list=(pieces||[]).filter(function(a){
+    return a&&a.ref&&!a.archived&&a.rzOutCaisse
+      &&(typeof inStock==="function"?inStock(a):a.statut==="En Stock");
+  });
+  if(!list.length)return {ok:true,total:0};
+  var refs=function(l){return l.map(function(a){return a.ref;}).join(", ");};
+
+  /* La synchro coupée est un choix de l'utilisateur, pas une panne : on ne
+     force pas, on laisse une trace pour qu'il puisse rattraper. */
+  if(!rzEnabled()){
+    try{logAct("Caisse Rezomatic","Retour non remis en caisse",
+      "synchro coupée · "+list.length+" paire(s) : "+refs(list));}catch(_){}
+    return {ok:true,total:0,ignore:"synchro caisse coupée"};
+  }
+
+  /* Sans prix cible, la paire sonnerait à 0 € au comptoir : c'est la règle de
+     rzPush depuis le début, et elle vaut aussi au retour. On le DIT, sinon
+     l'utilisateur croit la paire revenue alors qu'elle ne l'est pas. */
+  var sansPrix=list.filter(function(a){return pvSansPrix(a);});
+  var envoi=list.filter(function(a){return !pvSansPrix(a);});
+
+  var d={total:0};
+  if(envoi.length){
+    try{d=(await rzPush(envoi,{silent:true}))||{};}
+    catch(e){d={ok:false,erreur:(e&&e.message)||String(e)};}
+  }
+  /* rzPush ne repose les marqueurs que si l'ENTRÉE DE STOCK a réussi. Si elle
+     échoue, la paire reste marquée sortie : c'est la vérité, et la prochaine
+     tentative la reprendra. On prévient plutôt que de laisser croire. */
+  var ratees=envoi.filter(function(a){return a.rzOutCaisse;});
+  if(ratees.length||sansPrix.length){
+    var motif=[];
+    if(ratees.length)motif.push(ratees.length+" refusée(s) par la caisse ("
+      +((d&&d.erreur)||"motif inconnu")+") : "+refs(ratees));
+    if(sansPrix.length)motif.push(sansPrix.length+" sans prix cible : "+refs(sansPrix));
+    try{logAct("Caisse Rezomatic","Retour non remis en caisse",motif.join(" · "));}catch(_){}
+    if(!opts.silent)alert("⚠️ "+(ratees.length+sansPrix.length)+" paire(s) de retour ne sont "
+      +"PAS revenues dans la caisse :\n\n"+motif.join("\n\n")
+      +"\n\nElles sont en stock et vendables sur la vitrine, mais elles sonneront "
+      +"à 0 au comptoir tant que ce n'est pas corrigé.");
+  }
+  var revenues=envoi.length-ratees.length;
+  if(revenues>0){try{logAct("Caisse Rezomatic","Retour remis en caisse",
+    revenues+" paire(s) : "+refs(envoi.filter(function(a){return !a.rzOutCaisse;})));}catch(_){}}
+  return {ok:!ratees.length&&!sansPrix.length,total:revenues,
+          refusees:ratees.length,sansPrix:sansPrix.length};
+}
+window.rzRetourEnCaisse=rzRetourEnCaisse;
 
 /* Met à jour la fiche d'une pièce DÉJÀ envoyée en caisse : prix cible, libellé,
    régime de TVA. La création n'a lieu qu'à la mise en stock ; sans cette mise à
@@ -12174,6 +12252,10 @@ async function shopProcessReturn(){
     // Ajustement du prix cible AVANT la synchro : sinon la paire repart en ligne au
     // prix d'origine et il faut relancer une seconde synchro pour la baisser.
     try{ var _rp=await shopReturnReprice(restockPieces); if(_rp)await save(); }catch(_e){console.warn("reprice",_e);}
+    /* La paire est de retour en rayon : elle doit redevenir scannable au
+       comptoir, exactement comme sur un retour d'expédition. Après la remise
+       de prix, pour que la caisse reçoive le prix définitif. */
+    try{ await rzRetourEnCaisse(restockPieces); await save(); }catch(_e){console.warn("caisse",_e);}
     try{ await shopSyncModelsForArticles(restockPieces); }
     catch(e){ alert("Retour valide, mais la synchro Shopify a echoue :\n\n"+((e&&e.message)||e)+"\n\nLes paires sont bien en stock : tu peux relancer la synchro en decochant/recochant \u00ab Dispo Shopify \u00bb sur une piece."); }
   }
