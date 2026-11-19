@@ -13572,18 +13572,42 @@ function coefMiniPour(pa){ pa=+pa||0; var t=ALERTE_PALIERS.slice().sort(function
    Certaines marketplaces (Temu…) envoient des lignes HORS TAXES, la TVA étant
    ajoutée à part sur la commande : #8368 ligne 171,03 € + 32,50 € de TVA
    allemande = 203,53 € payés. Le coef calculé sur 171,03 donnait × 1,71 au
-   lieu de × 2,04. On ramène donc chaque ligne au total encaissé (hors port),
-   au prorata — ce qui couvre aussi les remises (codes promo). Même règle que
-   la facturation. Écart > 50 % : donnée douteuse, on garde le prix de la ligne. */
+   lieu de × 2,04. On ramène donc chaque ligne au total encaissé, au prorata —
+   ce qui couvre aussi les remises (codes promo).
+
+   LE PORT EST COMPRIS, et c'est un changement du 19/11.
+
+   Il en était retiré, au motif qu'une recette de transport n'est pas de la
+   marge. Mais la FACTURE, elle, a toujours rapproché les lignes port compris
+   ((Σ lignes + port) vs total payé) et facturé ce port en ligne séparée. Le
+   même ERP jugeait donc une vente sur une base et la facturait sur une autre :
+   #8452 Cdiscount, 58,74 € pour l'alerte, 68,64 € sur la facture, × 1,63 au
+   lieu de × 1,91. Une seule base désormais, celle de la facture — le port
+   encaissé se déduit une fois par an, à part, avec la facture du transporteur.
+
+   Le garde-fou « donnée douteuse » reste calculé HORS PORT : c'est l'écart
+   entre les lignes et l'encaissé qui révèle une anomalie, pas le port, qui
+   peut légitimement peser lourd sur une petite commande (9,90 € sur 15 €
+   dépasserait 1,5 et aurait fait tomber le correctif en silence). */
 function shopLinePaid(o,l){
   var p=+l.puTTC||+l.price||0;
   if(!o||o.totalTTC==null||p<=0)return p;
   var sum=(o.lines||[]).reduce(function(t,x){return t+((+x.puTTC||+x.price||0)*(x.qty||1));},0);
   var paid=(+o.totalTTC||0)-(+o.shipping||0);
   if(sum<=0||paid<=0)return p;
-  var f=paid/sum;
-  if(f<0.5||f>1.5)return p;
-  return Math.round(p*f*100)/100;
+  if(paid/sum<0.5||paid/sum>1.5)return p;    // lignes et encaissé incohérents : on ne touche à rien
+  return Math.round(p*((+o.totalTTC||0)/sum)*100)/100;
+}
+/* Part de port qui revient à une ligne, dans la devise du CLIENT.
+   Le chemin « devise étrangère » n'utilise pas shopLinePaid (il part du prix
+   de ligne en devise, converti ensuite) : sans ça, le port serait compris en
+   euros et oublié en couronnes. */
+function shopLineShipCur(o,l){
+  var p=+l.custPrice||+l.price||0,port=+o.custShipping||+o.shipping||0;
+  if(p<=0||port<=0)return 0;
+  var sum=(o.lines||[]).reduce(function(t,x){return t+((+x.custPrice||+x.price||0)*(x.qty||1));},0);
+  if(sum<=0)return 0;
+  return Math.round(port*(p/sum)*100)/100;
 }
 function shopCoefOf(o,l,i,a){
   var pa=+a.prix||0;
@@ -15743,7 +15767,9 @@ function shCoefLow(ach){
     var pa=+a.prix||0;if(pa<=0)return;                       // prix d'achat inconnu : pas de calcul possible
     // prix payé par le client sur le canal (marketplace / site) ; devise étrangère → euros au taux du jour de la commande
     var cur=(o.custCurrency&&o.custCurrency!=="EUR")?o.custCurrency:((o.currency&&o.currency!=="EUR")?o.currency:"EUR");
-    var pvRaw=(cur!=="EUR")?(l.custPrice!=null?+l.custPrice:(+l.price||0)):shopLinePaid(o,l);   // ligne HT (Temu…) : ramenée au total payé
+    // ligne HT (Temu…) : ramenée au total payé, PORT COMPRIS — même base que la facture.
+    // En devise étrangère le port s'ajoute à part, la conversion venant après.
+    var pvRaw=(cur!=="EUR")?((l.custPrice!=null?+l.custPrice:(+l.price||0))+shopLineShipCur(o,l)):shopLinePaid(o,l);
     var fx=(cur!=="EUR")?(fxRate(cur,o.date)||0):1;
     var pv=(cur!=="EUR")?(fx>0?pvRaw*fx:0):pvRaw;
     var v=varById(a.varianteId)||{},m=(v.modeleId!=null?modeleById(v.modeleId):null)||{};
