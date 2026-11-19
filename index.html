@@ -1488,7 +1488,7 @@ try{
   });
   // Puis retirer les pièces appro restées en double sur les commandes déjà livrées.
   try{apPurgeApproOrphelins();}catch(e){}
-}catch(e){}/* Chargement instantané : lit les caches (commandes Shopify + achats FlowStock), importe les pièces et les relie AVANT le premier rendu -> pastilles justes tout de suite, sans attendre les 14s de FlowStock. */try{const _c=await shopCacheLoad();if(_c&&_c.orders&&_c.orders.length){_shopOrders=_c.orders;_shopMore=!!_c.hasNextPage;_shopCursor=_c.endCursor||null;_shopPage=1;_shopMinOrder=+((_c||{}).minOrder||0)||0;_fsHideBeforeDate=(_c||{}).fsHideBefore||"";_shopPartiel=+((_c||{}).partiel||0)||0;_shopFond=(_c||{}).fondCursor||null;_shopFini=!!((_c||{}).fini);}if(_c){if(Array.isArray(_c.dupOrders)&&_c.dupOrders.length)DB.shopDupOrders=_c.dupOrders;if(Array.isArray(_c.cancelled)&&_c.cancelled.length)DB.shopCancelled=_c.cancelled;}try{const _ov=await shopOverridesLoad();if(_ov){if(Array.isArray(_ov.dupOrders))DB.shopDupOrders=_ov.dupOrders;if(Array.isArray(_ov.cancelled))DB.shopCancelled=_ov.cancelled;if(_ov.partiels)DB.shopPartiels=shopPartielsFusion(DB.shopPartiels,_ov.partiels);}}catch(e){}try{mergeDupOrders();}catch(e){}}catch(e){}if(fsEnabled()){try{await flowstockKnownLoad();}catch(e){}try{const _fc=await flowstockCacheLoad();if(_fc&&_fc.purchases&&_fc.purchases.length){try{flowstockImport(JSON.stringify({purchases:_fc.purchases}),true);}catch(e){}}}catch(e){}}try{flowstockReconcile(true);}catch(e){}try{fsRepair();}catch(e){}try{fsDedupeAchats();}catch(e){}try{fixSocietes();}catch(e){}await save();fillSelects();renderAll();restoreView();
+}catch(e){}/* Chargement instantané : lit les caches (commandes Shopify + achats FlowStock), importe les pièces et les relie AVANT le premier rendu -> pastilles justes tout de suite, sans attendre les 14s de FlowStock. */try{const _c=await shopCacheLoad();if(_c&&_c.orders&&_c.orders.length){_shopOrders=_c.orders;_shopMore=!!_c.hasNextPage;_shopCursor=_c.endCursor||null;_shopPage=1;_shopMinOrder=+((_c||{}).minOrder||0)||0;_fsHideBeforeDate=(_c||{}).fsHideBefore||"";_shopPartiel=+((_c||{}).partiel||0)||0;_shopFond=(_c||{}).fondCursor||null;_shopFini=!!((_c||{}).fini);}if(_c){if(Array.isArray(_c.dupOrders)&&_c.dupOrders.length)DB.shopDupOrders=_c.dupOrders;if(Array.isArray(_c.cancelled)&&_c.cancelled.length)DB.shopCancelled=_c.cancelled;}try{const _ov=await shopOverridesLoad();if(_ov){if(Array.isArray(_ov.dupOrders))DB.shopDupOrders=_ov.dupOrders;if(Array.isArray(_ov.cancelled))DB.shopCancelled=_ov.cancelled;if(_ov.partiels)DB.shopPartiels=shopPartielsFusion(DB.shopPartiels,_ov.partiels);}}catch(e){}try{mergeDupOrders();}catch(e){}}catch(e){}if(fsEnabled()){try{await flowstockKnownLoad();}catch(e){}try{const _fc=await flowstockCacheLoad();if(_fc&&_fc.purchases&&_fc.purchases.length){try{flowstockImport(JSON.stringify({purchases:_fc.purchases}),true);}catch(e){}}}catch(e){}}try{flowstockReconcile(true);}catch(e){}try{fsRepair();}catch(e){}try{fsFixEmpDirect();}catch(e){}try{fsDedupeAchats();}catch(e){}try{fixSocietes();}catch(e){}await save();fillSelects();renderAll();restoreView();
   // Toute sizechart assignée doit contenir TOUTES ses tailles.
   // Fait en arrière-plan APRÈS l'affichage : sur un gros catalogue cela crée
   // des milliers de variantes, hors de question de bloquer l'écran.
@@ -11992,7 +11992,7 @@ function shopReturnReprice(pieces){
       // le premier emplacement du référentiel plutôt que celui de la vente.
       var _vl=attrLabels("Ville"),_em=attrLabels("Emplacement");
       if(_vl.length&&_vl.indexOf(a.ville)<0)a.ville=_vl[0];
-      if(_em.length&&_em.indexOf(a.emplacement)<0)a.emplacement=_em[0];
+      if(_em.length&&(_em.indexOf(a.emplacement)<0||a.emplacement===FS_EMP_DIRECT))a.emplacement=_em[0];   // une paire en envoi direct qui revient est bien à Vichy
       return {a:a,m:m,v:v,rc:rc,pa:pa,sugg:sugg,i:i};
     });
     var css="padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:100%;box-sizing:border-box";
@@ -15923,6 +15923,42 @@ function shAutoTracking(){
   })();
   return n;
 }
+/* EMPLACEMENT D'UNE COMMANDE FOURNISSEUR.
+   Une vente transmise par le Sourcing Hub part DIRECTEMENT du fournisseur chez le client :
+   la paire ne passe jamais par Vichy. Elle prenait pourtant le premier emplacement de la
+   liste (« Select Vichy »), si bien que l'ERP la montrait en boutique. Elle reçoit
+   désormais « Envoi direct fournisseur ». Un réassort (pas de commande client) est livré
+   au magasin : il garde l'emplacement de Vichy. */
+var FS_EMP_DIRECT="Envoi direct fournisseur";
+function fsEnsureEmpDirect(){
+  var at=(DB.attributs||[]).find(function(x){return (x.nom||"").toLowerCase()==="emplacement";});
+  if(at&&!(at.valeurs||[]).some(function(v){return v.label===FS_EMP_DIRECT;})){at.valeurs=at.valeurs||[];at.valeurs.push({label:FS_EMP_DIRECT});return true;}
+  return false;
+}
+function fsEmpFor(p,def){
+  var co=p&&p.customer_order;
+  if(co&&co.id&&p.kind!=="reassort"){fsEnsureEmpDirect();return FS_EMP_DIRECT;}
+  return def;
+}
+/* Rattrapage des achats déjà importés : paires d'une vente Sourcing Hub encore marquées
+   à Vichy. Jamais une paire revenue d'un retour client (elle est alors bien à Vichy),
+   ni un emplacement changé à la main. */
+function fsFixEmpDirect(){
+  var def=(attrLabels("Emplacement")[0]||""),n=0,byId={};
+  (DB.achats||[]).forEach(function(a){
+    if(a.source!=="flowstock"||a.supplierType!=="sourcing-hub"||!a.customerOrderId)return;
+    if(String(a.flowstockId||"").indexOf("rea-")===0)return;
+    byId[a.id]=1;
+    if(a.emplacement===def){a.emplacement=FS_EMP_DIRECT;n++;}
+  });
+  (DB.articles||[]).forEach(function(x){
+    if(!byId[x.achatId]||x.archived)return;
+    if(x.shopifyReturnedAt||x.shopifyReturnSnapshot)return;
+    if(x.emplacement===def){x.emplacement=FS_EMP_DIRECT;x.maj=today();n++;}
+  });
+  if(n)fsEnsureEmpDirect();
+  return n;
+}
 function flowstockImport(txt,silent){
   try{fsDedupeAchats();}catch(e){}
   let data;try{data=JSON.parse(txt);}catch(e){alert("JSON invalide : "+e.message);return {ok:false};}
@@ -15963,7 +15999,7 @@ function flowstockImport(txt,silent){
     // au lieu de créer deux lignes concurrentes. Aucune course possible.
     const aid=fsAchatId(p.purchase_id);
     const cancelled=(p.status==="cancelled");
-    const a={id:aid,source:"flowstock",date:((p.created_at||"").slice(0,10))||today(),fournId:four.id,societeId:+soc,nFacture:p.reference||"",ville:ville,emplacement:emp,attestation:0,
+    const a={id:aid,source:"flowstock",date:((p.created_at||"").slice(0,10))||today(),fournId:four.id,societeId:+soc,nFacture:p.reference||"",ville:ville,emplacement:fsEmpFor(p,emp),attestation:0,
       statut:cancelled?"Annulée":"Livrée",delivered:cancelled?0:1,lignes:[],justifs:[],
       flowstockId:p.purchase_id,flowstockRef:p.reference||"",flowstockStatus:p.status||"order_placed",flowstockTime:p.created_at||"",
       customerOrderId:(p.customer_order||{}).id||"",customerOrderNumber:(p.customer_order||{}).number||"",supplierType:(p.supplier||{}).type||"",tracking:p.tracking||null,createdAt:(p.created_at||new Date().toISOString())};
